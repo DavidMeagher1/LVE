@@ -53,6 +53,7 @@ var _model_scene
 var _default_lighting := {}
 var _default_camera := {}
 var _settings_document: VoxelDocument
+var _sheet_projection := Camera3D.PROJECTION_PERSPECTIVE
 var _restoring_export_settings := false
 var _pending_export_camera := {}
 var _selected_tag: AnimationTag
@@ -72,6 +73,7 @@ func _ready() -> void:
 	_model_renderer.report_activity = false
 	_model_renderer.source_frame = State.get_current_voxel_frame().copy_frame()
 	_model_back_renderer = preload("res://ui/Viewport/VoxelRenderer.tscn").instantiate()
+	_model_back_renderer.name = "VoxelRendererBack"
 	_model_back_renderer.report_activity = false
 	_model_back_renderer.source_frame = VoxelFrame.new()
 	_model_back_renderer.visible = false
@@ -114,16 +116,13 @@ func _ready() -> void:
 	sheet_bar.get_node("CenterBtn").pressed.connect(sheet_preview.fit)
 	_sheet_settings.get_node("FrameRow/Frames").item_selected.connect(_on_sheet_tag_selected)
 	_sheet_settings.get_node("ViewRow/View").item_selected.connect(_sheet_settings_changed.unbind(1))
-	_sheet_settings.get_node("ViewRow/Perspective").toggled.connect(_reset_sprite_size.unbind(1))
 	_sheet_settings.get_node("ViewRow/Center").toggled.connect(_sheet_settings_changed.unbind(1))
 	_sheet_settings.get_node("TurntableRow/Views").value_changed.connect(_sheet_settings_changed.unbind(1))
 	_sheet_settings.get_node("SizeRow/Size").value_changed.connect(_sheet_settings_changed.unbind(1))
 	_sheet_settings.get_node("SizeRow/Reset").pressed.connect(_reset_sprite_size)
 	_sheet_settings.get_node("TurntableRow/Turntable").toggled.connect(_sheet_settings_changed.unbind(1))
-	_sheet_settings.get_node("TurntableRow/Metadata").toggled.connect(_save_export_settings.unbind(1))
+	_controls.get_node("ExportRow/Metadata").toggled.connect(_save_export_settings.unbind(1))
 	_model.get_node("AnimationRow/Center").toggled.connect(_model_settings_changed.unbind(1))
-	_model.get_node("ModelOptions/Lit").toggled.connect(_on_model_lit_toggled)
-	_model.get_node("ModelOptions/AO").value_changed.connect(_on_model_ao_changed)
 	_model.get_node("AnimationRow/Tags").item_selected.connect(_on_model_tag_selected)
 	_model.get_node("AnimationRow/Play").toggled.connect(_on_play_toggled)
 	_model_camera.view_changed.connect(_on_preview_camera_changed)
@@ -142,19 +141,6 @@ func _ready() -> void:
 	_sync()
 
 
-func _on_model_lit_toggled(_pressed: bool) -> void:
-	# The viewport shading comes from the Environment row. This option chooses
-	# the material for the exported GLB.
-	_save_export_settings()
-
-
-func _on_model_ao_changed(value: float) -> void:
-	# AO belongs to the document. The editor, the model preview, and the export all
-	# read the same setting.
-	State.set_ao_strength(value, false)
-	_save_export_settings()
-
-
 func _capture_export_camera() -> Dictionary:
 	return {"yaw": _model_camera._yaw, "pitch": _model_camera._pitch, "distance": _model_camera._dist, "initial_distance": _model_camera._init_dist, "target": _model_camera._target, "orthographic": _model_camera.is_orthogonal, "fov": _model_camera.fov}
 
@@ -164,15 +150,12 @@ func _save_export_settings() -> void:
 		return
 	State.document.export_settings = {
 		"view": _sheet_settings.get_node("ViewRow/View").selected,
-		"sprite_ortho": not _sheet_settings.get_node("ViewRow/Perspective").button_pressed,
 		"sprite_center": _sheet_settings.get_node("ViewRow/Center").button_pressed,
 		"frame_size": _sheet_settings.get_node("SizeRow/Size").value,
 		"turntable": _sheet_settings.get_node("TurntableRow/Turntable").button_pressed,
 		"views": _sheet_settings.get_node("TurntableRow/Views").value,
-		"metadata": _sheet_settings.get_node("TurntableRow/Metadata").button_pressed,
+		"metadata": _controls.get_node("ExportRow/Metadata").button_pressed,
 		"center": _model.get_node("AnimationRow/Center").button_pressed,
-		"unlit": not _model.get_node("ModelOptions/Lit").button_pressed,
-		"ao": State.document.ao_strength,
 		"model_tag": State.document.tags.find(_selected_tag),
 		"sheet_tag": State.document.tags.find(_sheet_tag),
 		"lighting": _sheet_lighting(),
@@ -189,16 +172,12 @@ func _restore_export_settings() -> void:
 	_sheet_tag = State.document.get_tag(int(saved.get("sheet_tag", -1)))
 	_sync_tags()
 	_sheet_settings.get_node("ViewRow/View").select(clampi(int(saved.get("view", 1)), 0, VIEWS.size() - 1))
-	_sheet_settings.get_node("ViewRow/Perspective").set_pressed_no_signal(not saved.get("sprite_ortho", true))
-	_sheet_settings.get_node("ViewRow/Center").set_pressed_no_signal(saved.get("sprite_center", true))
+	_sheet_settings.get_node("ViewRow/Center").set_pressed_no_signal(saved.get("sprite_center", false))
 	_sheet_settings.get_node("SizeRow/Size").set_value_no_signal(saved.get("frame_size", 64))
 	_sheet_settings.get_node("TurntableRow/Turntable").set_pressed_no_signal(saved.get("turntable", true))
 	_sheet_settings.get_node("TurntableRow/Views").set_value_no_signal(saved.get("views", 8))
-	_sheet_settings.get_node("TurntableRow/Metadata").set_pressed_no_signal(saved.get("metadata", true))
-	_model.get_node("AnimationRow/Center").set_pressed_no_signal(saved.get("center", true))
-	var lit: bool = not saved.get("unlit", false)
-	_model.get_node("ModelOptions/Lit").set_pressed_no_signal(lit)
-	_model.get_node("ModelOptions/AO").set_value_no_signal(State.document.ao_strength)
+	_controls.get_node("ExportRow/Metadata").set_pressed_no_signal(saved.get("metadata", false))
+	_model.get_node("AnimationRow/Center").set_pressed_no_signal(saved.get("center", false))
 	var lighting: Dictionary = saved.get("lighting", _default_lighting)
 	_model_scene.set_lighting_settings(lighting)
 	_pending_export_camera = saved.get("camera", {}).duplicate()
@@ -222,11 +201,11 @@ func current_export_settings() -> Dictionary:
 	return {
 		"sprite": {
 			"view": VIEW_KEYS[clampi(view_index, 0, VIEW_KEYS.size() - 1)],
-			"orthographic": not _sheet_settings.get_node("ViewRow/Perspective").button_pressed,
+			"orthographic": _model_camera.is_orthogonal,
 			"center": _sheet_settings.get_node("ViewRow/Center").button_pressed,
 			"tile_size": int(_sheet_settings.get_node("SizeRow/Size").value),
 			"views": _view_count(),
-			"metadata": _sheet_settings.get_node("TurntableRow/Metadata").button_pressed,
+			"metadata": _controls.get_node("ExportRow/Metadata").button_pressed,
 			"tag": sheet_tag_index,
 			"tag_name": _sheet_tag.name if _sheet_tag else "",
 			"first_frame": sheet_range.x,
@@ -237,7 +216,8 @@ func current_export_settings() -> Dictionary:
 			"tag": model_tag_index,
 			"smooth_normals": State.document.smooth_normals,
 			"ao": State.document.ao_strength,
-			"unlit": bool(State.document.export_settings.get("unlit", false)),
+			# The panel always exports lit materials. A caller can override one export.
+			"unlit": false,
 			"first_frame": model_range.x,
 			"last_frame": model_range.y,
 		},
@@ -300,13 +280,8 @@ func _on_workspace_visibility_changed() -> void:
 
 func _source_changed() -> void:
 	_sync_tags()
-	_sync_model_options()
 	_model_dirty = true
 	_sheet_settings_changed()
-
-
-func _sync_model_options() -> void:
-	_model.get_node("ModelOptions/AO").set_value_no_signal(State.document.ao_strength)
 
 
 func _on_document_changed() -> void:
@@ -396,7 +371,16 @@ func _sheet_lighting() -> Dictionary:
 
 
 func _on_model_lighting_changed() -> void:
+	_sync_model_shading()
 	_sheet_settings_changed()
+
+
+## Applies the preview's shading option to both preview renderers. The preview
+## swaps between two renderers, so one renderer would keep a stale state.
+func _sync_model_shading() -> void:
+	var unshaded: bool = not bool(_sheet_lighting().get("shaded", true))
+	_model_renderer.unshaded = unshaded
+	_model_back_renderer.unshaded = unshaded
 
 
 func _on_preview_camera_changed() -> void:
@@ -404,7 +388,10 @@ func _on_preview_camera_changed() -> void:
 		return
 	_save_export_settings()
 	_refresh_export_status()
-	if _sheet_settings.get_node("ViewRow/View").selected == 0:
+	# A fixed view uses only the camera projection. A free view uses the full pose.
+	var projection_changed := _model_camera.projection != _sheet_projection
+	_sheet_projection = _model_camera.projection
+	if projection_changed or _sheet_settings.get_node("ViewRow/View").selected == 0:
 		_sheet_settings_changed()
 
 
@@ -477,6 +464,7 @@ func _show_model_frame() -> void:
 func _present_model_frame() -> void:
 	if _model_pending_frame < 0 or not _model_back_renderer.is_settled():
 		return
+	_sync_model_shading()
 	_model_renderer.visible = false
 	_model_back_renderer.visible = true
 	var previous := _model_renderer
@@ -508,10 +496,10 @@ func _sync() -> void:
 	_export_button.disabled = busy or (not gif and (layout.size.x > Image.MAX_WIDTH or layout.size.y > Image.MAX_HEIGHT))
 	_export_button.tooltip_text = "Export the animation as a GIF" if gif else "Export the sprite sheet as a PNG image"
 	_gif_button.disabled = busy
-	for path in ["FrameRow/Frames", "ViewRow/View", "ViewRow/Perspective", "ViewRow/Center"]:
+	for path in ["FrameRow/Frames", "ViewRow/View", "ViewRow/Center"]:
 		_sheet_settings.get_node(path).disabled = busy
 	_sheet_settings.get_node("SizeRow/Size").editable = not busy
-	_sheet_settings.get_node("TurntableRow/Metadata").disabled = busy
+	_controls.get_node("ExportRow/Metadata").disabled = busy
 	_sheet_settings.get_node("SizeRow/Reset").disabled = busy
 	_sheet_settings.get_node("TurntableRow/Turntable").disabled = busy
 	_sheet_settings.get_node("TurntableRow/Views").editable = not busy and views > 1
@@ -618,9 +606,10 @@ func export_gltf(path: String) -> Error:
 
 ## Exports the model as a GLB file with explicit settings. Keys: [code]center[/code],
 ## [code]tag[/code] (-1 for every tag), [code]smooth_normals[/code], [code]ao[/code],
-## and [code]unlit[/code]. An absent [code]center[/code] is true and an absent
-## [code]tag[/code] is -1. Each other absent key keeps the document value. The
-## call does not change the document.
+## and [code]unlit[/code]. An absent [code]center[/code] is false and an absent
+## [code]tag[/code] is -1. An absent [code]smooth_normals[/code] or [code]ao[/code]
+## keeps the document value. An absent [code]unlit[/code] exports lit materials.
+## The call does not change the document.
 func export_gltf_settings(path: String, settings: Dictionary) -> Error:
 	if _exporting or State.edit_busy():
 		return ERR_BUSY
@@ -632,7 +621,7 @@ func export_gltf_settings(path: String, settings: Dictionary) -> Error:
 	for key in ["smooth_normals", "ao", "unlit"]:
 		if settings.has(key):
 			overrides[key] = settings[key]
-	var error: Error = await _gltf.export_gltf(path, bool(settings.get("center", true)), tag_index, overrides)
+	var error: Error = await _gltf.export_gltf(path, bool(settings.get("center", false)), tag_index, overrides)
 	_sync()
 	_preview_due_ms = Time.get_ticks_msec() + PREVIEW_DELAY_MS
 	return error
@@ -642,7 +631,7 @@ func _on_sheet_file_selected(path: String) -> void:
 	var frame_range := _selected_frames()
 	var resolution := int(_sheet_settings.get_node("SizeRow/Size").value)
 	var tag_name: String = _sheet_tag.name if _sheet_tag else ""
-	_report_result(await export_sprite_sheet(path, frame_range.x, frame_range.y, resolution, _sheet_settings.get_node("ViewRow/View").selected, _sheet_settings.get_node("TurntableRow/Metadata").button_pressed, _view_count(), tag_name), path)
+	_report_result(await export_sprite_sheet(path, frame_range.x, frame_range.y, resolution, _sheet_settings.get_node("ViewRow/View").selected, _controls.get_node("ExportRow/Metadata").button_pressed, _view_count(), tag_name), path)
 
 
 func _on_gif_file_selected(path: String) -> void:
@@ -670,7 +659,7 @@ static func sheet_layout(frame_count: int, tile_size: int) -> Dictionary:
 
 
 func _sheet_camera(view: int, views := 1, orthographic_value: Variant = null) -> Dictionary:
-	var orthographic: bool = bool(orthographic_value) if orthographic_value is bool else not _sheet_settings.get_node("ViewRow/Perspective").button_pressed
+	var orthographic: bool = bool(orthographic_value) if orthographic_value is bool else _model_camera.is_orthogonal
 	var bounds := State.document.bounds()
 	var transform: Transform3D
 	var size: float = _model_camera.size
@@ -890,7 +879,7 @@ func _update_sheet_preview() -> void:
 	var settings := _sheet_render_settings(
 		_sheet_settings.get_node("ViewRow/View").selected,
 		views,
-		not _sheet_settings.get_node("ViewRow/Perspective").button_pressed,
+		_model_camera.is_orthogonal,
 		_sheet_settings.get_node("ViewRow/Center").button_pressed,
 		_sheet_lighting()
 	)
@@ -930,8 +919,8 @@ func _apply_preview_animation() -> void:
 ## Exports a PNG sprite sheet and returns the error code. [param first_frame]
 ## and [param last_frame] select the range. [param tile_size] sets one tile in
 ## pixels. [param view] selects the camera view. [param include_json] also
-## writes the Aseprite JSON sidecar. [param views] adds turntable views.
-func export_sprite_sheet(path: String, first_frame := 0, last_frame := -1, tile_size := -1, view := 1, include_json := true, views := 1, tag_name := "") -> Error:
+## writes the Aseprite JSON sidecar. The sidecar is off by default. [param views] adds turntable views.
+func export_sprite_sheet(path: String, first_frame := 0, last_frame := -1, tile_size := -1, view := 1, include_json := false, views := 1, tag_name := "") -> Error:
 	if view < 0 or view >= VIEW_KEYS.size():
 		return ERR_INVALID_PARAMETER
 	return await export_sprite_sheet_settings(path, {

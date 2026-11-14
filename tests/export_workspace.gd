@@ -17,6 +17,7 @@ const SHEET_PATH := "user://voxel_workspace_sheet.png"
 func _ready() -> void:
 	timeout = 45.0
 	test("Export shares plugin tabs and previews both formats without changing the editor", _run)
+	test("Export preview shading follows the environment after a model swap", _shading_swap, "shading_swap")
 
 
 func _run() -> void:
@@ -299,9 +300,20 @@ func _preview_behavior() -> void:
 	await get_tree().process_frame
 	step("When the user resets a manually changed sprite size", func():
 		exporter._sheet_settings.get_node("SizeRow/Size").value = 99
+		exporter._model_camera.is_orthogonal = true
 		exporter._sheet_settings.get_node("SizeRow/Reset").pressed.emit()
 		expect(exporter._sheet_settings.get_node("SizeRow/Size").value == 2, "Reset calculates the front-view size from the voxel bounds")
 		exporter._sheet_settings.get_node("SizeRow/Size").value = 32
+	)
+	await _wait_preview()
+	step("When the user changes the camera projection for a fixed view", func():
+		saved_revision = exporter._preview_revision
+		exporter._model_camera.is_orthogonal = not exporter._model_camera.is_orthogonal
+	)
+	step("Then the sheet preview schedules a render and keeps the manual size", func():
+		expect(exporter._preview_revision > saved_revision, "the projection change schedules a new preview")
+		expect(exporter._sheet_settings.get_node("SizeRow/Size").value == 32, "the projection change keeps the manual frame size")
+		exporter._model_camera.is_orthogonal = not exporter._model_camera.is_orthogonal
 	)
 	await _wait_preview()
 	step("When the user sets the sheet zoom to one-to-one and pans", func():
@@ -385,3 +397,47 @@ func _clock_steps(playback: AnimationPlayback, offset: int, ticks := 40) -> Arra
 func _wait_preview() -> void:
 	while exporter._preview_running or exporter._preview_due_ms >= 0:
 		await get_tree().process_frame
+
+
+func _shading_swap() -> void:
+	step("Given an open export tab with two frames", func():
+		exporter = plugin("ExportPlugin")
+		State.document = VoxelDocument.new()
+		State.document.set_cell(0, Vector3i.ZERO, VoxelFrame.material(Color.RED))
+		State.document.add_frame()
+		State.document.set_cell(1, Vector3i(1, 0, 0), VoxelFrame.material(Color.BLUE))
+		State.frames_changed.emit()
+		State.document_changed.emit()
+		exporter._menu_item.get_node("ExportBtn").button_pressed = true
+	)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	step("When the environment is unshaded and the model rebuilds", func():
+		var settings: Dictionary = exporter._model_scene.get_lighting_settings()
+		settings.shaded = false
+		exporter._model_scene.set_lighting_settings(settings)
+		State.frames_changed.emit()
+	)
+	await _wait_model_swap()
+	step("Then both preview renderers follow the shading option", func():
+		expect(exporter._model_renderer.unshaded, "the visible preview renderer draws unshaded")
+		expect(exporter._model_back_renderer.unshaded, "the hidden preview renderer draws unshaded")
+	)
+	step("When the environment is shaded again and the model rebuilds", func():
+		var settings: Dictionary = exporter._model_scene.get_lighting_settings()
+		settings.shaded = true
+		exporter._model_scene.set_lighting_settings(settings)
+		State.frames_changed.emit()
+	)
+	await _wait_model_swap()
+	step("Then both preview renderers draw shaded again", func():
+		expect(not exporter._model_renderer.unshaded and not exporter._model_back_renderer.unshaded, "both preview renderers draw shaded")
+		exporter._menu_item.get_node("ExportBtn").button_pressed = false
+	)
+	await get_tree().process_frame
+
+
+func _wait_model_swap() -> void:
+	while exporter._model_dirty or exporter._model_pending_frame >= 0:
+		await get_tree().process_frame
+	await get_tree().process_frame
