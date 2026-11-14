@@ -65,6 +65,20 @@ func _run() -> void:
 				"the plane border uses the plane color"
 			)
 	)
+	step("Then the camera clip range contains the symmetry planes", func():
+		var camera := camera_rig()
+		var plane_box := AABB()
+		for plane_name in ["XPlane", "YPlane", "ZPlane"]:
+			var plane: MeshInstance3D = symmetry._tool.get_node(plane_name)
+			if plane.visible:
+				var box: AABB = plane.global_transform * plane.get_aabb()
+				plane_box = box if not plane_box.has_surface() else plane_box.merge(box)
+		var clip_box: AABB = camera._helper_far_bounds.get(&"symmetry", AABB())
+		expect(plane_box.has_surface() and clip_box.encloses(plane_box), "the camera clip range contains the symmetry planes")
+		var forward := -camera.global_transform.basis.z
+		var farthest := (clip_box.get_support(forward) - camera.global_position).dot(forward)
+		expect(camera.far >= farthest + 2.0 - 0.001, "the far plane clears the symmetry planes")
+	)
 	step("When the user drags the symmetry origin", func():
 		_button(Vector3.ZERO, true)
 		var motion := InputEventMouseMotion.new()

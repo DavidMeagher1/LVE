@@ -133,6 +133,7 @@
 - 2026-10-08T00:00Z [imp:5] [notes/geometry-and-rendering] `AABB.get_support(direction)` returns the farthest corner. Sprite depth includes the farthest view extreme plus one voxel.
 - 2026-08-19T00:00Z [imp:5] [notes/geometry-and-rendering] Use `AABB.has_volume()` or `has_surface()`. There is no `has_area()` method.
 - 2026-08-24T00:00Z [imp:5] [notes/geometry-and-rendering] Match orthographic framing with `size = 2 * distance * tan(fov / 2)`. Keep `KEEP_HEIGHT`.
+- 2026-11-14T00:00Z [imp:8] [notes/geometry-and-rendering] In orthographic projection, Godot uses the camera far as the directional shadow depth range and ignores `directional_shadow_max_distance`. Build the editor clip range from the content and the visible helper bounds. Keep the camera position fixed on cell edits, or a captured stroke ray family moves. Test `camera.orthographic_clip` and `terrain_smooth_placement.coalesced_match`.
 - 2026-10-05T00:00Z [imp:5] [notes/geometry-and-rendering] Give independent render viewports separate World3D objects. Use `resource_local_to_scene` for separate scene-instance worlds.
 - 2026-10-07T00:00Z [imp:5] [notes/geometry-and-rendering] In Godot 4.7.2 Mobile, render new sprite viewports twice before capturing directional shadows.
 - 2026-10-06T00:00Z [imp:5] [notes/geometry-and-rendering] Use `PROCESS_MODE_ALWAYS` for renderers that must finish work inside disabled workspaces.

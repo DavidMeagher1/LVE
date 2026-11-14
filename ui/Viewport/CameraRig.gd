@@ -44,9 +44,22 @@ var _dist := 24.0
 var _target := Vector3.ZERO
 var _init_dist := 24.0
 
+## The distance kept in front of the nearest clipped geometry.
+const NEAR_MARGIN := 1.0
+## The distance kept past the farthest clipped geometry. The grid extends one
+## cell past the content. The symmetry planes extend four cells past the origin.
+const FAR_MARGIN := 2.0
+
+## Extra world boxes that the orthographic clip range must contain, keyed by
+## their owner.
+var _helper_far_bounds := {}
+
 func _ready() -> void:
 	configure()
 	State.document_changed.connect(configure)
+	State.cells_changed.connect(_on_content_bounds_changed)
+	State.chunks_changed.connect(_on_content_bounds_changed)
+	State.frames_changed.connect(refresh_clip)
 	if stores_document_pose:
 		State.document_deactivating.connect(_save_pose)
 	set_view("default")
@@ -166,26 +179,94 @@ func pan(rel: Vector2) -> void:
 	_update()
 
 
-func _update() -> void:
-	var direction := Vector3(
+## Registers one world box that the orthographic clip range must contain. The
+## key lets the owner update or clear its box.
+func set_helper_far_bounds(key: StringName, box: AABB) -> void:
+	if not box.has_surface():
+		clear_helper_far_bounds(key)
+		return
+	_helper_far_bounds[key] = box
+	refresh_clip()
+
+
+## Removes one helper box from the orthographic clip range.
+func clear_helper_far_bounds(key: StringName) -> void:
+	if _helper_far_bounds.erase(key):
+		refresh_clip()
+
+
+## Recomputes the orthographic far plane. It never moves the camera, so a cell
+## or helper change cannot alter a captured ray family. It emits no view change.
+func refresh_clip() -> void:
+	if not is_orthogonal:
+		return
+	var box := _clip_bounds()
+	if not box.has_surface():
+		return
+	var forward := -global_transform.basis.z
+	var farthest := (box.get_support(forward) - global_position).dot(forward)
+	far = maxf(2.0, farthest + FAR_MARGIN)
+
+
+func _on_content_bounds_changed(_frame: int, _affected: Array[Vector3i]) -> void:
+	refresh_clip()
+
+
+func _view_direction() -> Vector3:
+	return Vector3(
 		sin(_yaw) * cos(_pitch), sin(_pitch), cos(_yaw) * cos(_pitch)
 	)
-	var bounds: AABB = bounds_provider.call() if bounds_provider.is_valid() else State.document.bounds()
-	var max_radius := maxf(bounds.size.length() * 0.5, 1.0)
+
+
+func _framed_bounds() -> AABB:
+	if bounds_provider.is_valid():
+		var provided: AABB = bounds_provider.call()
+		return provided
+	return State.document.bounds()
+
+
+func _clip_bounds() -> AABB:
+	var box := _framed_bounds()
+	for value in _helper_far_bounds.values():
+		var helper: AABB = value
+		if not helper.has_surface():
+			continue
+		box = helper if not box.has_surface() else box.merge(helper)
+	return box
+
+
+# In orthographic projection, Godot derives the directional shadow depth range
+# from the camera far plane. Keep the far plane just past the visible content
+# and helpers so orthographic shadows stay crisp. The projection scale follows
+# the zoom, but the camera must stay outside the clip box. A close zoom would
+# otherwise put geometry behind the near plane, and orthographic clipping would
+# cut it.
+func _apply_orthographic_clip(direction: Vector3) -> void:
+	var box := _clip_bounds()
+	var forward := -direction
+	var camera_distance := maxf(_dist, 1.0 + NEAR_MARGIN)
+	var farthest := 1.0
+	if box.has_surface():
+		var nearest := (box.get_support(-forward) - _target).dot(forward)
+		farthest = (box.get_support(forward) - _target).dot(forward)
+		camera_distance = maxf(_dist, -nearest + NEAR_MARGIN)
+	position = _target + direction * camera_distance
+	far = maxf(2.0, camera_distance + farthest + FAR_MARGIN)
+	look_at(_target, Vector3.UP)
+
+
+func _update() -> void:
+	var direction := _view_direction()
 	if is_orthogonal:
 		projection = Camera3D.PROJECTION_ORTHOGONAL
 		size = 2.0 * _dist * tan(deg_to_rad(fov) / 2.0)
-		# The projection scale follows the zoom, but the camera must stay outside
-		# the model. A close zoom would otherwise put the model behind the near
-		# plane, and orthographic clipping would cut it.
-		var camera_distance := maxf(_dist, max_radius + 1.0)
-		position = _target + direction * camera_distance
-		# Godot derives the directional shadow depth range from the camera far plane in orthographic projection.
-		far = maxf(2.0, camera_distance + max_radius)
+		_apply_orthographic_clip(direction)
 	else:
 		projection = Camera3D.PROJECTION_PERSPECTIVE
+		var bounds := _framed_bounds()
+		var max_radius := maxf(bounds.size.length() * 0.5, 1.0)
 		position = _target + direction * _dist
 		# The lowest zoom step is farther than a fixed far plane would keep.
 		far = maxf(4000.0, _dist + max_radius * 2.0)
-	look_at(_target, Vector3.UP)
+		look_at(_target, Vector3.UP)
 	view_changed.emit()

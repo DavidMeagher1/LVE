@@ -65,6 +65,7 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	_dragging = false
 	_set_cursor(Input.CURSOR_ARROW)
+	_push_far_bounds(AABB())
 	State.symmetry_changed.disconnect(_rebuild)
 	State.document_changed.disconnect(_rebuild)
 	State.cells_changed.disconnect(_on_cells_changed)
@@ -115,6 +116,7 @@ func _rebuild() -> void:
 	# every cell change.
 	if not visible:
 		_hide_drag_visuals()
+		_push_far_bounds(AABB())
 		return
 	position = State.symmetry_origin
 	if not active:
@@ -149,6 +151,21 @@ func _rebuild() -> void:
 				border_vertices.append(vertices[index])
 				border_vertices.append(vertices[(index + 1) % 4])
 			border.mesh = VoxelLineMesh.build(border_vertices)
+	_push_far_bounds(AABB(lo, hi - lo))
+
+
+# Registers the plane extents with the camera, so the far plane cannot cut them.
+func _push_far_bounds(box: AABB) -> void:
+	var viewport := get_viewport()
+	if viewport == null:
+		return
+	var camera := viewport.get_camera_3d()
+	if not camera is EditorCameraRig:
+		return
+	if box.has_surface():
+		camera.set_helper_far_bounds(&"symmetry", box)
+	else:
+		camera.clear_helper_far_bounds(&"symmetry")
 
 
 func _process(_delta: float) -> void:

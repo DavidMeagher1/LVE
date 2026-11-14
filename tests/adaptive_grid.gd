@@ -58,10 +58,16 @@ func _run() -> void:
 	)
 	step("Then changing the view reuses the grid geometry", func():
 		expect(grid.mesh == grid_mesh, "zoom and projection changes reuse the grid mesh")
+		var grid_box: AABB = grid.global_transform * grid.get_aabb()
+		var helper: AABB = camera_rig()._helper_far_bounds.get(&"grid", AABB())
+		expect(helper.encloses(grid_box), "the grid registers its clip bounds")
 		viewport_scene()._on_grid_toggle_toggled(false)
 		expect(not grid.visible, "the grid toggle hides the adaptive grid")
+		expect(not camera_rig()._helper_far_bounds.has(&"grid"), "the hidden grid stops extending the clip bounds")
 		viewport_scene()._on_grid_toggle_toggled(true)
 		expect(grid.visible, "the grid toggle shows the adaptive grid")
+		helper = camera_rig()._helper_far_bounds.get(&"grid", AABB())
+		expect(helper.encloses(grid_box), "the shown grid restores its clip bounds")
 	)
 	if DisplayServer.get_name() == "headless":
 		return

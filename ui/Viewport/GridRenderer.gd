@@ -13,6 +13,7 @@ var _built := false
 
 func _ready() -> void:
 	rebuild()
+	visibility_changed.connect(_push_far_bounds)
 	State.cells_changed.connect(func(_frame, _affected): rebuild())
 	State.chunks_changed.connect(func(_frame, _affected): rebuild())
 	State.document_changed.connect(rebuild)
@@ -58,6 +59,18 @@ func rebuild() -> void:
 	p[u] = lo[u]
 	p[v] = lo[v]
 	position = p
+	_push_far_bounds()
+
+
+# Registers the grid with the camera, so the far plane cannot cut its edge.
+func _push_far_bounds() -> void:
+	var camera := get_viewport().get_camera_3d()
+	if not camera is EditorCameraRig:
+		return
+	if visible and mesh != null:
+		camera.set_helper_far_bounds(&"grid", global_transform * get_aabb())
+	else:
+		camera.clear_helper_far_bounds(&"grid")
 
 
 ## Returns the low corner of the grid span. An empty bounds uses a small fixed
