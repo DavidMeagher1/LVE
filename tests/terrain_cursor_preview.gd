@@ -33,7 +33,7 @@ func before_test() -> void:
 	State.symmetry_axes = 0
 	State.floor_axis = Vector3.Axis.AXIS_Y
 	State.floor_index = 0
-	State._apply_material(VoxelFrame.material(Color.CYAN))
+	State.apply_workspace_material(VoxelFrame.material(Color.CYAN))
 	_settings.tool = _settings.Tools.BUILD
 	_settings.build_mode = _settings.BuildMode.ADD
 	_settings.radius = 9

@@ -77,6 +77,12 @@ const SettingsStore := preload("res://Globals/State/SettingsStore.gd")
 const DocumentSession := preload("res://Globals/State/DocumentSession.gd")
 ## The cell selection of the active document. See [SelectionState].
 const SelectionState := preload("res://Globals/State/SelectionState.gd")
+## The current material and the document palette. See [MaterialState].
+const MaterialState := preload("res://Globals/State/MaterialState.gd")
+## The one open edit. See [EditSession].
+const EditSession := preload("res://Globals/State/EditSession.gd")
+## The floor, the slice, and the symmetry. See [EditingAids].
+const EditingAids := preload("res://Globals/State/EditingAids.gd")
 ## The tracked operation type. It belongs to [OperationRegistry].
 const Operation := OperationRegistry.Operation
 ## The image file extensions that the importer supports. It belongs to
@@ -85,17 +91,18 @@ const IMAGE_EXTENSIONS := SettingsStore.IMAGE_EXTENSIONS
 
 ## The main-thread work slice in microseconds for one pumped frame.
 const WORK_SLICE_US := 3000
-## The user path of the saved default palette.
-const DEFAULT_PALETTE_PATH := "user://default_palette.cfg"
-## The default symmetry origin, at the corner between eight cells.
-const DEFAULT_SYMMETRY_ORIGIN := Vector3(-0.5, -0.5, -0.5)
+## The user path of the saved default palette. It belongs to [MaterialState].
+const DEFAULT_PALETTE_PATH := MaterialState.DEFAULT_PALETTE_PATH
+## The default symmetry origin, at the corner between eight cells. It belongs to
+## [EditingAids].
+const DEFAULT_SYMMETRY_ORIGIN := EditingAids.DEFAULT_SYMMETRY_ORIGIN
+## The largest slice layer count on each side. It belongs to [EditingAids].
+const MAX_SLICE_LAYERS := EditingAids.MAX_SLICE_LAYERS
 
 ## The tracked operations for the status display and the edit lock.
 var operations := OperationRegistry.new()
 ## The user settings file and the remembered session.
 var settings := SettingsStore.new()
-## The palette that the New Document action applies.
-var default_palette := get_builtin_palette()
 ## The settings file. Tests set a temporary path.
 var settings_path: String:
 	get:
@@ -144,6 +151,12 @@ class EraseJob extends VoxelFrame.EditJob:
 var session := DocumentSession.new()
 ## The cell selection of the active document.
 var selection_state := SelectionState.new()
+## The current material and the document palette.
+var material := MaterialState.new()
+## The one open edit and its history steps.
+var edits := EditSession.new()
+## The floor, the slice, and the symmetry aids.
+var aids := EditingAids.new()
 ## The animation playback state.
 var playback: AnimationPlayback:
 	get:
@@ -187,62 +200,55 @@ var active_tag: int:
 		playback.active_tag = value
 
 ## The world axis of the floor plane. Axis 0 is X, axis 1 is Y, and axis 2 is Z.
-var floor_axis:Vector3.Axis = Vector3.Axis.AXIS_Y:
+var floor_axis: Vector3.Axis:
+	get:
+		return aids.floor_axis
 	set(value):
-		if value == floor_axis:
-			return
-		floor_axis = value
-		floor_plane_changed.emit()
+		aids.floor_axis = value
 
 ## The cell index of the floor plane along [member floor_axis].
-var floor_index := 0:
+var floor_index: int:
+	get:
+		return aids.floor_index
 	set(value):
-		if value == floor_index:
-			return
-		floor_index = value
-		floor_plane_changed.emit()
+		aids.floor_index = value
 
 ## Whether the slice limits every edit. It is a view of [member slice_layers],
 ## so 0 layers means every layer is writable.
 var slice_enabled: bool:
 	get:
-		return slice_layers > 0
+		return aids.slice_enabled
 	set(value):
-		slice_layers = 1 if value else 0
-
-## The largest slice layer count on each side.
-const MAX_SLICE_LAYERS := 8
+		aids.slice_enabled = value
 
 ## The number of writable and visible layers on each side of the floor plane. 0
 ## shows every layer. 1 keeps one layer on each side of the plane.
-var slice_layers := 0:
+var slice_layers: int:
+	get:
+		return aids.slice_layers
 	set(value):
-		value = clampi(value, 0, MAX_SLICE_LAYERS)
-		if value == slice_layers:
-			return
-		slice_layers = value
-		slice_changed.emit()
+		aids.slice_layers = value
 
 
 ## Returns the first layer of the slice.
 func slice_first() -> int:
-	return floor_index - slice_layers
+	return aids.slice_first()
 
 
 ## Returns the last layer of the slice.
 func slice_last() -> int:
-	return floor_index + slice_layers - 1 if slice_layers > 0 else floor_index
+	return aids.slice_last()
 
 
 ## Returns the number of layers in the slice. The floor plane splits the slab
 ## evenly, so the floor layer is the first layer above it.
 func slice_count() -> int:
-	return slice_layers * 2 if slice_layers > 0 else 1
+	return aids.slice_count()
 
 
 ## Returns the world level of the slice plane.
 func slice_level() -> float:
-	return float(floor_index) - 0.5
+	return aids.slice_level()
 
 
 ## Returns [code]true[/code] when the document limits at least one axis.
@@ -344,46 +350,44 @@ static func _clamp_size(value: Vector3i) -> Vector3i:
 	)
 
 ## The symmetry axes as a bit mask. Bit 0 is X, bit 1 is Y, and bit 2 is Z.
-var symmetry_axes := 0:
+var symmetry_axes: int:
+	get:
+		return aids.symmetry_axes
 	set(value):
-		value &= 7
-		if value == symmetry_axes:
-			return
-		symmetry_axes = value
-		symmetry_changed.emit()
+		aids.symmetry_axes = value
 
 ## The symmetry origin in cell units. It snaps to half units.
-var symmetry_origin := DEFAULT_SYMMETRY_ORIGIN:
+var symmetry_origin: Vector3:
+	get:
+		return aids.symmetry_origin
 	set(value):
-		value = value.snapped(Vector3.ONE * 0.5)
-		if value == symmetry_origin:
-			return
-		symmetry_origin = value
-		symmetry_changed.emit()
+		aids.symmetry_origin = value
 
-var _current_material := VoxelFrame.material(Color.BLACK)
+## The palette that the New Document action applies.
+var default_palette: Array[PackedFloat32Array]:
+	get:
+		return material.default_palette
+	set(value):
+		material.default_palette = value
 ## The current material as nine floats. A read returns a copy. A write records a
 ## history action.
 var current_material: PackedFloat32Array:
 	get:
-		return _current_material.duplicate()
+		return material.current_material
 	set(value):
-		set_material(value)
+		material.current_material = value
 ## The palette index that matches the current material, or -1 when none matches.
-var current_palette_index := -1
+var current_palette_index: int:
+	get:
+		return material.current_palette_index
+	set(value):
+		material.current_palette_index = value
 ## The color of the current material. A write keeps the other material values.
 var current_color: Color:
 	get:
-		return VoxelFrame.material_color(_current_material)
+		return material.current_color
 	set(value):
-		var material := current_material
-		material[0] = value.r
-		material[1] = value.g
-		material[2] = value.b
-		material[3] = value.a
-		_apply_material(material)
-var _material_edit_document: VoxelDocument
-var _material_edit_before := PackedFloat32Array()
+		material.current_color = value
 ## The cell selection of the active document.
 var selection: VoxelSelection:
 	get:
@@ -392,9 +396,6 @@ var selection: VoxelSelection:
 var undo_redo: UndoRedo:
 	get:
 		return session.document.edit_history
-# The one open edit, or null. It supplies the frozen edit context to drawing and
-# holds the identity a commit or a cancel must match. The owner holds the handle.
-var _active_edit: VoxelEditTransaction
 # The handle of the running erase selection coroutine.
 var _erase_edit: VoxelEditTransaction
 
@@ -423,14 +424,36 @@ func _init() -> void:
 	session.playback.frame_changing.connect(edit_context_changing.emit)
 	selection_state.session = session
 	selection_state.selection_changed.connect(selection_changed.emit)
+	aids.session = session
+	aids.selection_state = selection_state
+	aids.floor_plane_changed.connect(floor_plane_changed.emit)
+	aids.slice_changed.connect(slice_changed.emit)
+	aids.symmetry_changed.connect(symmetry_changed.emit)
+	material.session = session
+	material.settings = settings
+	material.operations = operations
+	material.commit_history = _commit_history
+	material.history_apply = _apply_history_material
+	material.history_restore_palette = _restore_history_palette
+	material.color_changed.connect(color_changed.emit)
+	material.material_changed.connect(material_changed.emit)
+	material.palette_changed.connect(palette_changed.emit)
+	material.default_palette_changed.connect(default_palette_changed.emit)
+	edits.session = session
+	edits.selection_state = selection_state
+	edits.aids = aids
+	edits.commit_history = _commit_history
+	edits.cells_changed = _emit_cells_changed
+	edits.history_restore_chunks = _restore_history_chunks
+	edits.edit_state_changed.connect(edit_state_changed.emit)
 
 func _ready() -> void:
 	operations.tree = get_tree()
 	settings.tree = get_tree()
 	migrate_settings()
 	load_default_palette()
-	document.palette = _copy_palette(default_palette)
-	_apply_material(default_palette[0])
+	document.palette = material.copy_default_palette()
+	material.select_palette_entry(0)
 	edit_context_changing.connect(_interrupt_erase)
 	cells_changed.connect(func(_frame, _affected): stop())
 	chunks_changed.connect(func(_frame, _affected): stop())
@@ -540,29 +563,28 @@ func is_adopting() -> bool:
 # Returns the palette copy for a new document. The session creates documents on
 # its own, so it asks State for the current default.
 func _new_document_palette() -> Array[PackedFloat32Array]:
-	return _copy_palette(default_palette)
+	return material.copy_default_palette()
 
 
 # Returns true while an open edit or a foreground operation blocks a tab switch.
 func _is_tab_switch_blocked() -> bool:
-	return edit_busy() or _active_edit != null
+	return edit_busy() or edits.active_edit() != null
 
 
 # Runs after the deactivation signal and before the active document changes.
 func _before_document_replaced() -> void:
-	_material_edit_document = null
-	_material_edit_before = PackedFloat32Array()
+	material.reset_edit()
 	edit_context_changing.emit()
 	operations.clear()
 	# The owners cancel or finish their own edit on the signal above. An owner that
 	# is not connected leaves its transaction open, so close it here. The captured
 	# frame belongs to the previous document and must not touch the replacement.
-	_abandon_active_edit()
+	edits._abandon_active_edit()
 
 
 # Runs after the active document changes and before the tag and playback setup.
 func _after_document_installed() -> void:
-	_apply_material(_current_material)
+	material.apply_current_material()
 
 
 # Runs after the adopted document signals. The listeners must use the new
@@ -579,8 +601,12 @@ func _emit_document_view_signals() -> void:
 	palette_changed.emit()
 
 
+func _emit_cells_changed(frame_index: int, affected: Array[Vector3i]) -> void:
+	cells_changed.emit(frame_index, affected)
+
+
 func _on_document_created() -> void:
-	select_palette_entry(0)
+	material.select_palette_entry(0)
 
 
 func _remember_app_session() -> void:
@@ -608,12 +634,28 @@ func _commit_history(execute: bool = true) -> void:
 	history_changed.emit()
 
 
+# Applies one material value for a history step. The history binds State, not the
+# model, so the document action cannot hold the model.
+func _apply_history_material(values: PackedFloat32Array) -> void:
+	material.apply_history_material(values)
+
+
+# Restores one palette snapshot for a history step.
+func _restore_history_palette(snapshot: Dictionary) -> void:
+	material.restore_history_palette(snapshot)
+
+
+# Restores one chunk snapshot for a history step.
+func _restore_history_chunks(edited_frame: VoxelFrame, chunk_snapshot: Dictionary, selection_snapshot: Dictionary, selection_snapshot_masks: Dictionary = {}) -> void:
+	edits.restore_history_chunks(edited_frame, chunk_snapshot, selection_snapshot, selection_snapshot_masks)
+
+
 ## Undoes the last history action. Returns [code]true[/code] when an action was
 ## undone. It returns [code]false[/code] while an edit is open: the edit captured
 ## a start snapshot that a history change would invalidate, so the edit must close
 ## first.
 func undo() -> bool:
-	if _active_edit != null:
+	if edits.active_edit() != null:
 		return false
 	var undone := undo_redo.undo()
 	if undone:
@@ -625,7 +667,7 @@ func undo() -> bool:
 ## redone. It returns [code]false[/code] while an edit is open, for the same
 ## reason as [method undo].
 func redo() -> bool:
-	if _active_edit != null:
+	if edits.active_edit() != null:
 		return false
 	var redone := undo_redo.redo()
 	if redone:
@@ -645,7 +687,7 @@ func remove_plugin(plugin: VoxelPlugin) -> void:
 ## Paints one cell with the current edit context. It expands the cell through
 ## symmetry and maps it through the selection and the slice.
 func paint(position: Vector3i, cell_material: PackedFloat32Array) -> void:
-	if symmetry_axes == 0 and not slice_enabled and not document.has_size() and _active_edit == null:
+	if symmetry_axes == 0 and not slice_enabled and not document.has_size() and edits.active_edit() == null:
 		document.paint(current_frame, position, cell_material)
 		return
 	var context := drawing_context()
@@ -657,41 +699,12 @@ func paint(position: Vector3i, cell_material: PackedFloat32Array) -> void:
 ## Returns the edit context for the current drawing. An open edit supplies its
 ## frozen context, so a later change cannot alter the open stroke.
 func drawing_context() -> VoxelFrame.EditContext:
-	# A stroke keeps the context it captured at begin, so a symmetry or selection
-	# change during the stroke cannot alter the cells it writes.
-	if _active_edit != null:
-		return _active_edit.edit_context
-	return _live_context()
-
-
-func _live_context() -> VoxelFrame.EditContext:
-	var context := VoxelFrame.EditContext.new()
-	context.axes = symmetry_axes
-	context.origin_twice = Vector3i(symmetry_origin * 2.0)
-	context.selection = selection.capture()
-	context.selection.make_read_only()
-	if slice_enabled:
-		context.slice_axis = floor_axis
-		context.slice_index = slice_first()
-		context.slice_count = slice_count()
-	if document.has_size():
-		for axis in 3:
-			if document.size[axis] <= 0:
-				continue
-			var cell_range := document.axis_cell_range(axis)
-			context.bounded_axes |= 1 << axis
-			context.bounds_min[axis] = cell_range.x
-			context.bounds_max[axis] = cell_range.y
-	return context
+	return aids.drawing_context(edits.frozen_context())
 
 
 ## Returns the transform that mirrors a point for one symmetry mask.
 func symmetry_transform(mask: int, origin: Vector3) -> Transform3D:
-	var reflection := Vector3.ONE
-	for axis in 3:
-		if mask & (1 << axis):
-			reflection[axis] = -1.0
-	return Transform3D(Basis.from_scale(reflection), origin - origin * reflection)
+	return aids.symmetry_transform(mask, origin)
 
 
 ## Returns an edit context that carries the symmetry and the slice, but not the
@@ -777,121 +790,46 @@ func edit_busy(requester: Node = null) -> bool:
 ## is not negative. Returns null while another edit is active or the frame is
 ## missing. The caller must check the result before it mutates the model.
 func begin_edit(frame_index: int = -1) -> VoxelEditTransaction:
-	if _active_edit != null:
-		return null
-	var frame := get_current_voxel_frame() if frame_index < 0 else get_voxel_frame(frame_index)
-	if frame == null:
-		return null
-	_active_edit = VoxelEditTransaction.begin(document, frame, selection, _live_context())
-	edit_state_changed.emit()
-	return _active_edit
+	return edits.begin_edit(frame_index)
 
 
 ## Returns the open edit, or null when no edit is active.
 func active_edit() -> VoxelEditTransaction:
-	return _active_edit
+	return edits.active_edit()
 
 
-# Close one owned edit and record its change as one history action. A stale handle
-# that no longer owns the active edit does nothing, so a cancelled edit can never
-# finish a newer one or roll back a newer document.
 ## Closes one owned edit and records its change as one history action. A stale
 ## handle that no longer owns the active edit does nothing. The default action
 ## is [code]Stroke[/code].
 func finish_edit(tx: VoxelEditTransaction, action: String = "Stroke") -> void:
-	if tx == null or tx != _active_edit:
-		return
-	# Clear the active handle before any signal, so a history handler can begin a
-	# new edit without this call clearing it again.
-	_active_edit = null
-	var change := tx.finish()
-	if change == null:
-		edit_state_changed.emit()
-		return
-	undo_redo.create_action(action)
-	undo_redo.add_undo_method(_restore_chunks.bind(change.frame, change.undo_chunks, change.undo_selection, change.undo_selection_masks))
-	undo_redo.add_do_method(_restore_chunks.bind(change.frame, change.redo_chunks, change.redo_selection, change.redo_selection_masks))
-	_commit_history(false)
-	edit_state_changed.emit()
+	edits.finish_edit(tx, action)
 
 
 ## Closes one owned edit and returns its change without a history action. The
 ## caller commits one or more changes later with [method commit_changes]. Returns
 ## null when the handle is stale or the edit changed nothing.
 func finish_edit_collect(tx: VoxelEditTransaction) -> VoxelEditTransaction.Change:
-	if tx == null or tx != _active_edit:
-		return null
-	_active_edit = null
-	var change := tx.finish()
-	edit_state_changed.emit()
-	return change
+	return edits.finish_edit_collect(tx)
 
 
 ## Records one history action from changes that the caller already applied.
 ## The do methods run in change order and the undo methods run in reverse order,
 ## so repeated edits to one frame restore the earliest snapshot last.
 func commit_changes(changes: Array, action: String = "Write Cells") -> void:
-	if changes.is_empty():
-		return
-	undo_redo.create_action(action)
-	for value in changes:
-		var change: VoxelEditTransaction.Change = value
-		undo_redo.add_do_method(_restore_chunks.bind(change.frame, change.redo_chunks, change.redo_selection, change.redo_selection_masks))
-	for index in range(changes.size() - 1, -1, -1):
-		var change: VoxelEditTransaction.Change = changes[index]
-		undo_redo.add_undo_method(_restore_chunks.bind(change.frame, change.undo_chunks, change.undo_selection, change.undo_selection_masks))
-	_commit_history(false)
+	edits.commit_changes(changes, action)
 
 
 ## Restores changes that the caller applied but did not commit. It records no
 ## history action.
 func cancel_changes(changes: Array) -> void:
-	if changes.is_empty():
-		return
-	for index in range(changes.size() - 1, -1, -1):
-		var change: VoxelEditTransaction.Change = changes[index]
-		_restore_chunks(change.frame, change.undo_chunks, change.undo_selection, change.undo_selection_masks)
-	edit_state_changed.emit()
+	edits.cancel_changes(changes)
 
 
-# Roll one owned edit back to its start snapshots. A stale handle does nothing.
 ## Rolls one owned edit back to its start snapshots. A stale handle does
 ## nothing.
 func cancel_edit(tx: VoxelEditTransaction) -> void:
-	if tx == null or tx != _active_edit:
-		return
-	# Clear the active handle before the restore signals, so a selection handler
-	# can begin a new edit and this restore cannot roll it back.
-	_active_edit = null
-	var rollback := tx.cancel()
-	if rollback == null:
-		edit_state_changed.emit()
-		return
-	_restore_chunks(rollback.frame, rollback.chunks, rollback.selection, rollback.selection_masks)
-	edit_state_changed.emit()
+	edits.cancel_edit(tx)
 
-
-# Close an edit whose document is replaced. The replacement discards the captured
-# frame, so the transaction releases its references without a restore.
-func _abandon_active_edit() -> void:
-	if _active_edit == null:
-		return
-	_active_edit.abandon()
-	_active_edit = null
-
-
-func _restore_chunks(edited_frame: VoxelFrame, chunk_snapshot: Dictionary, selection_snapshot: Dictionary, selection_snapshot_masks: Dictionary = {}) -> void:
-	var frame_index := document.frames.find(edited_frame)
-	if frame_index == -1:
-		return
-	var cells_restored := edited_frame.chunks != chunk_snapshot
-	edited_frame.restore(chunk_snapshot)
-	document._bounds_dirty = true
-	selection.restore(selection_snapshot, selection_snapshot_masks)
-	if cells_restored:
-		var affected_cells: Array[Vector3i] = []
-		cells_changed.emit(frame_index, affected_cells)
-	selection_state.notify_changed()
 
 ## Returns [code]true[/code] when the current frame holds the cell.
 func has_cell(position: Vector3i) -> bool:
@@ -925,268 +863,105 @@ func _process(delta: float) -> void:
 
 ## Sets the RGB and alpha of the current material and records a history action.
 func set_color(color: Color) -> void:
-	var material := current_material
-	material[0] = color.r
-	material[1] = color.g
-	material[2] = color.b
-	material[3] = color.a
-	set_material(material)
+	material.set_color(color)
 
 
 ## Sets the current material and records a history action. An invalid material
 ## is ignored.
-func set_material(material: PackedFloat32Array) -> void:
-	if not VoxelDocument.valid_material(material):
-		return
-	end_material_edit()
-	if material == _current_material:
-		return
-	undo_redo.create_action("Set Material", UndoRedo.MERGE_ENDS)
-	undo_redo.add_undo_method(_apply_material.bind(current_material))
-	undo_redo.add_do_method(_apply_material.bind(material.duplicate()))
-	_commit_history()
-
-
-func _apply_material(material: PackedFloat32Array) -> void:
-	var next := material.duplicate()
-	# A swatch is selected only while all its values match the current material.
-	var index := document.palette.find(next) if document else -1
-	var changed := next != _current_material or index != current_palette_index
-	_current_material = next
-	current_palette_index = index
-	if changed:
-		color_changed.emit(current_color)
-		material_changed.emit()
+func set_material(value: PackedFloat32Array) -> void:
+	material.set_material(value)
 
 
 ## Selects a palette entry as the current material. An out-of-range index is
 ## ignored.
 func select_palette_entry(index: int) -> void:
-	if index < 0 or index >= document.palette.size():
-		return
-	end_material_edit()
-	_apply_material(document.palette[index])
+	material.select_palette_entry(index)
 
 
 ## Applies a saved workspace material without a history action. An invalid
 ## material is ignored.
-func apply_workspace_material(material: PackedFloat32Array) -> void:
-	if VoxelDocument.valid_material(material):
-		_apply_material(material)
+func apply_workspace_material(value: PackedFloat32Array) -> void:
+	material.apply_workspace_material(value)
 
 
 ## Adds the current material to the palette. An existing equal entry is selected
 ## instead.
 func add_material() -> void:
-	if edit_busy():
-		return
-	end_material_edit()
-	var index := document.palette.find(_current_material)
-	if index >= 0:
-		select_palette_entry(index)
-		return
-	if document.palette.size() >= VoxelDocument.MAX_PALETTE_COLORS:
-		return
-	var before := _palette_snapshot()
-	document.palette.append(_current_material.duplicate())
-	_apply_material(_current_material)
-	_record_palette_action("Add Palette Material", before)
+	material.add_material()
 
 
 ## Returns the color of one palette entry.
 func get_color(index: int) -> Color:
 	return document.get_color(index)
-	
+
+
 ## Returns the color of one cell in the current frame.
 func get_color_at(position: Vector3i) -> Color:
 	return document.get_color_at(current_frame, position)
 
+
 ## Removes the selected palette entry.
 func remove_palette_entry() -> void:
-	if edit_busy() or current_palette_index < 0:
-		return
-	end_material_edit()
-	var before := _palette_snapshot()
-	var index := current_palette_index
-	document.palette.remove_at(index)
-	if document.palette.is_empty():
-		_apply_material(_current_material)
-	else:
-		_apply_material(document.palette[mini(index, document.palette.size() - 1)])
-	_record_palette_action("Remove Palette Material", before)
+	material.remove_palette_entry()
 
 
 ## Returns a copy of the document palette.
 func get_palette() -> Array[PackedFloat32Array]:
-	return _copy_palette(document.palette)
+	return material.get_palette()
 
 
 ## Replaces the document palette and records a history action. An invalid
 ## palette is ignored. The default action name is [code]Replace Palette[/code].
 func set_palette(materials: Array[PackedFloat32Array], action_name: String = "Replace Palette") -> void:
-	if edit_busy() or not VoxelDocument.valid_palette(materials):
-		return
-	end_material_edit()
-	var unique := _copy_palette(materials)
-	if document.palette == unique:
-		return
-	var before := _palette_snapshot()
-	document.palette = unique
-	_apply_material(_current_material)
-	_record_palette_action(action_name, before)
+	material.set_palette(materials, action_name)
 
 
 ## Moves one palette entry to a new index and records a history action.
 func move_palette_entry(from_index: int, to_index: int) -> void:
-	if edit_busy() or from_index == to_index or from_index < 0 or to_index < 0 or from_index >= document.palette.size() or to_index >= document.palette.size():
-		return
-	end_material_edit()
-	var before := _palette_snapshot()
-	var material := document.palette[from_index]
-	document.palette.remove_at(from_index)
-	document.palette.insert(to_index, material)
-	_apply_material(_current_material)
-	_record_palette_action("Move Palette Material", before)
+	material.move_palette_entry(from_index, to_index)
 
 
 ## Applies one material edit. A control gesture records one history step for all
 ## its changes.
-func edit_material(material: PackedFloat32Array) -> void:
-	if edit_busy() or not VoxelDocument.valid_material(material) or material == _current_material:
-		return
-	var before := current_material
-	_apply_material(material)
-	# A control gesture records one undo step for all its changes.
-	if _material_edit_document != document:
-		_record_material_action(before)
+func edit_material(value: PackedFloat32Array) -> void:
+	material.edit_material(value)
 
 
 ## Starts one material edit gesture. The gesture records one history action.
 func begin_material_edit() -> void:
-	if edit_busy() or _material_edit_document != null:
-		return
-	_material_edit_document = document
-	_material_edit_before = current_material
+	material.begin_material_edit()
 
 
 ## Ends the material edit gesture and records its history action.
 func end_material_edit() -> void:
-	var edited_document := _material_edit_document
-	var before := _material_edit_before
-	_material_edit_document = null
-	_material_edit_before = PackedFloat32Array()
-	if edited_document == document and not before.is_empty() and before != _current_material:
-		_record_material_action(before)
+	material.end_material_edit()
 
 
 ## Cancels the material edit gesture and restores the start material.
 func cancel_material_edit() -> void:
-	var edited_document := _material_edit_document
-	var before := _material_edit_before
-	_material_edit_document = null
-	_material_edit_before = PackedFloat32Array()
-	if edited_document == document and not before.is_empty():
-		_apply_material(before)
-
-
-func _record_material_action(before: PackedFloat32Array) -> void:
-	undo_redo.create_action("Edit Material")
-	undo_redo.add_undo_method(_apply_material.bind(before))
-	undo_redo.add_do_method(_apply_material.bind(current_material))
-	_commit_history(false)
-
-
-func _copy_palette(materials: Array) -> Array[PackedFloat32Array]:
-	return VoxelDocument.unique_palette(materials)
-
-
-func _palette_snapshot() -> Dictionary:
-	# The index follows from the palette and the material. Store only what an undo must restore.
-	return {"palette": get_palette(), "material": current_material}
-
-
-func _record_palette_action(action_name: String, before: Dictionary) -> void:
-	var after := _palette_snapshot()
-	if before == after:
-		return
-	undo_redo.create_action(action_name)
-	# The history belongs to the document, so the action always applies to the
-	# active document. Do not bind the document here: the resulting
-	# document -> history -> callable -> document cycle would never free.
-	undo_redo.add_undo_method(_restore_palette.bind(before))
-	undo_redo.add_do_method(_restore_palette.bind(after))
-	_commit_history(false)
-	palette_changed.emit()
-
-
-func _restore_palette(snapshot: Dictionary) -> void:
-	document.palette = _copy_palette(snapshot.palette)
-	_apply_material(snapshot.material)
-	palette_changed.emit()
+	material.cancel_material_edit()
 
 
 ## Returns the built-in default palette.
 func get_builtin_palette() -> Array[PackedFloat32Array]:
-	# Keep grayscale first, then vivid hues, cooler shadows, and warmer highlights.
-	var colors := PackedColorArray([
-		Color.BLACK, Color("808080"), Color.WHITE,
-		Color("ff0000"), Color("ff8000"), Color("ffff00"), Color("80ff00"), Color("00ff00"), Color("00ff80"),
-		Color("00ffff"), Color("0080ff"), Color("0000ff"), Color("8000ff"), Color("ff00ff"), Color("ff0080"),
-		Color("800020"), Color("608000"), Color("008020"), Color("006080"), Color("200080"), Color("600080"),
-		Color("ffb399"), Color("fffbef"), Color("bfffaa"), Color("b3ffec"), Color("b3c6ff"), Color("ffb3ec"),
-	])
-	var materials: Array[PackedFloat32Array] = []
-	for color in colors:
-		materials.append(VoxelFrame.material(color))
-	return materials
+	return material.get_builtin_palette()
 
 
 ## Loads the default palette from a config file. A missing or invalid file keeps
 ## the built-in palette. The default path is [constant DEFAULT_PALETTE_PATH].
 func load_default_palette(path: String = DEFAULT_PALETTE_PATH) -> void:
-	default_palette = get_builtin_palette()
-	var config := ConfigFile.new()
-	if config.load(path) == OK:
-		var materials: Variant = config.get_value("palette", "materials") if config.has_section_key("palette", "materials") else null
-		if materials == null:
-			var colors: Variant = config.get_value("palette", "colors") if config.has_section_key("palette", "colors") else null
-			if colors is PackedColorArray and colors.size() <= VoxelDocument.MAX_PALETTE_COLORS:
-				materials = []
-				for color in colors:
-					materials.append(VoxelFrame.material(color))
-		if VoxelDocument.valid_palette(materials) and not materials.is_empty():
-			default_palette = _copy_palette(materials)
-	default_palette_changed.emit()
+	material.load_default_palette(path)
 
 
 ## Saves the current palette as the default. Returns the error code.
 func save_default_palette(path: String = DEFAULT_PALETTE_PATH) -> Error:
-	if edit_busy():
-		return ERR_BUSY
-	var materials := get_palette()
-	if materials.is_empty() or not VoxelDocument.valid_palette(materials):
-		return ERR_INVALID_DATA
-	var config := ConfigFile.new()
-	config.set_value("palette", "materials", Array(materials))
-	var error := settings._save_config_file(config, path)
-	if error == OK:
-		default_palette = _copy_palette(materials)
-		default_palette_changed.emit()
-	return error
+	return material.save_default_palette(path)
 
 
 ## Deletes the saved default palette and restores the built-in palette. Returns
 ## the error code.
 func reset_default_palette(path: String = DEFAULT_PALETTE_PATH) -> Error:
-	if edit_busy():
-		return ERR_BUSY
-	if FileAccess.file_exists(path):
-		var error := DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
-		if error != OK:
-			return error
-	default_palette = get_builtin_palette()
-	default_palette_changed.emit()
-	return OK
+	return material.reset_default_palette(path)
 
 
 ## Moves every missing key from the legacy files into the target file. The

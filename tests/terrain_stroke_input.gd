@@ -35,7 +35,7 @@ func before_test() -> void:
 	State.symmetry_origin = State.DEFAULT_SYMMETRY_ORIGIN
 	State.floor_axis = Vector3.Axis.AXIS_Y
 	State.floor_index = 0
-	State._apply_material(VoxelFrame.material(Color.CYAN))
+	State.apply_workspace_material(VoxelFrame.material(Color.CYAN))
 	_settings.tool = _settings.Tools.BUILD
 	_settings.build_mode = _settings.BuildMode.ADD
 	_settings.radius = 4
@@ -183,7 +183,7 @@ func _captured_inputs() -> void:
 		_settings.strength = 4.0
 		_settings.falloff = 0.0
 		var live_before := State.current_material
-		State._current_material[0] = 0.75
+		State.material._current_material[0] = 0.75
 		expect(State.current_material != live_before, "the live material array changed in place")
 		State.clear_selection()
 	)

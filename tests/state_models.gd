@@ -6,6 +6,9 @@ const OperationRegistry = preload("res://Globals/State/OperationRegistry.gd")
 const SettingsStore = preload("res://Globals/State/SettingsStore.gd")
 const DocumentSession = preload("res://Globals/State/DocumentSession.gd")
 const SelectionState = preload("res://Globals/State/SelectionState.gd")
+const MaterialState = preload("res://Globals/State/MaterialState.gd")
+const EditSession = preload("res://Globals/State/EditSession.gd")
+const EditingAids = preload("res://Globals/State/EditingAids.gd")
 
 
 # A job that keeps the worker busy for a few frames, so the pump loop runs.
@@ -37,10 +40,22 @@ var frames := 0
 var session: DocumentSession
 var selection_model: SelectionState
 var selection_context_result: VoxelFrame.EditContext
+var material_state: MaterialState
+var edit_session: EditSession
+var aids: EditingAids
+var transaction: VoxelEditTransaction
 var signal_order: Array[String] = []
 var selection_events := 0
 var frame_events := 0
 var tag_events := 0
+var history_events := 0
+var color_events := 0
+var palette_events := 0
+var edit_events := 0
+var cells_events := 0
+var floor_events := 0
+var slice_events := 0
+var symmetry_events := 0
 
 
 func _ready() -> void:
@@ -58,6 +73,9 @@ func _ready() -> void:
 	test("the document session plays frames and tags", _session_playback, "session_playback")
 	test("the selection state clears and reports changes", _selection_clear, "selection_clear")
 	test("the selection state derives the context and region", _selection_context, "selection_context")
+	test("the material state changes and undoes the material and palette", _material_changes, "material_changes")
+	test("the edit session begins, finishes, and cancels an edit", _edit_lifecycle, "edit_lifecycle")
+	test("the editing aids keep the floor, the slice, and the symmetry", _aids_context, "aids_context")
 
 
 func before_test() -> void:
@@ -73,10 +91,22 @@ func before_test() -> void:
 	session = null
 	selection_model = null
 	selection_context_result = null
+	material_state = null
+	edit_session = null
+	aids = null
+	transaction = null
 	signal_order = []
 	selection_events = 0
 	frame_events = 0
 	tag_events = 0
+	history_events = 0
+	color_events = 0
+	palette_events = 0
+	edit_events = 0
+	cells_events = 0
+	floor_events = 0
+	slice_events = 0
+	symmetry_events = 0
 	settings_path = "user://state_models_%s.cfg" % Time.get_ticks_usec()
 	_remove_file(settings_path)
 	registry = OperationRegistry.new()
@@ -112,6 +142,51 @@ func _on_tag_event() -> void:
 
 func _on_selection_event() -> void:
 	selection_events += 1
+
+
+func _material_history(execute := true) -> void:
+	session.document.edit_history.commit_action(execute)
+	history_events += 1
+
+
+func _apply_test_material(values: PackedFloat32Array) -> void:
+	material_state.apply_history_material(values)
+
+
+func _restore_test_palette(snapshot: Dictionary) -> void:
+	material_state.restore_history_palette(snapshot)
+
+
+func _restore_test_chunks(edited_frame: VoxelFrame, chunk_snapshot: Dictionary, selection_snapshot: Dictionary, selection_snapshot_masks := {}) -> void:
+	edit_session.restore_history_chunks(edited_frame, chunk_snapshot, selection_snapshot, selection_snapshot_masks)
+
+
+func _on_color_event(_color: Color) -> void:
+	color_events += 1
+
+
+func _on_palette_event() -> void:
+	palette_events += 1
+
+
+func _on_edit_event() -> void:
+	edit_events += 1
+
+
+func _on_cells_event(_frame_index: int, _affected: Array[Vector3i]) -> void:
+	cells_events += 1
+
+
+func _on_floor_event() -> void:
+	floor_events += 1
+
+
+func _on_slice_event() -> void:
+	slice_events += 1
+
+
+func _on_symmetry_event() -> void:
+	symmetry_events += 1
 
 
 func _on_frame() -> void:
@@ -457,5 +532,167 @@ func _selection_context() -> void:
 		expect(expanded.count() == 2, "the X symmetry mirrors the region")
 		expect(expanded.contains(Vector3i(2, 3, 4)), "the source cell stays")
 		expect(expanded.contains(Vector3i(-3, 3, 4)), "the mirrored cell is added")
+	)
+
+
+func _material_changes() -> void:
+	step("Given a material state on a session", func():
+		session = DocumentSession.new()
+		material_state = MaterialState.new()
+		material_state.session = session
+		material_state.settings = store
+		material_state.operations = registry
+		material_state.commit_history = _material_history
+		material_state.history_apply = _apply_test_material
+		material_state.history_restore_palette = _restore_test_palette
+		session.document.palette = material_state.copy_default_palette()
+		material_state.select_palette_entry(0)
+		material_state.color_changed.connect(_on_color_event)
+		material_state.palette_changed.connect(_on_palette_event)
+	)
+	step("Then the first palette entry is the current material", func():
+		expect(material_state.current_palette_index == 0, "the first entry is selected")
+		expect(material_state.current_material == material_state.get_palette()[0], "the material matches the first entry")
+	)
+	step("When the material changes", func():
+		material_state.set_material(VoxelFrame.material(Color(0.25, 0.5, 0.75)))
+	)
+	step("Then the new material is current and one history action exists", func():
+		expect(VoxelFrame.material_color(material_state.current_material) == Color(0.25, 0.5, 0.75), "the material is the new color")
+		expect(material_state.current_palette_index == -1, "the material matches no swatch")
+		expect(color_events == 1, "the color change is reported")
+		expect(history_events == 1, "the change records one history action")
+	)
+	step("When the change is undone", func():
+		session.document.edit_history.undo()
+	)
+	step("Then the first material returns", func():
+		expect(VoxelFrame.material_color(material_state.current_material) == Color.BLACK, "the first palette material returns")
+		expect(material_state.current_palette_index == 0, "the swatch selection returns")
+	)
+	step("When the palette changes", func():
+		var replacement: Array[PackedFloat32Array] = [VoxelFrame.material(Color.BLUE), VoxelFrame.material(Color.GREEN)]
+		material_state.set_palette(replacement)
+	)
+	step("Then the palette is replaced and one history action exists", func():
+		var expected: Array[PackedFloat32Array] = [VoxelFrame.material(Color.BLUE), VoxelFrame.material(Color.GREEN)]
+		expect(material_state.get_palette() == expected, "the palette is replaced")
+		expect(material_state.current_palette_index == -1, "the old material matches no new swatch")
+		expect(palette_events == 1, "the palette change is reported")
+		expect(history_events == 2, "the palette change records one history action")
+	)
+	step("When the palette change is undone", func():
+		session.document.edit_history.undo()
+	)
+	step("Then the built-in palette returns", func():
+		expect(material_state.get_palette() == material_state.get_builtin_palette(), "the palette is restored")
+		expect(material_state.current_palette_index == 0, "the black swatch is selected again")
+	)
+
+
+func _edit_lifecycle() -> void:
+	step("Given an edit session on a document", func():
+		session = DocumentSession.new()
+		selection_model = SelectionState.new()
+		selection_model.session = session
+		aids = EditingAids.new()
+		aids.session = session
+		aids.selection_state = selection_model
+		edit_session = EditSession.new()
+		edit_session.session = session
+		edit_session.selection_state = selection_model
+		edit_session.aids = aids
+		edit_session.commit_history = _material_history
+		edit_session.cells_changed = _on_cells_event
+		edit_session.history_restore_chunks = _restore_test_chunks
+		edit_session.edit_state_changed.connect(_on_edit_event)
+		transaction = edit_session.begin_edit()
+	)
+	step("Then the edit is open", func():
+		expect(transaction != null, "the edit opens")
+		expect(edit_session.active_edit() == transaction, "the session holds the handle")
+		expect(edit_session.begin_edit() == null, "a second edit is refused")
+		expect(edit_events == 1, "the open is reported")
+	)
+	step("When the frame changes and the edit finishes", func():
+		session.document.frames[0].set_cell(Vector3i.ZERO, VoxelFrame.material(Color.RED))
+		edit_session.finish_edit(transaction)
+	)
+	step("Then the change is one history action", func():
+		expect(edit_session.active_edit() == null, "the edit closes")
+		expect(history_events == 1, "the change records one history action")
+		expect(session.document.edit_history.has_undo(), "the history holds the action")
+		expect(edit_events == 2, "the close is reported")
+	)
+	step("When the action is undone", func():
+		session.document.edit_history.undo()
+	)
+	step("Then the frame is empty again", func():
+		expect(not session.document.frames[0].has(Vector3i.ZERO), "the undo removes the cell")
+		expect(cells_events == 1, "the restore reports the cell change")
+	)
+	step("When a new edit changes the frame and cancels", func():
+		transaction = edit_session.begin_edit()
+		session.document.frames[0].set_cell(Vector3i.ONE, VoxelFrame.material(Color.BLUE))
+		edit_session.cancel_edit(transaction)
+	)
+	step("Then the frame is restored without history", func():
+		expect(not session.document.frames[0].has(Vector3i.ONE), "the cancel restores the frame")
+		expect(edit_session.active_edit() == null, "the cancel closes the edit")
+		expect(history_events == 1, "the cancel records no history")
+		expect(cells_events == 2, "the cancel reports the cell change")
+		expect(edit_events == 4, "the open and the cancel are reported")
+	)
+
+
+func _aids_context() -> void:
+	step("Given an aids model on a session", func():
+		session = DocumentSession.new()
+		selection_model = SelectionState.new()
+		selection_model.session = session
+		aids = EditingAids.new()
+		aids.session = session
+		aids.selection_state = selection_model
+		aids.floor_plane_changed.connect(_on_floor_event)
+		aids.slice_changed.connect(_on_slice_event)
+		aids.symmetry_changed.connect(_on_symmetry_event)
+	)
+	step("When the floor, the slice, and the symmetry change", func():
+		aids.floor_axis = Vector3.Axis.AXIS_X
+		aids.floor_index = 2
+		aids.slice_layers = 3
+		aids.symmetry_axes = 5
+		aids.symmetry_origin = Vector3(0.3, 0.3, 0.3)
+	)
+	step("Then each aid reports its change", func():
+		expect(aids.floor_axis == Vector3.Axis.AXIS_X, "the floor axis moves")
+		expect(aids.floor_index == 2, "the floor index moves")
+		expect(aids.slice_enabled, "the slice is enabled")
+		expect(aids.slice_layers == 3, "the layer count is kept")
+		expect(floor_events == 2, "the two floor changes are reported")
+		expect(slice_events == 1, "the slice change is reported")
+		expect(symmetry_events == 2, "the two symmetry changes are reported")
+		expect(aids.symmetry_origin == Vector3(0.5, 0.5, 0.5), "the origin snaps to half units")
+	)
+	step("Then the live context carries the aids and the document", func():
+		session.document.size = Vector3i(4, 4, 4)
+		session.document.edit_selection.add(Vector3i(1, 1, 1))
+		var context := aids.drawing_context(null)
+		expect(context.axes == 5, "the context carries the symmetry")
+		expect(context.origin_twice == Vector3i(1, 1, 1), "the origin is doubled")
+		expect(context.slice_axis == Vector3.Axis.AXIS_X, "the slice axis is the floor axis")
+		expect(context.slice_index == aids.slice_first(), "the slice starts at the first layer")
+		expect(context.slice_count == aids.slice_count(), "the slice spans both sides")
+		expect(context.bounded_axes == 7, "every sized axis is bounded")
+		expect(context.bounds_min == Vector3i(-2, -2, -2), "the lower bound is kept")
+		expect(context.bounds_max == Vector3i(2, 2, 2), "the upper bound is kept")
+		expect(context.selection.has(Vector3i(1, 1, 1)), "the selection is captured")
+	)
+	step("Then a frozen context and a mirror use the aids", func():
+		var frozen := VoxelFrame.EditContext.new()
+		frozen.slice_axis = 2
+		expect(aids.drawing_context(frozen) == frozen, "the frozen context is returned unchanged")
+		var mirror := aids.symmetry_transform(1, Vector3(-0.5, -0.5, -0.5))
+		expect((mirror * Vector3(1, 0, 0)).is_equal_approx(Vector3(-2, 0, 0)), "the X symmetry mirrors the point")
 	)
 

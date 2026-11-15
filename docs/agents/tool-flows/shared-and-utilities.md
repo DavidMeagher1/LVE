@@ -396,7 +396,7 @@ A side or diagonal cell on a chunk border comes from the neighbor chunk mask.
 The source is [`VoxelSelection.gd`](../../../Globals/State/VoxelSelection.gd) and [`VoxelPreview.gd`](../../../Globals/Rendering/VoxelPreview.gd).
 
 An edit transaction captures the selection masks with the selection.
-`VoxelEditTransaction` stores them in the undo change, and `State._restore_chunks` passes them to `restore`.
+`VoxelEditTransaction` stores them in the undo change, and the edit session passes them to `restore`.
 An undo or redo then installs the recorded grids, so it does not rebuild them.
 A completed streamed selection holds the result masks already, so the wand finish does not restore them again.
 The finish publishes through the progressive outline path.
@@ -529,7 +529,7 @@ The source is [`VoxelPicking.gd:28`](../../../Globals/State/Tools/VoxelPicking.g
 #### Write scope
 
 `EditContext` holds the symmetry, the selection, the floor slice, and the centered document size.
-`State._live_context` fills it, and `State.begin_edit` freezes it.
+`EditingAids._live_context` fills it, and `EditSession.begin_edit` freezes it.
 [`VoxelFrame.set_cells`](../../../Globals/State/Document/VoxelFrame.gd) is the one write gate.
 It applies `EditContext.filter` when the job carries a context.
 A document load, an import, and a history restore pass no job, so they are never limited.
