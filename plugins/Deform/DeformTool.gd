@@ -406,6 +406,9 @@ func _finish_job(job: DeformJob) -> void:
 		_settle_release()
 		return
 	if not _job_is_current(job):
+		# The job was cancelled while the tool was detached. Its subscriptions
+		# must still be released, or a later document change calls the tool.
+		_release_subscriptions()
 		return
 	# The drag recomputes from the baseline, so a chunk that moved in an earlier
 	# update and not in this one must revert. Publish the union of both updates.

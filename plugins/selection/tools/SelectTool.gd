@@ -125,20 +125,31 @@ func _screen_button(event: InputEventMouseButton, pos: Vector2) -> bool:
 		_stroke_active = true
 		_begin_shape(pos)
 		return true
-	if _stroke_active:
-		_stroke_active = false
-		$ScreenBand.hide_band()
-		_end()
-		_commit_release(pos)
+	_release_screen(pos)
 	return true
 
 
 func _screen_motion(event: InputEventMouseMotion, pos: Vector2) -> bool:
+	if _stroke_active and event.button_mask == 0:
+		# A release outside the window sends no button event. Commit the shape
+		# the same way a release does.
+		_release_screen(pos)
+		return true
 	if _stroke_active and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 		_last_pos = pos
 		_update_shape(pos)
 		return true
 	return false
+
+
+# Ends one screen drag and commits its current shape.
+func _release_screen(pos: Vector2) -> void:
+	if not _stroke_active:
+		return
+	_stroke_active = false
+	$ScreenBand.hide_band()
+	_end()
+	_commit_release(pos)
 
 
 # End a drag that a tool switch interrupted. The current outline applies as a
@@ -151,10 +162,7 @@ func finish_on_switch() -> void:
 		return
 	if _screen_job != null or not _stroke_active:
 		return
-	_stroke_active = false
-	$ScreenBand.hide_band()
-	_end()
-	_commit_release(_last_pos)
+	_release_screen(_last_pos)
 
 
 # A click selects the picked cell. A drag commits its screen shape.

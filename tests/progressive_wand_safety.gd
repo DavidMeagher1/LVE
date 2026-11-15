@@ -18,7 +18,7 @@ extends "res://tests/test.gd"
 const PREVIEW_SCRIPT := preload("res://Globals/Rendering/VoxelPreview.gd")
 const OUTLINE_REFERENCE := preload("res://tests/outline_reference.gd")
 const WAND_SCENE := preload("res://plugins/selection/tools/WandSelectTool.tscn")
-const JOB_STATUS_SCENE := preload("res://ui/JobStatus/job_status.tscn")
+const JOB_STATUS_SCENE := preload("res://ui/JobStatus/JobStatus.tscn")
 var _wand_settings := preload("res://plugins/selection/settings.tres")
 
 const WAND_SIDE := 40

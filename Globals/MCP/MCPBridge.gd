@@ -19,6 +19,8 @@ const LOG_PATH := "user://mcp_bridge.log"
 var _peer := StreamPeerTCP.new()
 var _buffer := PackedByteArray()
 var _stdin_buffer := PackedByteArray()
+# True when the last line read ended on the response deadline, not on a close.
+var _read_timed_out := false
 
 
 ## Connects to the running editor and proxies stdio until stdin closes.
@@ -40,6 +42,7 @@ func run(port: int) -> int:
 		return 1
 	_log("connected")
 	_peer.set_no_delay(true)
+	var exit_code := 0
 	while true:
 		var line := _read_stdin_line()
 		if line.is_empty():
@@ -56,17 +59,26 @@ func run(port: int) -> int:
 		var send_error := _peer.put_data((line + "\n").to_utf8_buffer())
 		if send_error != OK:
 			printerr("LVE MCP bridge: the editor connection closed.")
+			exit_code = 1
 			break
 		if not expects_response:
 			continue
 		var response := _read_line(RESPONSE_TIMEOUT_MS)
 		if response.is_empty():
-			printerr("LVE MCP bridge: no response from the editor.")
+			if _read_timed_out:
+				# The host must receive a JSON-RPC error. A bare EOF leaves it
+				# unable to tell a timeout from a clean shutdown.
+				var request_id: Variant = (request as Dictionary).get("id", null)
+				printraw(JSON.stringify({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": "The editor did not answer in time."}}) + "\n")
+				printerr("LVE MCP bridge: the editor did not answer in time.")
+			else:
+				printerr("LVE MCP bridge: the editor connection closed.")
+			exit_code = 1
 			break
 		printraw(response + "\n")
 	_peer.disconnect_from_host()
-	_log("exit")
-	return 0
+	_log("exit %d" % exit_code)
+	return exit_code
 
 
 ## Appends one diagnostic line to the bridge log.
@@ -117,6 +129,7 @@ func _read_stdin_line() -> String:
 
 
 func _read_line(timeout_ms: int) -> String:
+	_read_timed_out = false
 	var deadline := Time.get_ticks_msec() + timeout_ms
 	while Time.get_ticks_msec() < deadline:
 		var index := _buffer.find(10)
@@ -133,4 +146,5 @@ func _read_line(timeout_ms: int) -> String:
 		if _peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 			return ""
 		OS.delay_msec(1)
+	_read_timed_out = true
 	return ""

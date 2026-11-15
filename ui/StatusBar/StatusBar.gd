@@ -10,13 +10,13 @@ extends HBoxContainer
 
 # The widget script is preloaded as a type alias. A new class_name is not in the
 # global class cache until the editor regenerates it.
-const JobStatusWidget = preload("res://ui/JobStatus/job_status.gd")
+const JobStatusWidget = preload("res://ui/JobStatus/JobStatus.gd")
 # The update checker uses the same preload pattern.
 const UpdateCheckerScript = preload("res://ui/StatusBar/UpdateChecker.gd")
 ## The fallback releases page, used before a release check completes.
 const RELEASES_URL := "https://github.com/LeonardMeagher2/LVE/releases"
 ## The dim status text color.
-const TEXT_COLOR := Color(1, 1, 1, 0.3372549)
+const TEXT_COLOR := Color(1, 1, 1, 0.55)
 ## The brighter color of a version link that is behind the latest release.
 const UPDATE_COLOR := Color(1, 1, 1, 0.7)
 
@@ -40,9 +40,6 @@ func _ready() -> void:
 	State.document_changed.connect(_refresh_status)
 	State.cells_changed.connect(_refresh_status.unbind(2))
 	State.chunks_changed.connect(_refresh_status.unbind(2))
-	if owner and owner.has_node("%Viewport"):
-		_editor_camera = owner.get_node("%Viewport").get_node("%CameraRig")
-		_editor_camera.zoom_changed.connect(_refresh_status.unbind(1))
 	_current_version = str(ProjectSettings.get_setting("application/config/version", ""))
 	_version.text = "v%s" % _current_version
 	_version.uri = RELEASES_URL
@@ -56,6 +53,23 @@ func _ready() -> void:
 	else:
 		_main.connect("mcp_changed", _on_mcp_changed)
 		_sync_mcp()
+	_refresh_status()
+
+
+## Sets the camera that supplies the zoom readout. Main hands it in, so this
+## control does not walk up to the main scene.
+func set_camera(camera: EditorCameraRig) -> void:
+	if _editor_camera == camera:
+		return
+	if _editor_camera != null and _editor_camera.zoom_changed.is_connected(_on_zoom_changed):
+		_editor_camera.zoom_changed.disconnect(_on_zoom_changed)
+	_editor_camera = camera
+	if _editor_camera != null and not _editor_camera.zoom_changed.is_connected(_on_zoom_changed):
+		_editor_camera.zoom_changed.connect(_on_zoom_changed)
+	_refresh_status()
+
+
+func _on_zoom_changed(_percent: float) -> void:
 	_refresh_status()
 
 
@@ -82,7 +96,9 @@ func _sync_mcp() -> void:
 	var enabled := bool(_main.call("is_mcp_enabled"))
 	var color := Color(1, 1, 1, 0.9) if enabled else TEXT_COLOR
 	_mcp.add_theme_color_override("icon_normal_color", color)
+	_mcp.add_theme_color_override("icon_hover_color", color)
 	_mcp.add_theme_color_override("icon_pressed_color", color)
+	_mcp.add_theme_color_override("icon_focus_color", color)
 	var url := str(_main.call("mcp_url"))
 	var place := " in line mode" if url.is_empty() else " at %s" % url
 	if enabled:

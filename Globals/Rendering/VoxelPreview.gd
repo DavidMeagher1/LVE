@@ -1047,10 +1047,12 @@ static func _surface_material() -> StandardMaterial3D:
 
 
 static func _atlas_material(job: VoxelMeshBuilder) -> StandardMaterial3D:
-	var material := _surface_material()
+	var material: StandardMaterial3D
 	if job.atlas:
-		material = job.atlas.create_material(material)
+		# create_material duplicates the template itself. Do not duplicate twice.
+		material = job.atlas.create_material(preload("res://VoxelMaterial.tres"))
 	else:
+		material = _surface_material()
 		material.vertex_color_use_as_albedo = false
 		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		material.albedo_texture = _atlas_texture(job.atlas_size, job.atlas_albedo)
@@ -1065,6 +1067,8 @@ static func _atlas_material(job: VoxelMeshBuilder) -> StandardMaterial3D:
 		material.emission_enabled = true
 		material.emission = Color.BLACK
 		material.emission_texture = _atlas_texture(job.atlas_size, job.atlas_emission)
+	# Cached surfaces can also appear in reflected brush cursors.
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if job.ao_strength > 0.0:
 		material.vertex_color_use_as_albedo = true
 		material.vertex_color_is_srgb = false

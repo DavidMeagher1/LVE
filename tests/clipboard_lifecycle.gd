@@ -25,6 +25,15 @@ var _operation_id := 0
 var _pattern := {}
 var _selection := {}
 var _materials := {}
+var _input_tool: VoxelTool
+var _busy_operation := 0
+
+
+# A tool that consumes every event it is asked to handle. The test proves that
+# the busy guard returns before this method when another owner runs.
+class InputTool extends VoxelTool:
+	func handle_input(_event: InputEvent, _pos: Vector2) -> bool:
+		return true
 
 
 func _ready() -> void:
@@ -36,6 +45,7 @@ func _ready() -> void:
 	test("the paste placement and its preview share one operation and commit once", _paste_status, "paste_single_status")
 	test("a cancelled paste releases its placement operation", _paste_cancel, "paste_cancel_status")
 	test("a malformed voxel payload clears the Paste availability", _malformed_payload, "paste_malformed")
+	test("a busy tool leaves input for the operation owner", _busy_input, "busy_input")
 
 
 func before_test() -> void:
@@ -57,8 +67,34 @@ func before_test() -> void:
 
 
 func after_test() -> void:
+	if _busy_operation != 0:
+		State.finish_operation(_busy_operation)
+		_busy_operation = 0
+	if is_instance_valid(_input_tool):
+		_input_tool.queue_free()
+	_input_tool = null
 	if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
 		DisplayServer.clipboard_set(original_clipboard)
+
+
+func _busy_input() -> void:
+	step("Given a foreground operation owned by another node", func():
+		_input_tool = InputTool.new()
+		add_child(_input_tool)
+		_busy_operation = State.begin_operation("Test busy input", -1, true, self)
+	)
+	step("When a non-owner tool receives a press", func():
+		var event := InputEventMouseButton.new()
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = true
+		expect(not get_viewport().is_input_handled(), "the viewport starts unhandled")
+		_input_tool._unhandled_input(event)
+	)
+	step("Then the tool leaves the event for the owner", func():
+		expect(not get_viewport().is_input_handled(), "the event is not consumed")
+		State.finish_operation(_busy_operation)
+		_busy_operation = 0
+	)
 
 
 func _copy_context() -> void:

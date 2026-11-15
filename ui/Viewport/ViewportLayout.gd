@@ -13,6 +13,17 @@ func _ready() -> void:
 	_sync_spacing()
 
 
+## Returns the editor camera. The status bar uses it for the zoom readout.
+func camera() -> EditorCameraRig:
+	return %CameraRig
+
+
+## Enables or disables the 3D render target when the editor tab is not shown.
+func set_rendering_active(active: bool) -> void:
+	var viewport: SubViewport = %Viewport
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
+
+
 func _sync_spacing() -> void:
 	var bar_height := _bar.get_combined_minimum_size().y
 	_panel.offset_bottom = -bar_height - get_theme_constant("separation", "VBoxContainer")

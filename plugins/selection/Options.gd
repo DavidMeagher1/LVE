@@ -7,11 +7,33 @@ extends HBoxContainer
 
 var _settings := preload("./settings.tres")
 
-func _ready() -> void:
-	_settings.changed.connect(_sync)
+func _enter_tree() -> void:
+	if not _settings.changed.is_connected(_sync):
+		_settings.changed.connect(_sync)
+	if not State.activity_changed.is_connected(_sync):
+		State.activity_changed.connect(_sync)
+	if not State.edit_state_changed.is_connected(_sync):
+		State.edit_state_changed.connect(_sync)
+	# A stored mode can change while the options are hidden. Show it again on
+	# the next entry; `_ready` runs only once.
 	_sync()
-	
+
+
+func _exit_tree() -> void:
+	if _settings.changed.is_connected(_sync):
+		_settings.changed.disconnect(_sync)
+	if State.activity_changed.is_connected(_sync):
+		State.activity_changed.disconnect(_sync)
+	if State.edit_state_changed.is_connected(_sync):
+		State.edit_state_changed.disconnect(_sync)
+
+
+func _ready() -> void:
+	_sync()
+
+
 func _sync() -> void:
+	$clear.disabled = State.edit_busy()
 	var mode_buttons := [$replace, $add, $subtract]
 	mode_buttons[_settings.mode].button_pressed = true
 	$Connected.set_pressed_no_signal(_settings.connected)
@@ -40,6 +62,10 @@ func _on_connected_toggled(toggled_on: bool) -> void:
 
 
 func _on_clear_pressed() -> void:
+	# A running selection job restores its result after this call. Refuse the
+	# clear instead of letting the job overwrite it.
+	if State.edit_busy():
+		return
 	State.clear_selection()
 
 

@@ -527,7 +527,8 @@ func _stop_pending_transform() -> void:
 func _restore_view_state() -> void:
 	var container := editor_viewport().get_parent()
 	if _originals_captured:
-		container.stretch = _original_stretch
+		# Restore the size while stretch is off, then restore stretch.
 		editor_viewport().size = _original_size
+		container.stretch = _original_stretch
 	camera_rig().set_view("default")
 	camera_rig().is_orthogonal = false

@@ -42,7 +42,9 @@ var is_playing: bool:
 		document.edit_playing = value
 		if value:
 			_restart()
-		is_playing_toggled.emit(value)
+		# A handler on the frame change can stop playback. Emit the state that
+		# exists now, not the requested one.
+		is_playing_toggled.emit(document.edit_playing)
 
 ## The active tag index, or -1 when no tag is active. It is stored on the
 ## document, so a tab switch restores it.

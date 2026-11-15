@@ -374,6 +374,12 @@ func _on_mouse_button(event: InputEventMouseButton, pos: Vector2) -> bool:
 
 
 func _on_mouse_motion(event: InputEventMouseMotion, pos: Vector2) -> bool:
+	if event.button_mask == 0 and (_dragging or _grab_waiting):
+		# A release outside the window sends no button event. End the gesture
+		# the same way a release does.
+		_mouse_down = false
+		_release()
+		return true
 	if _grab_waiting and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 		if (pos - _press_pos).length() < CLICK_SLOP_PX:
 			return true

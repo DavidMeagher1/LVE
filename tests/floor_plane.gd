@@ -255,6 +255,9 @@ func _mouse_motion(pos: Vector2) -> void:
 func _key(code: Key) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = code
+	# The axis actions use physical keys, so the event must carry the position
+	# as a real keyboard event does.
+	ev.physical_keycode = code
 	ev.pressed = true
 	viewport.push_input(ev)
 

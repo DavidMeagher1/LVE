@@ -193,6 +193,7 @@ func _legacy_bytes(fields: Dictionary, version := 2) -> PackedByteArray:
 	bytes.resize(16)
 	bytes.encode_u32(4, version)
 	bytes.encode_u32(8, payload.size())
-	bytes.encode_u32(12, VoxelDocument._crc32(payload))
+	var checksum := VoxelDocument._checksum(payload) if version >= 4 else VoxelDocument._crc32(payload)
+	bytes.encode_u32(12, checksum)
 	bytes.append_array(payload)
 	return bytes

@@ -3,7 +3,7 @@ extends "res://tests/test.gd"
 ## Checks the per-document tab state, the tab strip, and the runtime fields that
 ## must stay out of the file format.
 
-const TABS_SCENE := preload("res://ui/MenuBar/document_tabs.tscn")
+const TABS_SCENE := preload("res://ui/MenuBar/DocumentTabs.tscn")
 const SAMPLE_DOCUMENT := "res://splash.lve"
 const SESSION_PATH := "user://document_tabs_test.cfg"
 const CORRUPT_PATH := "user://document_tabs_corrupt.cfg"
@@ -12,6 +12,7 @@ var tabs: TabBar
 var _first: VoxelDocument
 var _second: VoxelDocument
 var _quit_seen := false
+var _busy_operation := 0
 var _recovery_entries_seen: Array = []
 
 
@@ -23,6 +24,8 @@ func _ready() -> void:
 	test("a corrupt settings file is not overwritten by a session save", _corrupt_session, "corrupt_session")
 	test("the runtime editor state is not serialized", _serialize, "tab_serialize")
 	test("quitting asks to save each edited document", _quit, "quit_confirmation")
+	test("a close request waits for a foreground operation", _quit_busy, "quit_busy")
+	test("a settings write leaves no temporary file", _settings_atomic, "settings_atomic")
 	test("a cancelled quit clears a pending close target", _close_target, "quit_close_target")
 	test("the recovery prompt lists unsaved documents", _recovery_dialog, "recovery_dialog")
 
@@ -55,6 +58,7 @@ func after_test() -> void:
 	var directory := DirAccess.open("user://")
 	if directory:
 		directory.remove(SESSION_PATH.get_file())
+		directory.remove(SESSION_PATH.get_file() + ".tmp")
 		directory.remove(CORRUPT_PATH.get_file())
 		directory.remove("quit_save_test.lve")
 
@@ -229,7 +233,8 @@ func _serialize() -> void:
 
 func _quit() -> void:
 	var menu := main.get_node("%MenuBar")
-	menu.quit_confirmed.connect(_on_test_quit)
+	if not menu.quit_confirmed.is_connected(_on_test_quit):
+		menu.quit_confirmed.connect(_on_test_quit)
 	step("Then the tree waits for the quit flow", func():
 		expect(not get_tree().auto_accept_quit, "the tree does not accept the close request")
 	)
@@ -290,6 +295,50 @@ func _quit() -> void:
 		menu.get_node("%CloseTabDialog").custom_action.emit(&"discard")
 		expect(_quit_seen, "the quit signal fires after the last document")
 	)
+
+
+func _settings_atomic() -> void:
+	step("Given an existing settings file", func():
+		var config := ConfigFile.new()
+		config.set_value("interface", "scale", 1.5)
+		expect(config.save(SESSION_PATH) == OK, "the fixture saves")
+	)
+	step("When the last document is remembered", func():
+		State.remember_document("user://atomic.lve", SESSION_PATH)
+	)
+	step("Then the setting is stored and no temporary file remains", func():
+		var config := ConfigFile.new()
+		expect(config.load(SESSION_PATH) == OK, "the settings file loads")
+		expect(str(config.get_value("files", "last_document", "")) == "user://atomic.lve", "the path is stored")
+		expect(not FileAccess.file_exists(SESSION_PATH + ".tmp"), "no temporary file remains")
+	)
+
+
+func _quit_busy() -> void:
+	var menu := main.get_node("%MenuBar")
+	if not menu.quit_confirmed.is_connected(_on_test_quit):
+		menu.quit_confirmed.connect(_on_test_quit)
+	var owner := Node.new()
+	add_child(owner)
+	step("Given a foreground operation and no edited document", func():
+		State.document.edit_dirty = false
+		_quit_seen = false
+		_busy_operation = State.begin_operation("Test close wait", -1, true, owner)
+	)
+	step("When the window asks to close", func():
+		main.get_window().close_requested.emit()
+	)
+	step("Then the request waits for the operation", func():
+		expect(not _quit_seen, "the quit does not fire while the operation runs")
+		expect(menu._quit_requested, "the close request is kept")
+	)
+	step("When the operation ends", func():
+		State.finish_operation(_busy_operation)
+	)
+	step("Then the quit fires", func():
+		expect(_quit_seen, "the kept close request resumes")
+	)
+	owner.queue_free()
 
 
 func _on_test_quit() -> void:

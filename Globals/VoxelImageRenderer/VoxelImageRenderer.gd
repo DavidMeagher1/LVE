@@ -89,13 +89,13 @@ func _process_queue() -> void:
 			continue
 		var render_revision := _queue_revision
 		var requested_frame := State.get_voxel_frame(frame_index)
-		var thumbnail_texture := await _render_frame(frame_index)
-		if render_revision == _queue_revision and State.get_voxel_frame(frame_index) == requested_frame:
+		var thumbnail_texture := await _render_frame(frame_index, render_revision)
+		if thumbnail_texture != null and render_revision == _queue_revision and State.get_voxel_frame(frame_index) == requested_frame:
 			frame_rendered.emit(frame_index, thumbnail_texture)
 	_processing_queue = false
 
 
-func _render_frame(frame_index: int) -> ImageTexture:
+func _render_frame(frame_index: int, render_revision: int) -> ImageTexture:
 	if DisplayServer.get_name() == "headless":
 		return ImageTexture.create_from_image(Image.create(1, 1, false, Image.FORMAT_RGBA8))
 	if _thumbnail_renderer.frame == frame_index:
@@ -103,9 +103,17 @@ func _render_frame(frame_index: int) -> ImageTexture:
 	else:
 		_thumbnail_renderer.frame = frame_index
 	while not _thumbnail_renderer.is_settled():
+		# A tab switch or a new document makes this result useless. Stop before
+		# the camera update and the readback, so the next request starts sooner.
+		if render_revision != _queue_revision:
+			return null
 		await get_tree().process_frame
+	if render_revision != _queue_revision:
+		return null
 	_frame_camera(State.document.bounds())
 	for draw in 2:
+		if render_revision != _queue_revision:
+			return null
 		_thumbnail_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 		await RenderingServer.frame_post_draw
 	var thumbnail_image: Image = _thumbnail_viewport.get_texture().get_image()

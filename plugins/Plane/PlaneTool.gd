@@ -71,16 +71,17 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 			return false
 		if k.ctrl_pressed or k.alt_pressed or k.meta_pressed or k.shift_pressed:
 			return false
-		match k.keycode:
-			KEY_X:
-				State.floor_axis = Vector3.Axis.AXIS_X
-				return true
-			KEY_Y:
-				State.floor_axis = Vector3.Axis.AXIS_Y
-				return true
-			KEY_Z:
-				State.floor_axis = Vector3.Axis.AXIS_Z
-				return true
+		# Use the Input Map, so the axis keys follow the physical layout and can
+		# be rebound like every other shortcut.
+		if event.is_action_pressed("axis_x"):
+			State.floor_axis = Vector3.Axis.AXIS_X
+			return true
+		if event.is_action_pressed("axis_y"):
+			State.floor_axis = Vector3.Axis.AXIS_Y
+			return true
+		if event.is_action_pressed("axis_z"):
+			State.floor_axis = Vector3.Axis.AXIS_Z
+			return true
 		return false
 	return false
 

@@ -36,6 +36,8 @@ func _ready() -> void:
 	test("the compact state stays small", _budget, "budget")
 	test("inspect_document summarizes frames and islands", _inspect, "inspect_document")
 	test("inspect_document groups islands with box and material filters", _islands, "island_filters")
+	test("inspect_document shares one scan budget across frames", _scan_budget, "scan_budget")
+	test("an idle peer is removed after the deadline", _peer_idle, "peer_idle")
 	test("get_slice reads labeled planes", _slice, "get_slice")
 	test("get_map reads coarse blocks", _map, "get_map")
 	test("get_map falls back to chunk blocks", _chunk_map_fallback, "chunk_map")
@@ -86,6 +88,33 @@ func after_test() -> void:
 	if State.active_edit() != null:
 		State.cancel_edit(State.active_edit())
 	await get_tree().process_frame
+
+
+func _peer_idle() -> void:
+	var idle_peer := StreamPeerTCP.new()
+	step("Given a peer that connects and sends nothing", func():
+		var error := idle_peer.connect_to_host("127.0.0.1", int(server.call("local_port")))
+		expect(error == OK, "the peer connects")
+	)
+	var deadline := Time.get_ticks_msec() + 2000
+	while idle_peer.get_status() == StreamPeerTCP.STATUS_CONNECTING and Time.get_ticks_msec() < deadline:
+		idle_peer.poll()
+		await get_tree().process_frame
+	await get_tree().process_frame
+	step("Then the server accepts the peer", func():
+		expect(idle_peer.get_status() == StreamPeerTCP.STATUS_CONNECTED, "the peer is connected")
+		expect(server._peers.size() == 1, "the server accepts the peer")
+	)
+	step("When a partial request passes the deadline", func():
+		if not server._peers.is_empty():
+			server._peers[0].buffer = PackedByteArray([123, 34])
+			server._peers[0].last_read_ms = Time.get_ticks_msec() - server.PEER_IDLE_MS - 1
+		server._process(0.0)
+	)
+	step("Then the peer is removed", func():
+		expect(server._peers.is_empty(), "the idle peer is removed")
+		idle_peer.disconnect_from_host()
+	)
 
 
 func _call(tool_name: String, args: Dictionary) -> Dictionary:
@@ -538,6 +567,30 @@ func _budget() -> void:
 		expect(not data.has("activity"), "the state omits the activity")
 		expect(data.has("document"), "the state carries the document")
 		expect(data.has("active_tool"), "the state carries the active tool")
+	)
+
+
+func _scan_budget() -> void:
+	step("Given two frames with two cells each", func():
+		var frame := State.get_current_voxel_frame()
+		frame.set_cell(Vector3i(0, 0, 0), VoxelFrame.material(Color.RED))
+		frame.set_cell(Vector3i(1, 0, 0), VoxelFrame.material(Color.RED))
+		State.add_frame()
+		var second := State.get_current_voxel_frame()
+		second.set_cell(Vector3i(0, 0, 0), VoxelFrame.material(Color.BLUE))
+		second.set_cell(Vector3i(1, 0, 0), VoxelFrame.material(Color.BLUE))
+		State.document._bounds_dirty = true
+	)
+	step("When the scan budget fits one frame", func():
+		var result: Dictionary = server._inspect_document({"frames": [0, 1], "islands": true, "materials": true}, 2)
+		var data: Dictionary = result.get("structuredContent", {})
+		var frames: Array = data.get("frames", [])
+		expect(frames.size() == 2, "both frames are summarized")
+		if frames.size() == 2:
+			expect(not frames[0].has("scan_truncated"), "the first frame fits the budget")
+			expect(frames[0].has("materials"), "the first frame carries materials")
+			expect(bool(frames[1].get("scan_truncated", false)), "the second frame is truncated")
+			expect(not frames[1].has("materials"), "the truncated frame omits materials")
 	)
 
 

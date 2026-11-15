@@ -32,6 +32,9 @@ var _pending_close_index := -1
 var _close_after_save_document: VoxelDocument
 # Whether the quit flow is active.
 var _quit_active := false
+# A close request that arrived while a foreground operation held the app. The
+# activity signal retries it when the operation ends.
+var _quit_requested := false
 # The edited tab indices that the quit flow must visit.
 var _quit_indices: Array[int] = []
 # The next entry in `_quit_indices` to show.
@@ -78,6 +81,7 @@ func _ready() -> void:
 	State.edit_state_changed.connect(_sync_history_buttons)
 	State.active_tab_changed.connect(_sync_history_buttons)
 	State.active_tab_changed.connect(_sync_model_settings)
+	State.activity_changed.connect(_retry_quit)
 	_sync_history_buttons()
 
 
@@ -168,8 +172,14 @@ func _on_file_selected(path: String) -> void:
 ## Starts the quit flow. It asks to save each edited document, one at a time.
 ## It emits [signal quit_confirmed] when every document is handled.
 func request_quit() -> void:
-	if _quit_active or State.edit_busy():
+	if _quit_active:
 		return
+	if State.edit_busy():
+		# The close request must not vanish while an export, fill, or erase runs.
+		# Keep it and retry when the operation ends.
+		_quit_requested = true
+		return
+	_quit_requested = false
 	var edited: Array[int] = []
 	for index in range(State.tabs.size()):
 		if State.tabs[index].edit_dirty:
@@ -182,6 +192,12 @@ func request_quit() -> void:
 	_quit_indices = edited
 	_quit_position = 0
 	_show_quit_dialog()
+
+
+# Retries a close request that arrived while a foreground operation ran.
+func _retry_quit() -> void:
+	if _quit_requested and not _quit_active and not State.edit_busy():
+		request_quit()
 
 
 func _show_quit_dialog() -> void:
@@ -205,6 +221,7 @@ func _advance_quit() -> void:
 
 func _finish_quit() -> void:
 	_quit_active = false
+	_quit_requested = false
 	_quit_indices.clear()
 	_quit_position = 0
 	_pending_close_index = -1
@@ -215,6 +232,7 @@ func _finish_quit() -> void:
 
 func _cancel_quit() -> void:
 	_quit_active = false
+	_quit_requested = false
 	_quit_indices.clear()
 	_quit_position = 0
 	_pending_close_index = -1
@@ -509,18 +527,28 @@ func _on_file_opened(path: String) -> void:
 		if not _can_reuse_tab():
 			placeholder = State.new_document()
 			State.open_tab(placeholder)
-		var error: Error = await get_node("/root/ImageImportPlugin").import_image(path)
+		var importer := get_node_or_null("/root/ImageImportPlugin")
+		if importer == null:
+			_close_placeholder(placeholder)
+			_show_file_error("The image importer is not available.")
+			return
+		var error: Error = await importer.import_image(path)
 		if error == OK:
 			current_save_path = ""
 		else:
-			if placeholder != null:
-				var index := State.tabs.find(placeholder)
-				if index >= 0:
-					State.close_tab(index)
+			_close_placeholder(placeholder)
 			if error != ERR_BUSY:
 				_show_file_error("Cannot import the image: %s" % error_string(error))
 		return
 	_show_file_error("The file type is unsupported.")
+
+
+func _close_placeholder(placeholder: VoxelDocument) -> void:
+	if placeholder == null:
+		return
+	var index := State.tabs.find(placeholder)
+	if index >= 0:
+		State.close_tab(index)
 
 
 func _on_save_btn_pressed() -> void:

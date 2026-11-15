@@ -19,6 +19,8 @@ var enabled := true
 
 ## The delay after the first edit before a copy is written.
 const SAVE_DELAY_SEC := 2.0
+## The longest delay between attempts after a failed copy.
+const MAX_RETRY_DELAY_SEC := 60.0
 
 ## The result of one recovery copy attempt.
 enum SaveOutcome {
@@ -37,6 +39,10 @@ var _entries := {}
 ## them until an edit may make them valid again.
 var _invalid_ids := {}
 var _dirty := false
+var _retry_delay := SAVE_DELAY_SEC
+## The documents that need a copy in this cycle. One document leaves the list
+## after its copy is written.
+var _pending_documents: Array[VoxelDocument] = []
 
 
 func _ready() -> void:
@@ -45,7 +51,7 @@ func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(recovery_dir)
 	_timer = Timer.new()
 	_timer.one_shot = true
-	_timer.wait_time = SAVE_DELAY_SEC
+	_timer.wait_time = _retry_delay
 	_timer.timeout.connect(_on_timer_timeout)
 	add_child(_timer)
 	_connect_state()
@@ -119,6 +125,7 @@ func _mark_dirty() -> void:
 		var document := State.document
 		if document != null:
 			_invalid_ids.erase(document.get_instance_id())
+			_remember_pending(document)
 	_queue_save()
 
 
@@ -130,6 +137,9 @@ func _mark_view_changed() -> void:
 	# not be rewritten for each step.
 	if not enabled or State.is_playing:
 		return
+	# A frame switch changes the stored edit frame, so the copy of the active
+	# document is stale even when no cell changed.
+	_remember_pending(State.document)
 	_queue_save()
 
 
@@ -137,7 +147,13 @@ func _mark_view_changed() -> void:
 func _queue_save() -> void:
 	_dirty = true
 	if _timer != null and _timer.is_stopped():
+		_timer.wait_time = _retry_delay
 		_timer.start()
+
+
+func _remember_pending(document: VoxelDocument) -> void:
+	if document != null and not _pending_documents.has(document):
+		_pending_documents.append(document)
 
 
 func _on_timer_timeout() -> void:
@@ -146,7 +162,77 @@ func _on_timer_timeout() -> void:
 	if State.edit_busy() or State.active_edit() != null:
 		_timer.start()
 		return
-	save_now()
+	_save_one()
+
+
+# Writes one recovery copy per tick. A large tab set then costs one encode and
+# one write per callback instead of freezing the app for all of them at once.
+func _save_one() -> void:
+	DirAccess.make_dir_recursive_absolute(recovery_dir)
+	var current_ids := {}
+	for document in State.tabs:
+		if document != null:
+			current_ids[document.get_instance_id()] = true
+	_prune_entries(current_ids)
+	var document := _next_pending()
+	if document == null:
+		_pending_documents.clear()
+		_dirty = false
+		_write_manifest()
+		if _timer != null:
+			_timer.stop()
+		return
+	_pending_documents.erase(document)
+	var outcome := _save_document(document)
+	if outcome == SaveOutcome.RETRY:
+		# Keep the document first, so the retry cycle cannot starve it.
+		_pending_documents.push_front(document)
+		_dirty = true
+		_retry_delay = minf(_retry_delay * 2.0, MAX_RETRY_DELAY_SEC)
+	elif outcome == SaveOutcome.PERMANENT:
+		_invalid_ids[document.get_instance_id()] = true
+		_retry_delay = SAVE_DELAY_SEC
+		_dirty = _next_pending() != null
+	else:
+		_retry_delay = SAVE_DELAY_SEC
+		_dirty = _next_pending() != null
+	_write_manifest()
+	if _dirty:
+		_restart_timer()
+	elif _timer != null:
+		_timer.wait_time = _retry_delay
+		_timer.stop()
+
+
+func _restart_timer() -> void:
+	if _timer == null:
+		return
+	_timer.wait_time = _retry_delay
+	_timer.start()
+
+
+# Returns the first pending copy that is still valid and dirty, or null.
+func _next_pending() -> VoxelDocument:
+	for document in _pending_documents:
+		if document == null or not document.edit_dirty:
+			continue
+		if _invalid_ids.has(document.get_instance_id()):
+			continue
+		return document
+	return null
+
+
+func _prune_entries(current_ids: Dictionary) -> void:
+	for id in _entries.keys():
+		if not current_ids.has(id):
+			_remove_entry(id)
+	# A closed document must not stay in the skip set.
+	for id in _invalid_ids.keys():
+		if not current_ids.has(id):
+			_invalid_ids.erase(id)
+	for document in _pending_documents.duplicate():
+		if document == null or not current_ids.has(document.get_instance_id()):
+			_pending_documents.erase(document)
 
 
 ## Writes a recovery copy of every dirty document and removes stale copies.
@@ -163,32 +249,37 @@ func save_now() -> void:
 		current_ids[id] = true
 		if document.edit_dirty:
 			if _invalid_ids.has(id):
+				_pending_documents.erase(document)
 				continue
 			# A document that cannot encode will never produce a copy. Keep the
 			# unsaved mark, but do not retry a permanent failure.
 			match _save_document(document):
 				SaveOutcome.PERMANENT:
 					_invalid_ids[id] = true
+					_pending_documents.erase(document)
 				SaveOutcome.RETRY:
 					failed = true
+					_remember_pending(document)
+				SaveOutcome.SAVED:
+					_pending_documents.erase(document)
 		else:
 			_remove_entry(id)
-	for id in _entries.keys():
-		if not current_ids.has(id):
-			_remove_entry(id)
-	# A closed document must not stay in the skip set.
-	for id in _invalid_ids.keys():
-		if not current_ids.has(id):
-			_invalid_ids.erase(id)
+			_pending_documents.erase(document)
+	_prune_entries(current_ids)
 	_write_manifest()
 	# A failed copy must keep the dirty mark, or only the next model change
 	# would retry it.
-	_dirty = failed
+	_dirty = failed or _next_pending() != null
 	if failed:
-		if _timer != null and _timer.is_stopped():
-			_timer.start()
-	elif _timer != null:
-		_timer.stop()
+		_retry_delay = minf(_retry_delay * 2.0, MAX_RETRY_DELAY_SEC)
+		_restart_timer()
+	elif _dirty:
+		_retry_delay = SAVE_DELAY_SEC
+		_restart_timer()
+	else:
+		_retry_delay = SAVE_DELAY_SEC
+		if _timer != null:
+			_timer.stop()
 
 
 ## Returns the recovery entries that are still on disk.

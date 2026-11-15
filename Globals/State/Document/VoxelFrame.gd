@@ -503,8 +503,12 @@ class Chunk extends RefCounted:
 		chunk_copy.occupied_bounds = occupied_bounds
 		chunk_copy.bounds_dirty = bounds_dirty
 		chunk_copy.shared_materials = shared_materials
+		# A worker can install the rows on this shared chunk at the same time.
+		# Take the install lock, so the reference stays valid across the copy.
+		VoxelFrame._occupancy_lock.lock()
 		chunk_copy.occupancy_revision = occupancy_revision
 		chunk_copy._occupancy_rows = _occupancy_rows
+		VoxelFrame._occupancy_lock.unlock()
 		return chunk_copy
 
 	# The material id of one world cell. A missing or empty cell returns 0.
@@ -1338,15 +1342,20 @@ static func _touched_neighbors(face_bits: int) -> Array[Vector3i]:
 static var _crosstalk_offsets_cache: Array[Vector3i] = []
 
 
+# Build the offsets once when the class loads. A worker can call
+# `_touched_neighbors` from `set_cells`, so a lazy build could race another
+# worker on the same array.
+static func _static_init() -> void:
+	for z in range(-1, 2):
+		for y in range(-1, 2):
+			for x in range(-1, 2):
+				var offset := Vector3i(x, y, z)
+				if offset != Vector3i.ZERO:
+					_crosstalk_offsets_cache.append(offset)
+
+
 # Every chunk offset a mesher can read across, including diagonal corners.
 static func _crosstalk_offsets() -> Array[Vector3i]:
-	if _crosstalk_offsets_cache.is_empty():
-		for z in range(-1, 2):
-			for y in range(-1, 2):
-				for x in range(-1, 2):
-					var offset := Vector3i(x, y, z)
-					if offset != Vector3i.ZERO:
-						_crosstalk_offsets_cache.append(offset)
 	return _crosstalk_offsets_cache
 
 

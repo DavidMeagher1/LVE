@@ -9,20 +9,22 @@ Leonard's Voxel Editor uses one document encoding in two file types.
 
 ## Binary envelope
 
-Version 3 uses this 16-byte header.
+Version 4 uses this 16-byte header.
 Header integers use little-endian byte order.
 
 | Offset | Bytes | Contents |
 | --- | --- | --- |
 | 0 | 4 | Signature: `4C 56 45 00`, or `LVE` and a zero byte |
-| 4 | 4 | Unsigned format version: `3` |
+| 4 | 4 | Unsigned format version: `4` |
 | 8 | 4 | Unsigned payload byte count |
-| 12 | 4 | Unsigned CRC-32 of the payload |
+| 12 | 4 | First four bytes of the SHA-256 digest of the payload |
 | 16 | Variable | Godot 4 Variant binary payload |
 
-The CRC uses the PNG CRC-32 algorithm.
-The CRC detects accidental corruption.
-The CRC does not authenticate a file.
+The digest detects accidental corruption.
+The digest does not authenticate a file.
+Version 4 files store a SHA-256 prefix.
+Versions 1 to 3 store a CRC-32.
+The decoder accepts both forms.
 
 The payload has no additional compression.
 Octree leaves keep uniform voxel regions compact.

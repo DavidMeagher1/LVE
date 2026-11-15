@@ -28,7 +28,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if input_viewport == null:
 		return
 	if State.edit_busy(self):
-		input_viewport.set_input_as_handled()
+		# Another owner's foreground operation is running. Do not consume the
+		# event: the owning tool may still need the release, a key, or a motion.
 		return
 	var pos := Vector2.ZERO
 	if event is InputEventMouse:
@@ -94,6 +95,10 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 			update_visual(pick)
 			return true
 		if mm.button_mask == 0:
+			# A release outside the window sends no button event. A motion with
+			# no button ends the stroke the same way a release does.
+			if _stroke_active:
+				_end()
 			update_visual(_pick_start(origin, dir))
 			return true
 		return false
@@ -212,6 +217,17 @@ func abort_stroke() -> void:
 		return
 	_edit = null
 	State.cancel_edit(tx)
+
+
+## Cancels the open stroke and clears the pointer state. A tool that is removed
+## while a button is held calls this, so its edit cannot outlive the tool.
+func cancel_stroke() -> void:
+	_plane = null
+	_last_target = VoxelPicking.NONE
+	_stroke_active = false
+	_cells_dirty = false
+	_affected.clear()
+	abort_stroke()
 
 
 func _pick_start(origin: Vector3, dir: Vector3) -> PickResult:

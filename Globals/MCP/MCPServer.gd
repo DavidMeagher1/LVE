@@ -17,6 +17,10 @@ const EXPORT_PLUGIN_SCRIPT := preload("res://plugins/Export/ExportPlugin.gd")
 const LOG_PATH := "user://mcp_server.log"
 ## The largest request line the server accepts.
 const MAX_LINE_BYTES := 4 * 1024 * 1024
+## The largest number of simultaneous loopback clients.
+const MAX_PEERS := 8
+## How long a client may hold a partial request without sending bytes.
+const PEER_IDLE_MS := 30000
 ## The largest cell box that one read scans.
 const MAX_BOX_CELLS := 262144
 ## The default occupied-cell cap of one read.
@@ -1113,6 +1117,9 @@ class PeerState extends RefCounted:
 	var busy := false
 	var sse := false
 	var last_ping_ms := 0
+	## The last time this peer sent bytes. A partial request with no deadline
+	## would otherwise hold its buffer forever.
+	var last_read_ms := 0
 
 
 var _server := TCPServer.new()
@@ -1316,6 +1323,11 @@ func _process(_delta: float) -> void:
 		if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 			_remove_peer(state)
 			continue
+		# Only a partial request has a deadline. A connected client may stay
+		# idle between calls, and the bridge keeps one connection open.
+		if not state.sse and not state.busy and not state.buffer.is_empty() and now - state.last_read_ms > PEER_IDLE_MS:
+			_remove_peer(state)
+			continue
 		if state.sse:
 			if now - state.last_ping_ms >= 15000:
 				_send_sse_comment(state)
@@ -1334,9 +1346,16 @@ func _accept_all() -> void:
 		var peer := _server.take_connection()
 		if peer == null:
 			return
+		if _peers.size() >= MAX_PEERS:
+			# The port is local, but any process can connect. Refuse the excess
+			# instead of keeping an unbounded peer list.
+			_log("Refusing an MCP client: the peer limit is reached.")
+			peer.disconnect_from_host()
+			continue
 		peer.set_no_delay(true)
 		var state := PeerState.new()
 		state.peer = peer
+		state.last_read_ms = Time.get_ticks_msec()
 		_peers.append(state)
 
 
@@ -1354,6 +1373,7 @@ func _read_peer_bytes(state: PeerState) -> bool:
 	if result[0] != OK:
 		return true
 	var bytes: PackedByteArray = result[1]
+	state.last_read_ms = Time.get_ticks_msec()
 	state.buffer.append_array(bytes)
 	if state.buffer.size() > MAX_LINE_BYTES:
 		# Clear the request before the peer goes, so the same frame cannot
@@ -1945,7 +1965,7 @@ func _get_cells(args: Dictionary) -> Dictionary:
 	return _tool_ok(data)
 
 
-func _inspect_document(args: Dictionary) -> Dictionary:
+func _inspect_document(args: Dictionary, scan_budget := MAX_SCAN_CELLS) -> Dictionary:
 	var document := State.document
 	if document == null:
 		return _tool_error("No document is open.")
@@ -1976,6 +1996,7 @@ func _inspect_document(args: Dictionary) -> Dictionary:
 		material_filter = _hex_color(material_color)
 	var scans := {}
 	var frames: Array = []
+	var remaining_scan := scan_budget
 	for index in indices:
 		var frame: VoxelFrame = State.get_voxel_frame(index)
 		if frame == null:
@@ -1989,7 +2010,15 @@ func _inspect_document(args: Dictionary) -> Dictionary:
 			"empty": occupied == 0,
 		}
 		if (include_materials or include_islands or include_transitions) and occupied > 0:
+			# The budget covers the whole request, not each frame. A request for
+			# many frames must not scan every one at full size.
+			if occupied > remaining_scan:
+				scans[index] = {"cells": {}, "materials": {}, "truncated": true, "occupied": occupied}
+				frame_data["scan_truncated"] = true
+				frames.append(frame_data)
+				continue
 			var scan := _scan_frame(frame)
+			remaining_scan -= occupied
 			scans[index] = scan
 			if scan.truncated:
 				frame_data["scan_truncated"] = true

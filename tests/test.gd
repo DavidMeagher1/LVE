@@ -21,6 +21,11 @@ func _enter_tree() -> void:
 	main = get_node_or_null("Main")
 	if main == null or main.get_node_or_null("%Viewport") == null:
 		push_error("LVE test scene must inherit res://tests/test_base.tscn")
+		# A scene that never touches `main` would otherwise record its checks and
+		# pass with a broken fixture. Register a failing case as well.
+		test("the test scene inherits test_base.tscn", func():
+			expect(false, "the test scene must inherit res://tests/test_base.tscn")
+		, "fixture")
 	settle_frames = 2
 	_brush_settings_resource = load(BRUSH_SETTINGS_PATH)
 	_paint_settings_resource = load(PAINT_SETTINGS_PATH)

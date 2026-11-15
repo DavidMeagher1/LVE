@@ -10,6 +10,7 @@ var _selection = null
 var _transform = null
 var _deform: DeformToolSettings
 var _terrain: TerrainToolSettings
+var _play_events: Array[bool] = []
 
 
 func _ready() -> void:
@@ -22,6 +23,7 @@ func _ready() -> void:
 	test("workspace changes do not mark the document dirty", _dirty_run, "dirty")
 	test("the frame, tag, and playback state follow the document", _switch_run, "switch")
 	test("the document stores its playback state", _playback_run, "playback")
+	test("a cancelled edit reports the stopped playback state", _play_cancel_run, "play_cancel")
 	test("a new-version startup restores each saved workspace after the splash", _startup_workspace_run, "startup_workspace")
 
 
@@ -34,6 +36,10 @@ func before_test() -> void:
 	_deform = load("res://plugins/Deform/settings.tres")
 	_terrain = load("res://plugins/Terrain/settings.tres")
 	_reset_workspace()
+
+
+func _on_test_play_toggled(on: bool) -> void:
+	_play_events.append(on)
 
 
 func _reset_workspace() -> void:
@@ -435,6 +441,39 @@ func _switch_run() -> void:
 	step("Then the first document plays again", func():
 		expect(State.is_playing, "the first document resumes")
 		State.stop()
+	)
+
+
+func _play_cancel_run() -> void:
+	var tx: VoxelEditTransaction
+	step("Given an edited frame with an open edit", func():
+		State.set_tabs([State.new_document()], 0)
+		State.add_frame()
+		State.add_tag("Walk", 0, 1)
+		State.current_frame = 1
+		tx = State.begin_edit()
+		expect(tx != null, "the edit opens")
+		if tx != null:
+			State.get_current_voxel_frame().set_cell(Vector3i.ZERO, VoxelFrame.material(Color.RED))
+		_play_events.clear()
+		if not State.is_playing_toggled.is_connected(_on_test_play_toggled):
+			State.is_playing_toggled.connect(_on_test_play_toggled)
+		# The restart changes the frame. The open edit cancels, and its restore
+		# emits cells_changed, which stops playback.
+		State.edit_context_changing.connect(func():
+			if tx != null:
+				State.cancel_edit(tx)
+		, CONNECT_ONE_SHOT)
+	)
+	step("When playback starts", func():
+		State.is_playing = true
+	)
+	step("Then the cancel stops playback and the last signal says so", func():
+		expect(not State.is_playing, "the cancel stops playback")
+		expect(not _play_events.is_empty(), "the toggle signal fires")
+		expect(_play_events[_play_events.size() - 1] == false, "the last toggle reports stopped")
+		if State.is_playing_toggled.is_connected(_on_test_play_toggled):
+			State.is_playing_toggled.disconnect(_on_test_play_toggled)
 	)
 
 

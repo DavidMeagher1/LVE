@@ -1312,7 +1312,7 @@ func save_default_palette(path: String = DEFAULT_PALETTE_PATH) -> Error:
 		return ERR_INVALID_DATA
 	var config := ConfigFile.new()
 	config.set_value("palette", "materials", Array(materials))
-	var error := config.save(path)
+	var error := _save_config_file(config, path)
 	if error == OK:
 		default_palette = _copy_palette(materials)
 		default_palette_changed.emit()
@@ -1350,6 +1350,24 @@ func _settings_path(path: String) -> String:
 	return settings_path if path.is_empty() else path
 
 
+## Writes a configuration through a temporary file, so a crash cannot truncate
+## the previous file.
+func _save_config_file(config: ConfigFile, path: String) -> Error:
+	var temporary := path + ".tmp"
+	var file := FileAccess.open(temporary, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	file.store_string(config.encode_to_text())
+	file.flush()
+	var error := file.get_error()
+	file.close()
+	if error == OK:
+		error = DirAccess.rename_absolute(temporary, path)
+	if error != OK:
+		DirAccess.remove_absolute(temporary)
+	return error
+
+
 ## Moves every missing key from the legacy files into the target file. The
 ## target wins on a conflict. It removes only the legacy files that it read.
 func migrate_settings(target_path: String = "", legacy_paths: PackedStringArray = PackedStringArray()) -> Error:
@@ -1374,7 +1392,7 @@ func migrate_settings(target_path: String = "", legacy_paths: PackedStringArray 
 				target.set_value(section, key, legacy.get_value(section, key))
 				merged = true
 	if merged:
-		var error := target.save(target_path)
+		var error := _save_config_file(target, target_path)
 		if error != OK:
 			push_warning("Cannot save the user settings: %s" % error_string(error))
 			return error
@@ -1391,7 +1409,7 @@ func remember_document(path: String, config_path: String = "") -> void:
 	if config == null:
 		return
 	config.set_value("files", "last_document", path)
-	var error := config.save(config_path)
+	var error := _save_config_file(config, config_path)
 	if error != OK:
 		push_warning("Cannot save the user settings: %s" % error_string(error))
 
@@ -1404,7 +1422,9 @@ func forget_document(config_path: String = "") -> void:
 		return
 	if config.has_section_key("files", "last_document"):
 		config.erase_section_key("files", "last_document")
-	config.save(config_path)
+	var error := _save_config_file(config, config_path)
+	if error != OK:
+		push_warning("Cannot save the user settings: %s" % error_string(error))
 
 
 ## Returns the stored last document path, or an empty string.
@@ -1472,7 +1492,7 @@ func remember_session(config_path: String = "") -> void:
 	config.set_value("files", "active", active)
 	if not paths.is_empty():
 		config.set_value("files", "last_document", paths[active])
-	var error := config.save(config_path)
+	var error := _save_config_file(config, config_path)
 	if error != OK:
 		push_warning("Cannot save the user settings: %s" % error_string(error))
 

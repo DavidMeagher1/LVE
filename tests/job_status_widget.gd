@@ -6,7 +6,7 @@ const LONG_DETAIL := "twelve thousand cells remaining in the current region"
 
 # The widget script is preloaded as a type alias. A new class_name is not in the
 # global class cache until the editor regenerates it.
-const JobStatusWidget = preload("res://ui/JobStatus/job_status.gd")
+const JobStatusWidget = preload("res://ui/JobStatus/JobStatus.gd")
 
 var widget: JobStatusWidget
 var _status: Node
@@ -53,7 +53,7 @@ func before_test() -> void:
 	_viewport = null
 	while State.get_activity() != null:
 		await get_tree().process_frame
-	widget = load("res://ui/JobStatus/job_status.tscn").instantiate()
+	widget = load("res://ui/JobStatus/JobStatus.tscn").instantiate()
 	# Show every operation at once, so the tests do not wait for the display delay.
 	widget.delay_ms = 0
 	main.add_child(widget)
@@ -473,7 +473,7 @@ func _long_label() -> void:
 		_viewport.size = Vector2i(520, 40)
 		_viewport.gui_disable_input = false
 		main.add_child(_viewport)
-		_status = load("res://ui/StatusBar/status_bar.tscn").instantiate()
+		_status = load("res://ui/StatusBar/StatusBar.tscn").instantiate()
 		_viewport.add_child(_status)
 		_status.size = Vector2(520, 40)
 		# Show the operation at once, so the geometry is ready without the delay.
@@ -552,7 +552,7 @@ func _short_label() -> void:
 		_viewport.size = Vector2i(1000, 40)
 		_viewport.gui_disable_input = false
 		main.add_child(_viewport)
-		_status = load("res://ui/StatusBar/status_bar.tscn").instantiate()
+		_status = load("res://ui/StatusBar/StatusBar.tscn").instantiate()
 		_viewport.add_child(_status)
 		_status.size = Vector2(1000, 40)
 		_status.get_node("Activity").delay_ms = 0

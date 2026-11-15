@@ -130,6 +130,7 @@ func _ready() -> void:
 		window.size = Vector2i(Vector2(window.size) * window.content_scale_factor).min(Vector2i(Vector2(available) * 0.9))
 		window.move_to_center()
 	%TabContainer.tab_changed.connect(_on_tab_changed)
+	%StatusBar.set_camera(%Viewport.call("camera"))
 	_on_tab_changed(%TabContainer.current_tab)
 	var window := get_window()
 	if not window.close_requested.is_connected(_on_window_close_requested):
@@ -293,8 +294,7 @@ func _on_tab_changed(_index: int) -> void:
 	for tab in %TabContainer.get_children():
 		if tab is Control:
 			tab.process_mode = Node.PROCESS_MODE_INHERIT if tab == current else Node.PROCESS_MODE_DISABLED
-	var viewport: SubViewport = %Viewport.get_node("PanelContainer/SubViewportContainer/Viewport")
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if current == %Editor else SubViewport.UPDATE_DISABLED
+	%Viewport.call("set_rendering_active", current == %Editor)
 	if current != %Editor:
 		State.stop()
 

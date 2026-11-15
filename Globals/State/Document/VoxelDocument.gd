@@ -16,7 +16,7 @@ const APP_NAME := "Leonard's Voxel Editor"
 ## The four-byte binary file signature.
 const FILE_SIGNATURE := [76, 86, 69, 0]
 ## The current binary format version.
-const FORMAT_VERSION := 3
+const FORMAT_VERSION := 4
 ## The maximum file size in bytes.
 const MAX_FILE_BYTES := 64 * 1024 * 1024
 ## The maximum document size on one axis.
@@ -147,7 +147,7 @@ func encode_document() -> PackedByteArray:
 	result.resize(16)
 	result.encode_u32(4, FORMAT_VERSION)
 	result.encode_u32(8, payload.size())
-	result.encode_u32(12, _crc32(payload))
+	result.encode_u32(12, _checksum(payload))
 	result.append_array(payload)
 	return result
 
@@ -208,7 +208,10 @@ static func decode_document(data: PackedByteArray) -> VoxelDocument:
 	if version < 1 or version > FORMAT_VERSION or data.decode_u32(8) != data.size() - 16:
 		return null
 	var payload := data.slice(16)
-	if _crc32(payload) != data.decode_u32(12):
+	# Version 4 stores the first four bytes of a SHA-256 digest. Older files
+	# keep CRC-32, so both must pass the same header slot.
+	var expected := _checksum(payload) if version >= 4 else _crc32(payload)
+	if expected != data.decode_u32(12):
 		return null
 	# Reject object types, typed containers, excessive nesting, and invalid lengths before decoding.
 	if _variant_end(payload, 0, 0, [1000000]) != payload.size():
@@ -311,6 +314,15 @@ static func _append_u32_be(data: PackedByteArray, value: int) -> void:
 
 static func _u32_be(data: PackedByteArray, offset: int) -> int:
 	return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]
+
+
+# The version 4 document checksum. The engine computes the digest, so the save
+# does not run a per-byte loop in GDScript.
+static func _checksum(data: PackedByteArray) -> int:
+	var context := HashingContext.new()
+	context.start(HashingContext.HASH_SHA256)
+	context.update(data)
+	return context.finish().decode_u32(0)
 
 
 static func _crc32(data: PackedByteArray) -> int:

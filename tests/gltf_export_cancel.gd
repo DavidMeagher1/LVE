@@ -67,7 +67,7 @@ func _cancel_with_button() -> void:
 		viewport.size = Vector2i(360, 40)
 		viewport.gui_disable_input = false
 		main.add_child(viewport)
-		widget = load("res://ui/JobStatus/job_status.tscn").instantiate()
+		widget = load("res://ui/JobStatus/JobStatus.tscn").instantiate()
 		widget.delay_ms = 0
 		viewport.add_child(widget)
 		widget.size = Vector2(360, 40)

@@ -78,14 +78,24 @@ func _enabled() -> bool:
 ## Returns true when a failed request can still succeed on another attempt. A
 ## transport fault, a server fault, and a rate limit are temporary. A missing or
 ## forbidden release page is not.
-static func should_retry(result: int, response_code: int) -> bool:
+static func should_retry(result: int, response_code: int, headers := PackedStringArray()) -> bool:
 	if result != HTTPRequest.RESULT_SUCCESS:
 		return true
-	return response_code >= 500 or response_code == 429
+	if response_code >= 500 or response_code == 429:
+		return true
+	if response_code == 403:
+		# GitHub reports its primary rate limit as 403 with no remaining quota.
+		for header in headers:
+			var lower := header.to_lower()
+			if lower.begins_with("retry-after:"):
+				return true
+			if lower.begins_with("x-ratelimit-remaining:") and lower.contains("0"):
+				return true
+	return false
 
 
-func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	if should_retry(result, response_code):
+func _on_request_completed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
+	if should_retry(result, response_code, headers):
 		_retry_later()
 		return
 	if response_code != 200:

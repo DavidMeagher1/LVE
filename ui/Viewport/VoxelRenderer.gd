@@ -24,6 +24,10 @@ static var _surface_use_order: Array[PackedInt64Array] = []
 static var _surface_cache_bytes := 0
 static var _surface_jobs: Dictionary = {}
 static var _active_renderer_count := 0
+## The frame index of the last chunk list, and whether that signal is still the
+## current publish. A following cell signal then needs no neighbor expansion.
+var _chunk_notice_frame := -1
+var _chunk_notice_pending := false
 static var _surface_job_limit := 0
 
 
@@ -226,6 +230,10 @@ func _update(updated_frame: int, affected_cells: Array[Vector3i]) -> void:
 	if affected_cells.is_empty():
 		_rebuild()
 		return
+	if _chunk_notice_pending and _chunk_notice_frame == updated_frame:
+		# The chunk signal already requested the exact set, including neighbors.
+		_report_activity()
+		return
 	var active_frame := _get_frame()
 	# A changed cell rebuilds its own chunk and each neighbor that reads it.
 	var affected_chunks := {}
@@ -237,6 +245,10 @@ func _update(updated_frame: int, affected_cells: Array[Vector3i]) -> void:
 	for chunk_location in affected_chunks:
 		_request(active_frame, chunk_location)
 	_report_activity()
+
+
+func _clear_chunk_notice() -> void:
+	_chunk_notice_pending = false
 
 
 func _request(active_frame: VoxelFrame, chunk_location: Vector3i) -> void:
@@ -282,6 +294,10 @@ func _update_chunks(updated_frame: int, chunk_positions: Array[Vector3i]) -> voi
 			continue
 		requested[chunk_location] = true
 		_request(active_frame, chunk_location)
+	_chunk_notice_frame = updated_frame
+	if not _chunk_notice_pending:
+		_chunk_notice_pending = true
+		_clear_chunk_notice.call_deferred()
 	_report_activity()
 
 
@@ -366,7 +382,10 @@ func _update_surfaces() -> void:
 				chunk_surface.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surface_job.surface_arrays)
 			var material := _build_material(surface_job)
 			var cache_started_us := Time.get_ticks_usec()
-			_cache_surface(surface_key, chunk_surface, surface_job.geometry_bytes, material)
+			# The job already holds the atlas bytes. Count them without copying
+			# every texture back from the GPU to measure it.
+			var cache_bytes: int = surface_job.geometry_bytes + surface_job.atlas_albedo.size() + surface_job.atlas_orm.size() + surface_job.atlas_emission.size()
+			_cache_surface(surface_key, chunk_surface, cache_bytes, material)
 			if profile_surfaces:
 				_profile.reaped += 1
 				if chunk_surface == null:
@@ -524,26 +543,13 @@ func _report_activity() -> void:
 
 
 static func _cache_surface(surface_key: PackedInt64Array, chunk_surface: ArrayMesh, geometry_bytes: int, material: StandardMaterial3D) -> void:
-	var total_bytes := geometry_bytes + _texture_bytes(material)
-	_surface_cache[surface_key] = {"surface": chunk_surface, "material": material, "bytes": total_bytes}
+	_surface_cache[surface_key] = {"surface": chunk_surface, "material": material, "bytes": geometry_bytes}
 	_surface_use_order.append(surface_key)
-	_surface_cache_bytes += total_bytes
+	_surface_cache_bytes += geometry_bytes
 	while (_surface_cache_bytes > SURFACE_CACHE_LIMIT_BYTES or _surface_cache.size() > SURFACE_CACHE_LIMIT_ENTRIES) and _surface_use_order.size() > 1:
 		var oldest_surface_key: PackedInt64Array = _surface_use_order.pop_front()
 		_surface_cache_bytes -= _surface_cache[oldest_surface_key].bytes
 		_surface_cache.erase(oldest_surface_key)
-
-
-static func _texture_bytes(material: StandardMaterial3D) -> int:
-	if material == null:
-		return 0
-	var counted := {}
-	var total_bytes := 0
-	for texture in [material.albedo_texture, material.metallic_texture, material.roughness_texture, material.emission_texture]:
-		if texture is ImageTexture and not counted.has(texture):
-			counted[texture] = true
-			total_bytes += texture.get_image().get_data().size()
-	return total_bytes
 
 
 # Build one material for a chunk that holds materials. Every other chunk keeps

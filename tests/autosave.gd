@@ -12,10 +12,17 @@ class CountingDocument extends VoxelDocument:
 	## A document keeps a frame in the editor. This flag fails the encode without
 	## an invalid frame list.
 	var encodable := true
+	## Simulates a path that cannot be written, so the copy returns RETRY.
+	var fail_writes := false
 
 	func encode_document() -> PackedByteArray:
 		encodes += 1
 		return super.encode_document() if encodable else PackedByteArray()
+
+	func save_file(path: String, preview: Image = null, encoded := PackedByteArray()) -> Error:
+		if fail_writes:
+			return ERR_FILE_CANT_WRITE
+		return super.save_file(path, preview, encoded)
 
 
 var autosave
@@ -31,6 +38,8 @@ func _ready() -> void:
 	test("a retry skips an invalid document beside a failed copy", _mixed_retry, "autosave_invalid_mixed")
 	test("an edit retries only its own document", _invalid_edit_scope, "autosave_invalid_scope")
 	test("a view change keeps a permanent failure skipped", _invalid_view_scope, "autosave_invalid_view")
+	test("one timer tick writes one recovery copy", _one_per_tick, "autosave_one_per_tick")
+	test("a failed copy backs off before it retries", _retry_backoff, "autosave_backoff")
 
 
 func before_test() -> void:
@@ -311,6 +320,72 @@ func _invalid_view_scope() -> void:
 	)
 	step("Then the skip clears", func():
 		expect(not autosave._invalid_ids.has(document.get_instance_id()), "an edit clears the skip")
+	)
+
+
+func _one_per_tick() -> void:
+	var documents: Array[CountingDocument] = []
+	step("Given three edited documents", func():
+		State.tabs.clear()
+		for index in 3:
+			var document := CountingDocument.new()
+			document.edit_save_path = DIR.path_join("one_%d.lve" % index)
+			document.file_path = document.edit_save_path
+			document.edit_dirty = true
+			documents.append(document)
+			State.tabs.append(document)
+		State.active_tab = 0
+		State.document = documents[0]
+		autosave._pending_documents.clear()
+		for document in documents:
+			autosave._remember_pending(document)
+	)
+	step("When one timer tick runs", func():
+		autosave._save_one()
+	)
+	step("Then only one copy is written", func():
+		expect(autosave.recovery_entries().size() == 1, "the tick writes one copy")
+		var encodes := 0
+		for document in documents:
+			encodes += document.encodes
+		expect(encodes == 1, "the tick encodes one document")
+	)
+	step("When the next tick runs", func():
+		autosave._save_one()
+	)
+	step("Then the second copy is written", func():
+		expect(autosave.recovery_entries().size() == 2, "the next tick writes the next copy")
+	)
+
+
+func _retry_backoff() -> void:
+	var document := CountingDocument.new()
+	step("Given a document whose copy cannot be written", func():
+		State.tabs.clear()
+		State.tabs.append(document)
+		State.active_tab = 0
+		State.document = document
+		document.edit_save_path = DIR.path_join("backoff.lve")
+		document.file_path = document.edit_save_path
+		document.edit_dirty = true
+		document.fail_writes = true
+		autosave._pending_documents.clear()
+		autosave._remember_pending(document)
+	)
+	step("When the copy fails twice", func():
+		autosave._save_one()
+		expect(is_equal_approx(autosave._retry_delay, 4.0), "the first failure doubles the delay")
+		expect(is_equal_approx(autosave._timer.wait_time, 4.0), "the timer uses the new delay")
+		autosave._save_one()
+		expect(is_equal_approx(autosave._retry_delay, 8.0), "the second failure doubles again")
+	)
+	step("When a later copy succeeds", func():
+		document.fail_writes = false
+		autosave._save_one()
+	)
+	step("Then the delay returns to the base delay", func():
+		expect(is_equal_approx(autosave._retry_delay, AutosaveScript.SAVE_DELAY_SEC), "a success resets the delay")
+		expect(autosave.recovery_entries().size() == 1, "the copy is written")
 	)
 
 

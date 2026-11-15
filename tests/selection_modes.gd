@@ -5,10 +5,12 @@ var center := Vector2.ZERO
 var seed := VoxelPicking.NONE
 var pair_a: Array[Vector3i] = []
 var pair_b: Array[Vector3i] = []
+var _clear_operation := 0
 
 
 func _ready() -> void:
 	test("selection tools replace, add, and subtract through the mode option", _run)
+	test("Clear waits for a running selection job", _clear_waits, "clear_waits")
 
 
 func _run() -> void:
@@ -252,6 +254,37 @@ func _drag_cells(a: Vector3i, b: Vector3i, with_shift: bool) -> void:
 	release.position = low
 	release.shift_pressed = with_shift
 	viewport.push_input(release)
+
+
+func _clear_waits() -> void:
+	var owner := Node.new()
+	add_child(owner)
+	step("Given a selection and a foreground selection job", func():
+		activate_tool("selection")
+		State.selection.add(Vector3i.ZERO)
+		_clear_operation = State.begin_operation("Test selection", -1, true, owner)
+	)
+	step("Then the clear button is disabled", func():
+		var box := _options_box()
+		expect(box != null, "the selection options are visible")
+		if box != null:
+			expect(box.get_node("clear").disabled, "the clear button is disabled")
+	)
+	step("When the user presses clear", func():
+		var box := _options_box()
+		if box != null:
+			box._on_clear_pressed()
+	)
+	step("Then the selection survives and clear enables after the job", func():
+		expect(not State.selection.is_empty(), "the clear is refused while the job runs")
+		State.finish_operation(_clear_operation)
+		var box := _options_box()
+		if box != null:
+			expect(not box.get_node("clear").disabled, "the clear button enables")
+			box._on_clear_pressed()
+			expect(State.selection.is_empty(), "the clear works after the job")
+	)
+	owner.queue_free()
 
 
 func _options_box() -> HBoxContainer:

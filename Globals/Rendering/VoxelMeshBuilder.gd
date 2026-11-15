@@ -340,7 +340,11 @@ func _emit_quad(face_axis: int, face_sign: int, layer_index: int, column_axis: i
 	var first_vertex := vertex_positions.size()
 	var base := material_id * VoxelFrame.MATERIAL_STRIDE
 	var face_color := Color(materials[base], materials[base + 1], materials[base + 2], materials[base + 3])
-	vertex_positions.append_array(PackedVector3Array([face_origin, face_origin + column_edge, face_origin + column_edge + row_edge, face_origin + row_edge]))
+	vertex_positions.resize(first_vertex + 4)
+	vertex_positions[first_vertex] = face_origin
+	vertex_positions[first_vertex + 1] = face_origin + column_edge
+	vertex_positions[first_vertex + 2] = face_origin + column_edge + row_edge
+	vertex_positions[first_vertex + 3] = face_origin + row_edge
 	for vertex_corner in 4:
 		var normal := face_normal
 		if smooth_normals:
@@ -352,10 +356,22 @@ func _emit_quad(face_axis: int, face_sign: int, layer_index: int, column_axis: i
 				normal = face_normal
 		vertex_normals.append(normal)
 		vertex_colors.append(face_color)
+	var index_start := triangle_indices.size()
+	triangle_indices.resize(index_start + 6)
 	if face_sign > 0:
-		triangle_indices.append_array(PackedInt32Array([first_vertex, first_vertex + 2, first_vertex + 1, first_vertex, first_vertex + 3, first_vertex + 2]))
+		triangle_indices[index_start] = first_vertex
+		triangle_indices[index_start + 1] = first_vertex + 2
+		triangle_indices[index_start + 2] = first_vertex + 1
+		triangle_indices[index_start + 3] = first_vertex
+		triangle_indices[index_start + 4] = first_vertex + 3
+		triangle_indices[index_start + 5] = first_vertex + 2
 	else:
-		triangle_indices.append_array(PackedInt32Array([first_vertex, first_vertex + 1, first_vertex + 2, first_vertex, first_vertex + 2, first_vertex + 3]))
+		triangle_indices[index_start] = first_vertex
+		triangle_indices[index_start + 1] = first_vertex + 1
+		triangle_indices[index_start + 2] = first_vertex + 2
+		triangle_indices[index_start + 3] = first_vertex
+		triangle_indices[index_start + 4] = first_vertex + 2
+		triangle_indices[index_start + 5] = first_vertex + 3
 
 
 # One entry per face axis and layer, in row then column order.
@@ -502,6 +518,9 @@ static func _opaque_materials(chunk: VoxelFrame.Chunk) -> bool:
 func _collect_groups(padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array, ao_strength := 0.0) -> Dictionary:
 	var groups := {}
 	var material_cache := {}
+	var canonical_cache := {}
+	var canonical_by_id := {}
+	var next_canonical := 0
 	var use_ao := ao_strength > 0.0
 	for face_axis in 3:
 		var column_stride: int = PADDED_AXIS_STRIDE[(face_axis + 1) % 3]
@@ -531,11 +550,21 @@ func _collect_groups(padded_cell_colors: PackedColorArray, padded_cell_materials
 						else:
 							material = materials.slice(material_id * VoxelFrame.MATERIAL_STRIDE, (material_id + 1) * VoxelFrame.MATERIAL_STRIDE)
 							material_cache[material_id] = material
+							# Group equal material values under one small id. The
+							# float-array key is hashed once per material, not once
+							# per exposed face.
+							if canonical_cache.has(material):
+								canonical_by_id[material_id] = canonical_cache[material]
+							else:
+								canonical_cache[material] = next_canonical
+								canonical_by_id[material_id] = next_canonical
+								next_canonical += 1
 						var plane := Vector3i(face_axis, face_sign, 2 * layer_index + face_sign)
 						var ao_code := -1
 						if use_ao:
 							ao_code = _face_ao_code(padded_cell_materials, sample_index + neighbor_step, column_stride, row_stride)
-						var key := [plane, material, ao_code] if use_ao else [plane, material]
+						var plane_index := face_axis * 64 + (32 if face_sign > 0 else 0) + layer_index
+						var key := Vector3i(plane_index, ao_code + 1, canonical_by_id[material_id])
 						if not groups.has(key):
 							groups[key] = {"plane": plane, "material": material, "cells": {}, "normals": {}, "corners": {}}
 						var group: Dictionary = groups[key]
@@ -550,6 +579,9 @@ func _collect_groups(padded_cell_colors: PackedColorArray, padded_cell_materials
 func _collect_groups_sparse(layers: Array, padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array, ao_strength := 0.0) -> Dictionary:
 	var groups := {}
 	var material_cache := {}
+	var canonical_cache := {}
+	var canonical_by_id := {}
+	var next_canonical := 0
 	var use_ao := ao_strength > 0.0
 	for face_axis in 3:
 		var column_axis := (face_axis + 1) % 3
@@ -583,11 +615,18 @@ func _collect_groups_sparse(layers: Array, padded_cell_colors: PackedColorArray,
 					else:
 						material = materials.slice(material_id * VoxelFrame.MATERIAL_STRIDE, (material_id + 1) * VoxelFrame.MATERIAL_STRIDE)
 						material_cache[material_id] = material
+						if canonical_cache.has(material):
+							canonical_by_id[material_id] = canonical_cache[material]
+						else:
+							canonical_cache[material] = next_canonical
+							canonical_by_id[material_id] = next_canonical
+							next_canonical += 1
 					var plane := Vector3i(face_axis, face_sign, 2 * layer_index + face_sign)
 					var ao_code := -1
 					if use_ao:
 						ao_code = _face_ao_code(padded_cell_materials, sample_index + neighbor_step, column_stride, row_stride)
-					var key := [plane, material, ao_code] if use_ao else [plane, material]
+					var plane_index := face_axis * 64 + (32 if face_sign > 0 else 0) + layer_index
+					var key := Vector3i(plane_index, ao_code + 1, canonical_by_id[material_id])
 					if not groups.has(key):
 						groups[key] = {"plane": plane, "material": material, "cells": {}, "normals": {}, "corners": {}}
 					var group: Dictionary = groups[key]

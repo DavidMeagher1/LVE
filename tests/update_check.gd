@@ -4,7 +4,7 @@ extends "res://tests/test.gd"
 ## bar link. No case uses the network.
 
 const CHECKER := preload("res://ui/StatusBar/UpdateChecker.gd")
-const STATUS_SCENE := preload("res://ui/StatusBar/status_bar.tscn")
+const STATUS_SCENE := preload("res://ui/StatusBar/StatusBar.tscn")
 const RELEASE_URL := "https://github.com/LeonardMeagher2/LVE/releases/tag/v0.3"
 
 var status: EditorStatusBar
@@ -77,6 +77,8 @@ func _retry_policy() -> void:
 		expect(CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 429), "a rate limit retries")
 		expect(not CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 404), "a missing release page does not retry")
 		expect(not CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 403), "a forbidden request does not retry")
+		expect(CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 403, PackedStringArray(["X-RateLimit-Remaining: 0"])), "an exhausted GitHub quota retries")
+		expect(CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 403, PackedStringArray(["Retry-After: 30"])), "a retry-after response retries")
 		expect(not CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 200), "a delivered page does not retry")
 	)
 

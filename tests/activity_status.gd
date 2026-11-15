@@ -15,7 +15,7 @@ func _run() -> void:
 	while State.get_activity() != null:
 		await get_tree().process_frame
 	step("Given the status bar and a short operation", func():
-		status = load("res://ui/StatusBar/status_bar.tscn").instantiate()
+		status = load("res://ui/StatusBar/StatusBar.tscn").instantiate()
 		main.add_child(status)
 		var operation_id := State.begin_operation("Short edit", 10, true, self)
 		expect(not status.get_node("Activity").visible, "the short operation starts without an activity display")

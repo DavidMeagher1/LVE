@@ -27,8 +27,10 @@ func activate_tool() -> void:
 	add_editor_node(_tool)
 
 
-## Deactivates the eyedropper tool.
+## Deactivates the eyedropper tool. A press can still hold its edit when the
+## switch removes the node, so cancel the stroke first.
 func _end_deactivation() -> void:
+	_tool.cancel_stroke()
 	remove_editor_node(_tool)
 
 

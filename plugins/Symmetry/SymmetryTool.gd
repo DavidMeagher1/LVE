@@ -194,10 +194,10 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 		_update_hover(_pointer_pos)
 		return true
 	if event is InputEventKey and event.pressed and not event.echo and not (event.ctrl_pressed or event.alt_pressed or event.meta_pressed):
-		var axis := [KEY_X, KEY_Y, KEY_Z].find(event.keycode)
-		if axis != -1:
-			State.symmetry_axes ^= 1 << axis
-			return true
+		for axis in 3:
+			if event.is_action_pressed(["axis_x", "axis_y", "axis_z"][axis]):
+				State.symmetry_axes ^= 1 << axis
+				return true
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if not event.pressed:
 			var handled := _dragging

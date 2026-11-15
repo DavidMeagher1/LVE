@@ -215,6 +215,13 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 			if not _fill_running:
 				_finish_fill_stroke()
 		return true
+	if event is InputEventMouseMotion and _stroke_active and event.button_mask == 0:
+		# A release outside the window sends no button event. End the fill the
+		# same way a release does.
+		_release_pending = true
+		if not _fill_running:
+			_finish_fill_stroke()
+		return true
 	if event is InputEventMouseMotion and _stroke_active and event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 		var ray := _ray(pos)
 		var pick := _pick_drag(ray[0], ray[1])

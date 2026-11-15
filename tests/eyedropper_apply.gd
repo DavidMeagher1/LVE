@@ -11,6 +11,7 @@ var frame: VoxelFrame
 var tool: VoxelTool
 var writer: VoxelTool
 var reenter_writer: VoxelTool
+var plugin_tool: VoxelTool
 var changed_cells: Array[Vector3i] = []
 var cells_emits := 0
 var chunks_emits := 0
@@ -32,6 +33,8 @@ func _ready() -> void:
 	test("the eyedropper changes state but publishes no cell change", _eyedropper_is_state_only, "eyedropper_state_only")
 	test("the base pick publishes the cells of a writer that returns true", _writer_publishes_cells, "writer_publishes_cells")
 	test("a reentrant material callback keeps an unrelated writer notification", _reentrant_callback_keeps_writer, "reentrant_callback_keeps_writer")
+	test("deactivating the eyedropper releases an open press edit", _switch_releases_press, "switch_releases_press")
+	test("a motion with no button ends an open base stroke", _lost_release_ends_stroke, "lost_release_ends_stroke")
 
 
 func before_test() -> void:
@@ -54,6 +57,11 @@ func after_test() -> void:
 		State.chunks_changed.disconnect(_on_chunks_changed)
 	if State.material_changed.is_connected(_on_sample_material_changed):
 		State.material_changed.disconnect(_on_sample_material_changed)
+	if is_instance_valid(plugin_tool):
+		plugin_tool.cancel_stroke()
+		if plugin_tool.get_parent() != null:
+			plugin_tool.get_parent().remove_child(plugin_tool)
+	plugin_tool = null
 	for node in [tool, writer, reenter_writer]:
 		if is_instance_valid(node):
 			node.free()
@@ -141,6 +149,51 @@ func _reentrant_callback_keeps_writer() -> void:
 		expect(cells_emits == 1, "one writer notification is published")
 		expect(changed_cells.size() == 1 and changed_cells[0] == REENTER_CELL, "the notification holds only the writer cell")
 		expect(chunks_emits == 0, "the eyedropper adds no chunks_changed")
+	)
+
+
+func _switch_releases_press() -> void:
+	var plugin := plugin("EyedropperPlugin")
+	step("Given an eyedropper press that holds an edit in the viewport", func():
+		expect(plugin != null, "the eyedropper plugin is registered")
+		if plugin == null:
+			return
+		plugin_tool = plugin._tool as VoxelTool
+		viewport_scene().add_child(plugin_tool)
+		plugin_tool.open_stroke()
+		plugin_tool._stroke_active = true
+	)
+	step("When another tool deactivates the plugin", func():
+		if plugin != null:
+			plugin.deactivate_tool()
+	)
+	step("Then the press edit is closed and the next edit can start", func():
+		if plugin_tool == null:
+			return
+		expect(State.active_edit() == null, "the press edit is closed")
+		expect(not plugin_tool._stroke_active, "the press state is cleared")
+		var tx := State.begin_edit()
+		expect(tx != null, "a later edit can start")
+		if tx != null:
+			State.cancel_edit(tx)
+	)
+
+
+func _lost_release_ends_stroke() -> void:
+	step("Given a base tool with an open stroke", func():
+		writer = WriterTool.new()
+		add_child(writer)
+		expect(writer.open_stroke() != null, "the stroke opens")
+		writer._stroke_active = true
+	)
+	step("When a motion arrives with no button", func():
+		var motion := InputEventMouseMotion.new()
+		motion.button_mask = 0
+		writer.handle_input(motion, Vector2.ZERO)
+	)
+	step("Then the stroke is closed", func():
+		expect(not writer._stroke_active, "the stroke state is cleared")
+		expect(State.active_edit() == null, "the edit is closed")
 	)
 
 

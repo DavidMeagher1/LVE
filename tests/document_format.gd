@@ -55,7 +55,7 @@ func _run() -> void:
 		preview.set_pixel(0, 0, Color.RED)
 		encoded = source.encode_document()
 		expect(not encoded.is_empty(), "the animation has a data-only encoding")
-		expect(encoded.decode_u32(4) == 3, "material palettes use document version 3")
+		expect(encoded.decode_u32(4) == 4, "material palettes use document version 4")
 		expect(encoded.size() < 8192, "uniform voxel regions keep the document compact")
 	)
 	step("When the user saves both document formats", func():
@@ -295,7 +295,7 @@ func _wrap(payload: PackedByteArray) -> PackedByteArray:
 	result.resize(16)
 	result.encode_u32(4, VoxelDocument.FORMAT_VERSION)
 	result.encode_u32(8, payload.size())
-	result.encode_u32(12, VoxelDocument._crc32(payload))
+	result.encode_u32(12, VoxelDocument._checksum(payload))
 	result.append_array(payload)
 	return result
 

@@ -110,7 +110,7 @@ func after_test() -> void:
 
 func _status_run() -> void:
 	step("Given the status bar and an empty document", func():
-		status = load("res://ui/StatusBar/status_bar.tscn").instantiate()
+		status = load("res://ui/StatusBar/StatusBar.tscn").instantiate()
 		main.add_child(status)
 	)
 	await get_tree().process_frame
@@ -157,7 +157,7 @@ func _mcp_toggle_run() -> void:
 		main.set("settings_path", mcp_settings_path)
 		main.set("mcp_port", 0)
 		expect(not bool(main.call("is_mcp_enabled")), "the server starts off")
-		mcp_status = load("res://ui/StatusBar/status_bar.tscn").instantiate()
+		mcp_status = load("res://ui/StatusBar/StatusBar.tscn").instantiate()
 		main.add_child(mcp_status)
 	)
 	await get_tree().process_frame
@@ -223,7 +223,7 @@ func _mcp_bind_failure_run() -> void:
 		expect(mcp_blocker.listen(0, "127.0.0.1") == OK, "the blocker listens")
 		main.set("settings_path", mcp_settings_path)
 		main.set("mcp_port", mcp_blocker.get_local_port())
-		mcp_status = load("res://ui/StatusBar/status_bar.tscn").instantiate()
+		mcp_status = load("res://ui/StatusBar/StatusBar.tscn").instantiate()
 		main.add_child(mcp_status)
 	)
 	await get_tree().process_frame
