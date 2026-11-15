@@ -6,7 +6,7 @@
 [ext_resource type="Script" path="res://plugins/Transform/Toolbar.gd" id="4_script"]
 [ext_resource type="Texture2D" path="res://icons/scale.svg" id="5_scale"]
 
-[node name="transform" type="MenuButton"]
+[node name="Transform" type="MenuButton"]
 tooltip_text = "Move, rotate, and scale voxels"
 button_group = ExtResource("1_bg")
 icon = ExtResource("2_move")

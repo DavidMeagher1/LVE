@@ -6,7 +6,7 @@
 [ext_resource type="Script" path="res://plugins/paint/Toolbar.gd" id="4_script"]
 [ext_resource type="Texture2D" path="res://icons/spray.svg" id="5_spray"]
 
-[node name="paint" type="MenuButton"]
+[node name="Paint" type="MenuButton"]
 tooltip_text = "Paint tools"
 button_group = ExtResource("1_bg")
 icon = ExtResource("2_paint")

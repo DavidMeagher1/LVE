@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" path="res://icons/smooth.svg" id="6_smooth"]
 [ext_resource type="Script" path="res://plugins/Terrain/Toolbar.gd" id="5_script"]
 
-[node name="terrain" type="MenuButton"]
+[node name="Terrain" type="MenuButton"]
 tooltip_text = "Terrain tools"
 button_group = ExtResource("1_bg")
 icon = ExtResource("2_build")

@@ -5,7 +5,7 @@
 [ext_resource type="Texture2D" path="res://icons/pose.svg" id="3_pose"]
 [ext_resource type="Script" path="res://plugins/Deform/Toolbar.gd" id="4_script"]
 
-[node name="deform" type="MenuButton"]
+[node name="Deform" type="MenuButton"]
 tooltip_text = "Deform tools"
 button_group = ExtResource("1_bg")
 icon = ExtResource("3_pose")
