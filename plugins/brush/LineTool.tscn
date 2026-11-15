@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://6pxvhagh3oqo"]
 
 [ext_resource type="Script" path="res://plugins/brush/LineTool.gd" id="1_tool"]
 [ext_resource type="Material" path="res://plugins/cursor_material.tres" id="2_material"]

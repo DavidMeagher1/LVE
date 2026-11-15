@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://0l3qv3msdil1"]
 
 [ext_resource type="Script" path="res://plugins/Deform/PoseTool.gd" id="1_tool"]
 

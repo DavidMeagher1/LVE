@@ -30,6 +30,7 @@ func _rebuild_strip() -> void:
 		for i in n:
 			var range_cell = RANGE_CELL.instantiate()
 			range_cell.set_column_index(i)
+			range_cell.grid = %FrameGrid
 			%FrameGrid.add_child(range_cell)
 	for i in n:
 		var frame: AnimationFrame = ANIMATION_FRAME.instantiate()

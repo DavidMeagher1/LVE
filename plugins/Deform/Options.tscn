@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://ynnqn0vcfrc8"]
 
 [ext_resource type="Script" path="res://plugins/Deform/Options.gd" id="1_script"]
 [ext_resource type="PackedScene" uid="uid://kxi223occ3vl" path="res://ui/ValueButton/ValueButton.tscn" id="2_value"]

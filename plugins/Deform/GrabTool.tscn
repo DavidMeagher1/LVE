@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://c6uydydxaw25y"]
 
 [ext_resource type="Script" path="res://plugins/Deform/GrabTool.gd" id="1_tool"]
 

@@ -30,7 +30,7 @@ enum BrushShape {
 }
 
 ## The stamp diameter in cells. It clamps to the range 1 through 64.
-@export var diameter := 1:
+@export_range(1, 64, 1) var diameter := 1:
 	set(value):
 		value = VoxelBrushSize.clamp_size(value)
 		if value == diameter:

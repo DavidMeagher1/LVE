@@ -54,7 +54,7 @@ const CopyJob := preload("res://plugins/brush/StampCopyJob.gd")
 ## inside the shared brush sphere of this diameter. Diameter 1 paints the spot
 ## center alone. It clamps to the range 1 through 64, so the spot matches the
 ## brush sphere at every size.
-@export var spot_diameter := 1 :
+@export_range(1, 64, 1) var spot_diameter := 1 :
 	set(value):
 		value = VoxelBrushSize.clamp_size(value)
 		if value == spot_diameter:
@@ -71,7 +71,7 @@ const CopyJob := preload("res://plugins/brush/StampCopyJob.gd")
 ## The sphere mask admits more corner and diagonal cells than the old integer
 ## ball of radius 4, so the default mask changes while it keeps the intended
 ## physical width.
-@export var spray_size := 9 :
+@export_range(1, 64, 1) var spray_size := 9 :
 	set(value):
 		value = VoxelBrushSize.clamp_size(value)
 		if value == spray_size:
@@ -90,7 +90,7 @@ var spray_radius: int :
 
 ## The number of distinct spot centers that one click or one brush cell change
 ## samples. A spot diameter above one can paint more voxels than this count.
-@export var speed := 8 :
+@export_range(1, 64, 1) var speed := 8 :
 	set(value):
 		value = clampi(value, 1, 64)
 		if value == speed:

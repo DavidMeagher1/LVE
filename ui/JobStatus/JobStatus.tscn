@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://c26e31r5w8toh"]
 
 [ext_resource type="Script" path="res://ui/JobStatus/JobStatus.gd" id="1_job"]
 [ext_resource type="Texture2D" path="res://icons/cross.svg" id="2_cancel"]

@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://dml08xk7h6dbh"]
 
 [ext_resource type="Script" path="res://plugins/Terrain/TerrainTool.gd" id="1_tool"]
 

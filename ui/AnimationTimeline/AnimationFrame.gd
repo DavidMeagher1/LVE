@@ -30,6 +30,7 @@ func set_texture(value:Texture) -> void:
 	%Thumbnail.texture = texture
 
 func _ready() -> void:
+	%Button.set("frame", self)
 	set_frame(frame_index)
 	set_texture(texture)
 	State.frame_changed.connect(_on_frame_changed)

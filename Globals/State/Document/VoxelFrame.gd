@@ -11,7 +11,7 @@ extends Resource
 ## before it mutates, so a snapshot stays frozen.
 
 ## The frame duration in milliseconds.
-@export var delay_ms := 100
+@export_range(1, 1000, 1) var delay_ms := 100
 
 # Version 3 stores sparse chunk roots, one material table per chunk, and flattened octree nodes.
 ## The serialized voxel storage. A read encodes the frame. A write decodes the

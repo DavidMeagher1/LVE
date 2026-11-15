@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://dmuaau3s2eneo"]
 
 [ext_resource type="Script" path="res://plugins/Transform/tools/TransformDialog.gd" id="1_dialog"]
 [ext_resource type="Texture2D" path="res://icons/uniform.svg" id="2_uniform"]

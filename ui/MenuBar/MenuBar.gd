@@ -408,9 +408,7 @@ func _clear_recovery_options() -> void:
 	for checkbox in _recovery_checkboxes:
 		if not is_instance_valid(checkbox):
 			continue
-		var parent := checkbox.get_parent()
-		if parent != null:
-			parent.remove_child(checkbox)
+		%RecoveryOptions.remove_child(checkbox)
 		checkbox.queue_free()
 	_recovery_checkboxes.clear()
 

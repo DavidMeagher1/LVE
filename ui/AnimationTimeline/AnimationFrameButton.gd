@@ -8,9 +8,11 @@ extends Button
 ## The drag data type that marks one frame drag.
 const DRAG_TYPE := "voxel_frame"
 
+## The frame cell that owns this button. The parent sets it.
+var frame: AnimationFrame
+
 
 func _get_drag_data(_at_position: Vector2) -> Variant:
-	var frame := get_parent() as AnimationFrame
 	if frame == null:
 		return null
 	var data := {"type": DRAG_TYPE, "from": frame.frame_index}
@@ -26,7 +28,6 @@ func _can_drop_data(_at_position: Vector2, data) -> bool:
 
 
 func _drop_data(_at_position: Vector2, data) -> void:
-	var frame := get_parent() as AnimationFrame
 	if frame == null:
 		return
 	if data is Dictionary and data.get("type", "") == DRAG_TYPE:

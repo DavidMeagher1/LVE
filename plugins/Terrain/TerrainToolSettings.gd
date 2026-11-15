@@ -41,7 +41,7 @@ enum BuildMode {
 ## The circular footprint size in voxels. It clamps to 1 through 32. A size of
 ## one is one voxel. An even size centers between cells, like the shared brush
 ## size.
-@export var radius := 4:
+@export_range(1, 32, 1) var radius := 4:
 	set(value):
 		value = clampi(value, 1, 32)
 		if value == radius:
@@ -52,7 +52,7 @@ enum BuildMode {
 ## The voxel layers one dab adds at full weight. The falloff scales it per
 ## voxel, and a fraction below one half adds nothing. The default of one adds one
 ## layer to every voxel in the footprint.
-@export var strength := 1:
+@export_range(1, 16, 1) var strength := 1:
 	set(value):
 		value = clampi(value, 1, 16)
 		if value == strength:
@@ -61,7 +61,7 @@ enum BuildMode {
 		emit_changed()
 
 ## The edge softness. Zero is a hard edge and one is a smooth edge.
-@export var falloff := 0.5:
+@export_range(0.0, 1.0, 0.01) var falloff := 0.5:
 	set(value):
 		value = clampf(value, 0.0, 1.0)
 		if value == falloff:

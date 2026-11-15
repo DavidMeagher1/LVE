@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://xr0nf2mcq8nd"]
 
 [ext_resource type="ButtonGroup" path="res://plugins/ToolBarButtonGroup.tres" id="1_group"]
 [ext_resource type="Texture2D" path="res://icons/symmetry.svg" id="2_icon"]

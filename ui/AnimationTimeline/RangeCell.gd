@@ -8,6 +8,8 @@ extends HBoxContainer
 
 ## The frame column index of this cell.
 var column_index := 0
+## The frame grid that owns this cell. The timeline sets it.
+var grid: Control
 var _is_from := false
 var _is_to := false
 var _dragging := false
@@ -92,7 +94,8 @@ func _drag_range_to(mm: InputEventMouseMotion) -> void:
 
 
 func _column_from_x(x: float) -> int:
-	var grid := get_parent()
+	if grid == null:
+		return 0
 	var n := State.get_frame_count()
 	if n <= 1:
 		return 0

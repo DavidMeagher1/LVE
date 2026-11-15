@@ -30,7 +30,7 @@ enum Tools {
 ## The circular footprint size in voxels. It clamps to 1 through 32. A size of
 ## one is one voxel. An even size centers between cells, like the shared brush
 ## size.
-@export var size := 4:
+@export_range(1, 32, 1) var size := 4:
 	set(value):
 		value = clampi(value, 1, 32)
 		if value == size:
@@ -50,7 +50,7 @@ enum Tools {
 
 ## The edge softness. Zero is a hard edge and one is a smooth edge. Grab scales
 ## the drag of each source by it. Pose sets the width of the joint neck by it.
-@export var falloff := 0.5:
+@export_range(0.0, 1.0, 0.01) var falloff := 0.5:
 	set(value):
 		value = clampf(value, 0.0, 1.0)
 		if value == falloff:

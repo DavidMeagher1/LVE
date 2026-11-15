@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://d2cyvjqeb7cx6"]
 
 [ext_resource type="PackedScene" path="res://plugins/brush/LineTool.tscn" id="1_scene"]
 [ext_resource type="Script" path="res://plugins/Clipboard/PasteTool.gd" id="2_script"]

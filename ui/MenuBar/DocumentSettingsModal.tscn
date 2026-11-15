@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://bxcennd5mh7mf"]
 
 [ext_resource type="Script" path="res://ui/MenuBar/DocumentSettingsModal.gd" id="1_script"]
 [ext_resource type="Texture2D" uid="uid://denrh23gr1h2a" path="res://icons/size.svg" id="2_fit"]

@@ -47,7 +47,7 @@ static var _profile_rescan_us := 0
 ## The smooth normals model option.
 @export var smooth_normals := false
 ## The viewport and model preview ambient occlusion strength, from 0 to 1.
-@export var ao_strength := 1.0
+@export_range(0.0, 1.0, 0.01) var ao_strength := 1.0
 ## The editor lighting settings. See `docs/DOCUMENT_FORMAT.md` for the keys.
 @export var lighting_settings: Dictionary = {}
 ## The export workspace settings. See `docs/DOCUMENT_FORMAT.md` for the keys.

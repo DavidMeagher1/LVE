@@ -1,4 +1,4 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://c5ew0wvtk1kbi"]
 
 [ext_resource type="Script" path="res://ui/MenuBar/DocumentTabs.gd" id="1"]
 
