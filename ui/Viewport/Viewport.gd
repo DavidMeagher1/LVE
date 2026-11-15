@@ -270,6 +270,20 @@ func _set_environment_open(value: bool) -> void:
 ## Resets the view to the editor defaults without saving them.
 func reset_view_state() -> void:
 	_loading_document_view = true
+	# `set_view` and `configure` reach `_save_pose` through `view_changed`, and
+	# `_save_pose` stores the pose on the document. Turn that off for the reset,
+	# so a reset never lands in the document.
+	var stores_pose: bool = %CameraRig.stores_document_pose
+	%CameraRig.stores_document_pose = false
+	# The camera keeps its angles across a document change, and a document
+	# without a saved pose does not restore them. Reset the pose here, or a new
+	# scene inherits the previous one.
+	%CameraRig.set_view("default")
+	# Framing needs a document. A reset before the first document keeps the pose
+	# only.
+	if State.document != null:
+		%CameraRig.configure()
+	%CameraRig.stores_document_pose = stores_pose
 	_set_grid_visible(true, false)
 	_set_wireframe(false, false)
 	_set_orthographic(false, false)

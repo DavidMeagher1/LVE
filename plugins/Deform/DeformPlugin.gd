@@ -19,7 +19,6 @@ var _active := false
 
 func _ready() -> void:
 	name = "DeformPlugin"
-	_toolbar.toggled.connect(_on_toolbar_toggled)
 	_settings.tool_changed.connect(_on_tool_changed)
 	_options.bind(_settings)
 	add_tool_bar_item(_toolbar, _settings)
@@ -45,20 +44,12 @@ func activate_tool() -> void:
 
 ## Deactivates the current deform tool and hides the option bar. It ends an open
 ## gesture like a release.
-func deactivate_tool() -> void:
+func _end_deactivation() -> void:
 	_active = false
 	remove_option_bar_item(_options)
 	if _current_tool:
 		_current_tool.finish_on_switch()
 		remove_editor_node(_current_tool)
-	_toolbar.set_pressed_no_signal(false)
-
-
-func _on_toolbar_toggled(on: bool) -> void:
-	if on:
-		activate_tool()
-	else:
-		deactivate_tool()
 
 
 func _on_tool_changed(tool: int) -> void:

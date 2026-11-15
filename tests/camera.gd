@@ -14,6 +14,7 @@ var near_helper: AABB
 func _ready() -> void:
 	test("can orbit and pan the camera", _run)
 	test("the orthographic clip range covers helper bounds", _clip_run, "orthographic_clip")
+	test("the view reset does not store its pose", _reset_run, "reset_pose")
 
 
 func _run() -> void:
@@ -106,3 +107,16 @@ func _clip_run() -> void:
 		expect(is_equal_approx(clip_camera.far, far_before), "the far plane returns to the document bounds")
 	)
 	clip_camera.is_orthogonal = false
+
+
+# A reset must not store its result on the document. `set_view` and `configure`
+# reach `_save_pose` through `view_changed`.
+func _reset_run() -> void:
+	step("Given a document with no saved camera", func():
+		State.document.edit_camera = {}
+		viewport_scene().reset_view_state()
+	)
+	step("Then the reset pose stays out of the document", func():
+		expect(State.document.edit_camera.is_empty(), "the reset does not store a camera")
+		expect(is_equal_approx(camera_rig()._pitch, deg_to_rad(45.0)), "the reset uses the default pitch")
+	)

@@ -14,6 +14,7 @@ func _ready() -> void:
 	test("the version comparison uses numeric parts", _compare)
 	test("a release outranks its pre-release", _suffix)
 	test("the release parser accepts only published release pages", _parse)
+	test("a failed request retries only when another attempt can pass", _retry_policy)
 	test("the status bar links to the latest release", _status)
 
 
@@ -61,6 +62,22 @@ func _parse() -> void:
 		expect(CHECKER.parse_release({"tag_name": "nightly", "html_url": RELEASE_URL}).is_empty(), "an invalid tag is rejected")
 		expect(CHECKER.parse_release({"tag_name": "v0.3", "html_url": "https://example.com/release"}).is_empty(), "a foreign page is rejected")
 		expect(CHECKER.parse_release({"html_url": RELEASE_URL}).is_empty(), "a missing tag is rejected")
+	)
+
+
+func _retry_policy() -> void:
+	step("Given a release request that failed", func():
+		pass
+	)
+	step("Then only a temporary fault retries", func():
+		expect(CHECKER.should_retry(HTTPRequest.RESULT_CANT_CONNECT, 0), "a connection fault retries")
+		expect(CHECKER.should_retry(HTTPRequest.RESULT_TIMEOUT, 0), "a timeout retries")
+		expect(CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 500), "a server fault retries")
+		expect(CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 503), "an unavailable server retries")
+		expect(CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 429), "a rate limit retries")
+		expect(not CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 404), "a missing release page does not retry")
+		expect(not CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 403), "a forbidden request does not retry")
+		expect(not CHECKER.should_retry(HTTPRequest.RESULT_SUCCESS, 200), "a delivered page does not retry")
 	)
 
 

@@ -17,6 +17,50 @@ func _safe_remove(parent:Node, child:Node) -> void:
 	parent.remove_child(child)
 
 
+## The button that activates this plugin. [method add_tool_bar_item] sets it, so
+## the base routes its toggle and releases it. A plugin never touches button
+## state.
+var _tool_button: BaseButton
+
+
+## Activates the tool. A plugin with a tool button overrides this.
+func activate_tool() -> void:
+	pass
+
+
+## Deactivates the tool. The base releases the tool button, then runs
+## [method _end_deactivation] once. A plugin overrides only that method.
+func deactivate_tool() -> void:
+	if is_instance_valid(_tool_button):
+		# This engine call clears the button without a `toggled` signal, so the
+		# release cannot re-enter this call. A ButtonGroup finds its pressed
+		# button by reading the buttons, so the group sees the release.
+		_tool_button.set_pressed_no_signal(false)
+	_end_deactivation()
+
+
+## Ends this plugin's tool. The base calls it once per deactivation.
+func _end_deactivation() -> void:
+	pass
+
+
+## Routes one tool button to this plugin. The shared ButtonGroup keeps the pressed
+## state, so this listener only maps the button to the tool.
+func _set_tool_button(button: BaseButton) -> void:
+	if is_instance_valid(_tool_button) and _tool_button != button and _tool_button.toggled.is_connected(_on_tool_button_toggled):
+		_tool_button.toggled.disconnect(_on_tool_button_toggled)
+	_tool_button = button
+	if not _tool_button.toggled.is_connected(_on_tool_button_toggled):
+		_tool_button.toggled.connect(_on_tool_button_toggled)
+
+
+func _on_tool_button_toggled(on: bool) -> void:
+	if on:
+		activate_tool()
+	else:
+		deactivate_tool()
+
+
 ## Returns the current main scene. A test scene puts Main below its test root,
 ## so the plugins find it through the group instead of a fixed tree path.
 func _main() -> Node:
@@ -86,13 +130,27 @@ func add_tool_bar_item(control:Control, settings: Resource = null) -> void:
 	if main == null:
 		return
 	_safe_add(main.get_node("%ToolBar"), control)
+	if control is BaseButton:
+		_set_tool_button(control)
 	var workspace := main.get_node_or_null("%EditorWorkspace")
 	if workspace != null and control is BaseButton:
 		workspace.call("register_tool", "%s/%s" % [name, control.name], control, settings)
 
-## Removes a control from the tool bar.
+## Removes a control from the tool bar. A removed tool button no longer routes to
+## this plugin or writes the active tool.
 func remove_tool_bar_item(control:Control) -> void:
-	_safe_remove(_main().get_node("%ToolBar"), control)
+	var main := _main()
+	if main == null:
+		return
+	_safe_remove(main.get_node("%ToolBar"), control)
+	var workspace := main.get_node_or_null("%EditorWorkspace")
+	if workspace != null and control is BaseButton:
+		workspace.call("unregister_tool", "%s/%s" % [name, control.name])
+	if not is_instance_valid(_tool_button) or control != _tool_button:
+		return
+	if _tool_button.toggled.is_connected(_on_tool_button_toggled):
+		_tool_button.toggled.disconnect(_on_tool_button_toggled)
+	_tool_button = null
 
 ## Adds a tool node to the viewport scene.
 func add_editor_node(node:Node3D) -> void:

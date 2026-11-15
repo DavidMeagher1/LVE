@@ -9,7 +9,6 @@ extends VoxelPlugin
 
 func _ready() -> void:
 	name = "EyedropperPlugin"
-	_toolbar.toggled.connect(_on_toolbar_toggled)
 	add_tool_bar_item(_toolbar)
 
 
@@ -29,13 +28,7 @@ func activate_tool() -> void:
 
 
 ## Deactivates the eyedropper tool.
-func deactivate_tool() -> void:
+func _end_deactivation() -> void:
 	remove_editor_node(_tool)
-	_toolbar.set_pressed_no_signal(false)
 
 
-func _on_toolbar_toggled(on: bool) -> void:
-	if on:
-		activate_tool()
-	else:
-		deactivate_tool()

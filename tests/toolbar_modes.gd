@@ -214,3 +214,24 @@ func _run() -> void:
 		expect(not plugin("BrushPlugin")._tool.is_inside_tree(), "the brush tool left the viewport")
 		expect(plugin("PaintPlugin")._tool.is_inside_tree(), "the paint tool entered the viewport")
 	)
+	step("When the user deactivates the plugin directly", func():
+		plugin("PaintPlugin").deactivate_tool()
+	)
+	step("Then the shared group releases the button", func():
+		expect(paint_button.button_group.get_pressed_button() == null, "the group has no pressed button")
+		expect(not paint_button.button_pressed, "the paint button is released")
+		expect(not plugin("PaintPlugin")._tool.is_inside_tree(), "the paint tool left the viewport")
+	)
+	step("When the plugin removes its tool button", func():
+		plugin("PaintPlugin").remove_tool_bar_item(paint_button)
+	)
+	step("Then the removed button no longer routes to the plugin", func():
+		State.document.tool_settings = {}
+		paint_button.button_pressed = true
+		expect(not plugin("PaintPlugin")._active, "the removed button does not activate the plugin")
+		expect(not plugin("PaintPlugin")._tool.is_inside_tree(), "the paint tool stays out of the viewport")
+		expect(State.document.tool_settings.is_empty(), "the removed button does not write the active tool")
+		var workspace: Node = main.get_node("%EditorWorkspace")
+		expect(not workspace._tool_buttons.has("PaintPlugin/%s" % paint_button.name), "the workspace forgets the removed button")
+		paint_button.queue_free()
+	)

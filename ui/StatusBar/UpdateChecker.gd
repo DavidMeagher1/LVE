@@ -75,9 +75,20 @@ func _enabled() -> bool:
 	return true
 
 
+## Returns true when a failed request can still succeed on another attempt. A
+## transport fault, a server fault, and a rate limit are temporary. A missing or
+## forbidden release page is not.
+static func should_retry(result: int, response_code: int) -> bool:
+	if result != HTTPRequest.RESULT_SUCCESS:
+		return true
+	return response_code >= 500 or response_code == 429
+
+
 func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
+	if should_retry(result, response_code):
 		_retry_later()
+		return
+	if response_code != 200:
 		return
 	var parsed: Variant = JSON.parse_string(body.get_string_from_utf8())
 	if not parsed is Dictionary:

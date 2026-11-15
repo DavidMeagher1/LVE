@@ -24,7 +24,6 @@ var _active := false
 func _ready() -> void:
 	name = "SelectionPlugin"
 	State.selection_changed.connect(_on_selection_changed)
-	_toolbar.toggled.connect(_on_toolbar_toggled)
 	_settings.tool_changed.connect(_on_tool_changed)
 	add_tool_bar_item(_toolbar, _settings)
 	add_editor_node(_selection)
@@ -59,7 +58,7 @@ func activate_tool() -> void:
 
 ## Deactivates the current selection tool and hides the option bar. A held Box
 ## or Lasso drag applies its outline before the detach.
-func deactivate_tool() -> void:
+func _end_deactivation() -> void:
 	_active = false
 	remove_option_bar_item(_options)
 	if _current_tool:
@@ -68,12 +67,6 @@ func deactivate_tool() -> void:
 		_current_tool.finish_on_switch()
 		remove_editor_node(_current_tool)
 
-
-func _on_toolbar_toggled(on: bool) -> void:
-	if on:
-		activate_tool()
-	else:
-		deactivate_tool()
 
 func _on_tool_changed(tool: int):
 	if not _active:

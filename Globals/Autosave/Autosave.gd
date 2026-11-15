@@ -20,9 +20,22 @@ var enabled := true
 ## The delay after the first edit before a copy is written.
 const SAVE_DELAY_SEC := 2.0
 
+## The result of one recovery copy attempt.
+enum SaveOutcome {
+	## The copy is on disk.
+	SAVED,
+	## The write failed, so another attempt can pass.
+	RETRY,
+	## The document cannot encode, so no attempt can pass.
+	PERMANENT,
+}
+
 var _timer: Timer
 ## Instance id -> {file, path, name, updated}.
 var _entries := {}
+## Instance ids of documents whose data cannot encode. The retry timer skips
+## them until an edit may make them valid again.
+var _invalid_ids := {}
 var _dirty := false
 
 
@@ -49,8 +62,8 @@ func _connect_state() -> void:
 		State.chunks_changed.connect(_on_chunks_changed)
 	if not State.frames_changed.is_connected(_mark_dirty):
 		State.frames_changed.connect(_mark_dirty)
-	if not State.frame_changed.is_connected(_mark_dirty):
-		State.frame_changed.connect(_mark_dirty)
+	if not State.frame_changed.is_connected(_mark_view_changed):
+		State.frame_changed.connect(_mark_view_changed)
 	if not State.palette_changed.is_connected(_mark_dirty):
 		State.palette_changed.connect(_mark_dirty)
 	if not State.tag_changed.is_connected(_mark_dirty):
@@ -61,8 +74,8 @@ func _connect_state() -> void:
 		State.model_settings_changed.connect(_mark_dirty)
 	if not State.document_saved.is_connected(_on_document_saved):
 		State.document_saved.connect(_on_document_saved)
-	if not State.tabs_changed.is_connected(_on_tabs_changed):
-		State.tabs_changed.connect(_on_tabs_changed)
+	if not State.tabs_changed.is_connected(_mark_view_changed):
+		State.tabs_changed.connect(_mark_view_changed)
 
 
 func _disconnect_state() -> void:
@@ -72,8 +85,8 @@ func _disconnect_state() -> void:
 		State.chunks_changed.disconnect(_on_chunks_changed)
 	if State.frames_changed.is_connected(_mark_dirty):
 		State.frames_changed.disconnect(_mark_dirty)
-	if State.frame_changed.is_connected(_mark_dirty):
-		State.frame_changed.disconnect(_mark_dirty)
+	if State.frame_changed.is_connected(_mark_view_changed):
+		State.frame_changed.disconnect(_mark_view_changed)
 	if State.palette_changed.is_connected(_mark_dirty):
 		State.palette_changed.disconnect(_mark_dirty)
 	if State.tag_changed.is_connected(_mark_dirty):
@@ -84,8 +97,8 @@ func _disconnect_state() -> void:
 		State.model_settings_changed.disconnect(_mark_dirty)
 	if State.document_saved.is_connected(_on_document_saved):
 		State.document_saved.disconnect(_on_document_saved)
-	if State.tabs_changed.is_connected(_on_tabs_changed):
-		State.tabs_changed.disconnect(_on_tabs_changed)
+	if State.tabs_changed.is_connected(_mark_view_changed):
+		State.tabs_changed.disconnect(_mark_view_changed)
 
 
 func _on_cells_changed(_frame: int, _affected: Array[Vector3i]) -> void:
@@ -96,15 +109,32 @@ func _on_chunks_changed(_frame: int, _affected: Array[Vector3i]) -> void:
 	_mark_dirty()
 
 
-func _on_tabs_changed() -> void:
-	_mark_dirty()
-
-
 func _mark_dirty() -> void:
-	# Playback steps the frame every tick and emits `frame_changed`. No content
-	# changed, so the copy must not be rewritten for each step.
 	if not enabled or State.is_playing:
 		return
+	# Adoption emits the content signals too, but it is not an edit. A new edit
+	# to this document may make it valid again, so only that edit clears the
+	# skip. Another document keeps its skip, because this edit cannot fix it.
+	if not State.is_adopting():
+		var document := State.document
+		if document != null:
+			_invalid_ids.erase(document.get_instance_id())
+	_queue_save()
+
+
+# A frame switch or a tab change does not make an unencodable document valid, so
+# it keeps the skip. It still queues a copy, because the edit frame or the tab
+# set changed.
+func _mark_view_changed() -> void:
+	# Playback steps the frame every tick. No content changed, so the copy must
+	# not be rewritten for each step.
+	if not enabled or State.is_playing:
+		return
+	_queue_save()
+
+
+# Marks the copy dirty and starts the timer.
+func _queue_save() -> void:
 	_dirty = true
 	if _timer != null and _timer.is_stopped():
 		_timer.start()
@@ -132,19 +162,33 @@ func save_now() -> void:
 		var id := document.get_instance_id()
 		current_ids[id] = true
 		if document.edit_dirty:
-			if not _save_document(document):
-				failed = true
+			if _invalid_ids.has(id):
+				continue
+			# A document that cannot encode will never produce a copy. Keep the
+			# unsaved mark, but do not retry a permanent failure.
+			match _save_document(document):
+				SaveOutcome.PERMANENT:
+					_invalid_ids[id] = true
+				SaveOutcome.RETRY:
+					failed = true
 		else:
 			_remove_entry(id)
 	for id in _entries.keys():
 		if not current_ids.has(id):
 			_remove_entry(id)
+	# A closed document must not stay in the skip set.
+	for id in _invalid_ids.keys():
+		if not current_ids.has(id):
+			_invalid_ids.erase(id)
 	_write_manifest()
 	# A failed copy must keep the dirty mark, or only the next model change
 	# would retry it.
 	_dirty = failed
-	if failed and _timer != null and _timer.is_stopped():
-		_timer.start()
+	if failed:
+		if _timer != null and _timer.is_stopped():
+			_timer.start()
+	elif _timer != null:
+		_timer.stop()
 
 
 ## Returns the recovery entries that are still on disk.
@@ -234,12 +278,12 @@ func recovery_entries() -> Array:
 	return _entries.values()
 
 
-func _save_document(document: VoxelDocument) -> bool:
+func _save_document(document: VoxelDocument) -> SaveOutcome:
 	var id := document.get_instance_id()
 	State.capture_workspace(document)
 	var encoded := document.encode_document()
 	if encoded.is_empty():
-		return false
+		return SaveOutcome.PERMANENT
 	var preferred := _recovery_path_for(document)
 	var file := preferred
 	var error := document.save_file(file, null, encoded)
@@ -247,7 +291,7 @@ func _save_document(document: VoxelDocument) -> bool:
 		file = _fallback_path(document)
 		error = document.save_file(file, null, encoded)
 		if error != OK:
-			return false
+			return SaveOutcome.RETRY
 	var entry: Dictionary
 	if _entries.has(id):
 		entry = _entries[id]
@@ -261,7 +305,7 @@ func _save_document(document: VoxelDocument) -> bool:
 	entry["path"] = document.edit_save_path if not document.edit_save_path.is_empty() else document.file_path
 	entry["name"] = document.get_file_name()
 	entry["updated"] = int(Time.get_unix_time_from_system())
-	return true
+	return SaveOutcome.SAVED
 
 
 func _recovery_path_for(document: VoxelDocument) -> String:
@@ -284,6 +328,9 @@ func _fallback_path(document: VoxelDocument) -> String:
 
 
 func _remove_entry(id: int) -> void:
+	# A skipped document keeps no copy, so its permanent mark leaves with the
+	# entry.
+	_invalid_ids.erase(id)
 	if not _entries.has(id):
 		return
 	var entry: Dictionary = _entries[id]

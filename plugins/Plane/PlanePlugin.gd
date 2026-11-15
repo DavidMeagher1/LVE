@@ -11,7 +11,6 @@ extends VoxelPlugin
 
 func _ready() -> void:
 	name = "PlanePlugin"
-	_toolbar.toggled.connect(_on_toolbar_toggled)
 	add_tool_bar_item(_toolbar)
 
 
@@ -32,14 +31,8 @@ func activate_tool() -> void:
 
 
 ## Deactivates the plane tool and hides its option bar.
-func deactivate_tool() -> void:
+func _end_deactivation() -> void:
 	remove_editor_node(_tool)
 	remove_option_bar_item(_options)
-	_toolbar.set_pressed_no_signal(false)
 
 
-func _on_toolbar_toggled(on: bool) -> void:
-	if on:
-		activate_tool()
-	else:
-		deactivate_tool()

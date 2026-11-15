@@ -21,7 +21,6 @@ var _active := false
 
 func _ready() -> void:
 	name = "PaintPlugin"
-	_toolbar.toggled.connect(_on_toolbar_toggled)
 	_settings.tool_changed.connect(_on_tool_changed)
 	add_tool_bar_item(_toolbar, _settings)
 	_set_tool(_settings.tool)
@@ -46,7 +45,7 @@ func activate_tool() -> void:
 
 ## Deactivates the current paint tool and hides its option bar. It ends an open
 ## stroke like a release.
-func deactivate_tool() -> void:
+func _end_deactivation() -> void:
 	_active = false
 	# A switch ends the stroke like a release: the queued centers are stamped and
 	# the stroke commits as one history action. Escape and a context change keep
@@ -54,14 +53,6 @@ func deactivate_tool() -> void:
 	_tool.finish_on_switch()
 	remove_editor_node(_tool)
 	remove_option_bar_item(_options)
-	_toolbar.set_pressed_no_signal(false)
-
-
-func _on_toolbar_toggled(on: bool) -> void:
-	if on:
-		activate_tool()
-	else:
-		deactivate_tool()
 
 
 func _on_tool_changed(tool: int) -> void:

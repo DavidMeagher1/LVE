@@ -107,6 +107,19 @@ func _prune() -> void:
 			_tool_buttons.erase(id)
 
 
+## Removes one registered toolbar. A later press of its button no longer writes
+## the active tool.
+func unregister_tool(id: String) -> void:
+	var button: BaseButton = _tool_buttons.get(id)
+	if button == null:
+		return
+	if is_instance_valid(button):
+		var toggle_callback := _on_tool_toggled.bind(id)
+		if button.toggled.is_connected(toggle_callback):
+			button.toggled.disconnect(toggle_callback)
+	_tool_buttons.erase(id)
+
+
 func _on_settings_changed(plugin: String) -> void:
 	if _applying or not _can_save():
 		return

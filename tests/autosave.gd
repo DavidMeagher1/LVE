@@ -6,6 +6,18 @@ const DIR := "user://autosave_test"
 const MANIFEST := "user://autosave_test/manifest.json"
 const AutosaveScript := preload("res://Globals/Autosave/Autosave.gd")
 
+
+class CountingDocument extends VoxelDocument:
+	var encodes := 0
+	## A document keeps a frame in the editor. This flag fails the encode without
+	## an invalid frame list.
+	var encodable := true
+
+	func encode_document() -> PackedByteArray:
+		encodes += 1
+		return super.encode_document() if encodable else PackedByteArray()
+
+
 var autosave
 var _recovery_seen: Array = []
 
@@ -15,6 +27,10 @@ func _ready() -> void:
 	test("recovery lists and loads an autosave file", _recover, "autosave_recover")
 	test("discard removes a recovery copy", _discard, "autosave_discard")
 	test("a failed recovery copy keeps the dirty flag", _retry_failure, "autosave_retry")
+	test("an invalid document does not retry", _invalid_no_retry, "autosave_invalid")
+	test("a retry skips an invalid document beside a failed copy", _mixed_retry, "autosave_invalid_mixed")
+	test("an edit retries only its own document", _invalid_edit_scope, "autosave_invalid_scope")
+	test("a view change keeps a permanent failure skipped", _invalid_view_scope, "autosave_invalid_view")
 
 
 func before_test() -> void:
@@ -38,6 +54,9 @@ func after_test() -> void:
 		autosave.queue_free()
 		autosave = null
 	_clear_dir()
+	# A case can leave a document that cannot encode as the active one. The next
+	# scene builds its plugins from the live document, so restore a valid one.
+	State.set_tabs([State.new_document()], 0)
 	await get_tree().process_frame
 
 
@@ -155,6 +174,143 @@ func _retry_failure() -> void:
 		expect(autosave._dirty, "a failed copy keeps the dirty flag")
 		expect(autosave.recovery_entries().is_empty(), "no entry is recorded")
 		expect(State.document.edit_dirty, "the document stays unsaved")
+	)
+
+
+## A document that cannot encode can never produce a copy. The manager must not
+## retry that permanent failure on a timer.
+func _invalid_no_retry() -> void:
+	var document := CountingDocument.new()
+	step("Given an edited document that cannot encode", func():
+		State.tabs.clear()
+		State.tabs.append(document)
+		State.active_tab = 0
+		State.document = document
+		document.file_path = ""
+		document.edit_save_path = ""
+		document.encodable = false
+		document.edit_dirty = true
+		autosave._dirty = true
+	)
+	step("When autosave runs", func():
+		autosave.save_now()
+	)
+	step("Then the dirty mark stays and no retry is scheduled", func():
+		expect(document.edit_dirty, "the document stays unsaved")
+		expect(not autosave._dirty, "a permanent failure is not retried")
+		expect(autosave._timer.is_stopped(), "no retry timer runs")
+		expect(autosave.recovery_entries().is_empty(), "no entry is recorded")
+	)
+
+
+## An invalid document next to a document whose copy fails must not be encoded
+## on every retry. The write failure keeps the timer, so the invalid id is
+## remembered for the retry cycle.
+func _mixed_retry() -> void:
+	var invalid := CountingDocument.new()
+	var blocked := DIR.path_join("blocked_mixed")
+	step("Given an invalid document and a document whose copy cannot write", func():
+		var file := FileAccess.open(blocked, FileAccess.WRITE)
+		expect(file != null, "the blocker file is created")
+		if file != null:
+			file.close()
+		autosave.recovery_dir = blocked
+		autosave.manifest_path = blocked.path_join("manifest.json")
+		State.tabs.clear()
+		State.tabs.append(invalid)
+		State.active_tab = 0
+		State.document = invalid
+		invalid.encodable = false
+		invalid.edit_dirty = true
+		var failing := VoxelDocument.new()
+		failing.edit_dirty = true
+		State.tabs.append(failing)
+		autosave._dirty = true
+	)
+	step("When autosave runs twice", func():
+		autosave.save_now()
+		expect(invalid.encodes == 1, "the invalid document encodes once")
+		expect(autosave._dirty, "the write failure keeps the retry")
+		autosave.save_now()
+	)
+	step("Then the retry skips the invalid document", func():
+		expect(invalid.encodes == 1, "the invalid document is not encoded again")
+		expect(autosave._dirty, "the write failure still keeps the retry")
+		expect(autosave._invalid_ids.has(invalid.get_instance_id()), "the manager remembers the invalid document")
+	)
+
+
+## An edit to one document must retry only that document. Another invalid
+## document keeps its skip, because the edit cannot fix it.
+func _invalid_edit_scope() -> void:
+	var edited := CountingDocument.new()
+	var untouched := CountingDocument.new()
+	step("Given two documents that cannot encode", func():
+		State.tabs.clear()
+		edited.encodable = false
+		edited.edit_dirty = true
+		untouched.encodable = false
+		untouched.edit_dirty = true
+		State.tabs.append(edited)
+		State.tabs.append(untouched)
+		State.active_tab = 0
+		State.document = edited
+		autosave._dirty = true
+	)
+	step("When autosave runs and then the first document is edited", func():
+		autosave.save_now()
+		expect(edited.encodes == 1, "the first document encodes once")
+		expect(untouched.encodes == 1, "the second document encodes once")
+		autosave._mark_dirty()
+		autosave.save_now()
+	)
+	step("Then only the edited document is tried again", func():
+		expect(edited.encodes == 2, "the edited document is retried")
+		expect(untouched.encodes == 1, "the untouched document is not retried")
+	)
+
+
+## A frame switch or a tab change does not make a document encodable. Only a
+## content edit can, so only the edit clears the skip.
+func _invalid_view_scope() -> void:
+	var document := CountingDocument.new()
+	var other := State.new_document()
+	step("Given an invalid document that the manager skips", func():
+		State.tabs.clear()
+		State.tabs.append(document)
+		State.tabs.append(other)
+		State.active_tab = 0
+		State.document = document
+		document.encodable = false
+		document.edit_dirty = true
+		autosave._dirty = true
+		autosave.save_now()
+		expect(autosave._invalid_ids.has(document.get_instance_id()), "the manager skips the document")
+	)
+	step("When the current frame changes", func():
+		State.frame_changed.emit()
+	)
+	step("Then the skip stays", func():
+		expect(autosave._invalid_ids.has(document.get_instance_id()), "a frame switch keeps the skip")
+	)
+	step("When the tab list changes", func():
+		State.tabs_changed.emit()
+	)
+	step("Then the skip still stays", func():
+		expect(autosave._invalid_ids.has(document.get_instance_id()), "a tab change keeps the skip")
+	)
+	step("When the user activates another tab and returns", func():
+		expect(State.activate_tab(1), "the other tab becomes active")
+		expect(State.activate_tab(0), "the invalid tab becomes active again")
+	)
+	step("Then the skip survives the activation", func():
+		expect(autosave._invalid_ids.has(document.get_instance_id()), "a tab activation keeps the skip")
+	)
+	step("When the document content changes", func():
+		autosave._mark_dirty()
+	)
+	step("Then the skip clears", func():
+		expect(not autosave._invalid_ids.has(document.get_instance_id()), "an edit clears the skip")
 	)
 
 

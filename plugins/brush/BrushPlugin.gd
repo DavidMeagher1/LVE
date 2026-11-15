@@ -18,7 +18,6 @@ func _ready() -> void:
 	name = "BrushPlugin"
 	_tool = _brush_tool
 	_active_mode = _settings.mode
-	_toolbar.toggled.connect(_on_toolbar_toggled)
 	_settings.changed.connect(_on_settings_changed)
 	add_tool_bar_item(_toolbar, _settings)
 	add_option_bar_item(_options)
@@ -44,14 +43,13 @@ func activate_tool() -> void:
 
 ## Deactivates the brush tool and hides its option bar. It ends an open stroke
 ## like a release.
-func deactivate_tool() -> void:
+func _end_deactivation() -> void:
 	# A switch ends the stroke like a release: the queued centers are stamped and
 	# the stroke commits as one history action. Escape and a context change keep
 	# their rollback.
 	_tool.finish_on_switch()
 	remove_editor_node(_tool)
 	remove_option_bar_item(_options)
-	_toolbar.set_pressed_no_signal(false)
 
 
 func _on_settings_changed() -> void:
@@ -70,8 +68,3 @@ func _on_settings_changed() -> void:
 	if _toolbar.button_pressed:
 		add_editor_node(_tool)
 
-func _on_toolbar_toggled(on: bool) -> void:
-	if on:
-		activate_tool()
-	else:
-		deactivate_tool()

@@ -599,6 +599,13 @@ func close_tab(index: int) -> bool:
 	return true
 
 
+## Returns true while [method _adopt_document] replaces the active document.
+## Adoption emits the content signals too, so a listener must not treat them as
+## edits.
+func is_adopting() -> bool:
+	return _adopting
+
+
 # Installs one document as the active document. The caller keeps [member tabs]
 # current. The frame, tag, selection, and history live on the document, so a
 # switch restores them without a copy.

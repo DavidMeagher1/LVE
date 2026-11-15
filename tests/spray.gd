@@ -81,6 +81,8 @@ func _ready() -> void:
 	test("the spray write draws no random number and records one undo action", _write_rng_undo, "spray_write_undo")
 	test("a frame change clears the displayed preview", _display_clears, "spray_display_clear")
 	test("a selection change clears the displayed preview", _selection_clears, "spray_display_selection")
+	test("a material change clears the displayed preview", _material_change_clears, "spray_display_material")
+	test("an in-flight sample never installs its old material", _material_install_gate, "spray_display_material_install")
 
 
 # Each test starts from a fresh document, the default symmetry, and the default
@@ -1427,6 +1429,70 @@ func _selection_clears() -> void:
 		var keys: Array[Vector3i] = []
 		keys.assign(cursor.installed_cells().keys())
 		expect(not _same_cell_set(keys, shown_batch), "the old selection's installed surface is gone")
+	)
+
+
+# A color change alters the preview material. The old batch must not come back
+# with the old material while the new sample builds.
+func _material_change_clears() -> void:
+	step("Given a plate with a displayed spray preview from a worker sample", func():
+		_plate()
+		tool.seed_spray(SEED)
+		# A wide search and a large spot pass the inline limit, so the preview
+		# waits on a worker and a stale batch can come back.
+		_settings.spray_size = 33
+		_settings.spot_diameter = 9
+		_settings.speed = 8
+		cursor = tool.get_node("Cursor")
+		_hover(_screen_pos_of(Vector3i(3, 0, 2)))
+	)
+	await _settle_cursor(cursor)
+	step("Then the cursor displays the old material's batch", func():
+		shown_batch = tool._batch_cells.duplicate()
+		expect(tool.last_work_estimate > 2200, "the hover samples on a worker")
+		expect(cursor.installed_cells().size() == shown_batch.size(), "the installed surface holds the batch")
+	)
+	step("When the current color changes without a history action", func():
+		State.current_color = Color.BLUE
+	)
+	step("Then the old material's surface is gone", func():
+		# The new sample waits on the worker. The old batch must not return with
+		# its old cells while the new sample builds.
+		expect(tool._hover_sample_job != null, "the new sample waits on the worker")
+		expect(cursor.installed_cells().is_empty(), "the old material's cells are not displayed")
+	)
+
+
+# A sample already on the worker must not install after the current material
+# changes. The queued sample installs the new color.
+func _material_install_gate() -> void:
+	var old_material := State.current_material
+	var stale_installed := false
+	step("Given a large hover sample starts with the old material", func():
+		_plate()
+		tool.seed_spray(SEED)
+		tool._invalidate_batch()
+		_settings.spray_size = 33
+		_settings.spot_diameter = 9
+		_settings.speed = 8
+		_hover(_screen_pos_of(Vector3i(3, 0, 2)))
+		expect(tool.last_work_estimate > 2200, "the hover samples on a worker")
+		expect(tool._hover_sample_job != null, "the old sample runs")
+	)
+	step("When the current color changes before the sample installs", func():
+		State.current_color = Color.BLUE
+		expect(tool._hover_sample_job != null, "the old sample still runs")
+		expect(tool._hover_request.get("material") == State.current_material, "the new material waits behind it")
+	)
+	for i in 240:
+		await get_tree().process_frame
+		if not tool._batch_cells.is_empty() and tool._batch_material == old_material:
+			stale_installed = true
+		if tool._hover_sample_job == null and tool._hover_request.is_empty() and tool._batch_material == State.current_material:
+			break
+	step("Then the old sample never shows its material", func():
+		expect(not stale_installed, "the old material is never installed")
+		expect(tool._batch_material == State.current_material, "the new material installs")
 	)
 
 

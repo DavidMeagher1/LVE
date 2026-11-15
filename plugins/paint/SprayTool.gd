@@ -539,10 +539,15 @@ func update_visual(pick: PickResult) -> void:
 		_batch_fresh = _ensure_batch_if_cheap(pick.hit, _source_frame, _edit_context, _stroke_material)
 		_show_spots(_batch_cells)
 		return
-	_ensure_hover_batch(pick.hit, State.get_current_voxel_frame(), State.drawing_context(), State.current_material)
+	var frame := State.get_current_voxel_frame()
+	var material := State.current_material
+	var context := State.drawing_context()
+	_ensure_hover_batch(pick.hit, frame, context, material)
 	# A cleared cursor and a pending sample leave the old batch visible nowhere.
-	# Show it only while it still matches the live context.
-	if _batch_matches(State.drawing_context()):
+	# Show it only while it still matches the live frame, material, and context.
+	# The cell is not part of this test: a lagging surface for the previous cell
+	# is intentional during a sweep, and the press path rejects it.
+	if _batch_environment_matches(frame, context, material):
 		_show_spots(_batch_cells)
 	else:
 		_show_spots([])
@@ -594,12 +599,12 @@ func _invalidate_batch() -> void:
 func _ensure_batch(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.EditContext, material: PackedFloat32Array) -> bool:
 	if frame == null or context == null:
 		return false
-	if center == _batch_center and frame == _batch_frame and material == _batch_material and _batch_matches(context) and _batch_holds(frame):
+	if _batch_key_matches(center, frame, context, material) and _batch_holds(frame):
 		return false
 	# A changed frame, material, symmetry, or selection makes the displayed
 	# surface stale. Hide it, so a click can never paint a preview of another
 	# context while the new sample builds.
-	var context_changed := frame != _batch_frame or material != _batch_material or not _batch_matches(context)
+	var context_changed := not _batch_environment_matches(frame, context, material)
 	if context_changed:
 		_clear_cursor_preview()
 	_batch_center = center
@@ -628,7 +633,7 @@ func _ensure_batch(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.Edit
 func _ensure_batch_if_cheap(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.EditContext, material: PackedFloat32Array) -> bool:
 	if frame == null or context == null:
 		return false
-	if center == _batch_center and frame == _batch_frame and material == _batch_material and _batch_matches(context) and _batch_holds(frame):
+	if _batch_key_matches(center, frame, context, material) and _batch_holds(frame):
 		return false
 	var selection_index := _cached_selection_index(context.selection)
 	var estimate := SpraySampler.work_estimate(frame, center, _paint_settings.spray_size, _paint_settings.spot_diameter, context.selection, _paint_settings.speed, selection_index)
@@ -745,7 +750,7 @@ func _teardown_samples() -> void:
 func _ensure_hover_batch(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.EditContext, material: PackedFloat32Array) -> void:
 	if frame == null or context == null:
 		return
-	if center == _batch_center and frame == _batch_frame and material == _batch_material and _batch_matches(context) and _batch_holds(frame):
+	if _batch_key_matches(center, frame, context, material) and _batch_holds(frame):
 		return
 	var selection_index := _cached_selection_index(context.selection)
 	var estimate := SpraySampler.work_estimate(frame, center, _paint_settings.spray_size, _paint_settings.spot_diameter, context.selection, _paint_settings.speed, selection_index)
@@ -758,7 +763,7 @@ func _ensure_hover_batch(center: Vector3i, frame: VoxelFrame, context: VoxelFram
 		_hover_request = {}
 		_ensure_batch(center, frame, context, material)
 		return
-	var context_changed := frame != _batch_frame or material != _batch_material or not _batch_matches(context)
+	var context_changed := not _batch_environment_matches(frame, context, material)
 	if context_changed:
 		# A stale surface of another context must not stay visible or be painted.
 		_clear_cursor_preview()
@@ -819,6 +824,10 @@ func _install_hover(job: SpraySamplingJob) -> void:
 	# longer matches them, so the sample is stale.
 	if context.axes != job.axes or context.origin_twice != job.origin_twice or not _same_selection(context.selection, job.selection) \
 			or context.slice_axis != job.slice_axis or context.slice_index != job.slice_index or context.slice_count != job.slice_count:
+		return
+	# A material change makes the sampled preview stale even when the frame and
+	# context still hold. Reject it, so the cursor never shows the old color.
+	if job.material != State.current_material:
 		return
 	if not _witness_holds(job.witness, frame) and not _cells_hold(frame, job.cells):
 		_invalidate_batch()
@@ -941,6 +950,20 @@ func _reap_hover_jobs() -> void:
 # identity.
 func _batch_matches(context: VoxelFrame.EditContext) -> bool:
 	return context.axes == _batch_axes and context.origin_twice == _batch_origin and context.slice_axis == _batch_slice_axis and context.slice_index == _batch_slice_index and context.slice_count == _batch_slice_count and _same_selection(context.selection, _batch_selection)
+
+
+# Returns true when the stored batch was sampled for this cell, frame, material,
+# and context. Every path that reuses a batch tests the whole key here, so a path
+# cannot forget one term.
+func _batch_key_matches(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.EditContext, material: PackedFloat32Array) -> bool:
+	return center == _batch_center and _batch_environment_matches(frame, context, material)
+
+
+# Returns true when the stored batch was sampled for this frame, material, and
+# context. A hover sweep keeps the previous cell's batch on purpose, so the
+# display path tests the key without the cell.
+func _batch_environment_matches(frame: VoxelFrame, context: VoxelFrame.EditContext, material: PackedFloat32Array) -> bool:
+	return frame == _batch_frame and material == _batch_material and _batch_matches(context)
 
 
 # Returns true when every cell of the batch still exists in the frame. The check

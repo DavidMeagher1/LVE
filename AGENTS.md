@@ -64,7 +64,7 @@ Use the `godot-docs` skill to verify API assumptions against the current stable 
 
 ## Verification
 
-Run commands from the project root.
+Run commands from the project root. Run `godot --headless --import` after a checkout that adds or changes an asset. The import cache is not tracked.
 
 - Run the affected tests after changes and before closing a task.
 - For documentation-only changes, review the text and diff. Tests are not required.
