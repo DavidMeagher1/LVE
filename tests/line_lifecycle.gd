@@ -224,7 +224,7 @@ func _await_job_clear() -> void:
 func _expect_one_foreground(operation_id: int, owner: Node) -> void:
 	var count := 0
 	var matches := false
-	for operation in State._operations.values():
+	for operation in State.operations._operations.values():
 		if not operation.foreground:
 			continue
 		count += 1

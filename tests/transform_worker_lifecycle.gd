@@ -539,7 +539,7 @@ func _transform_operation_count() -> int:
 	if tool == null:
 		return 0
 	var count := 0
-	for operation in State._operations.values():
+	for operation in State.operations._operations.values():
 		if operation.owner_ref and operation.owner_ref.get_ref() == tool:
 			count += 1
 	return count

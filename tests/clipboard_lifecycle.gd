@@ -291,7 +291,7 @@ func _malformed_payload() -> void:
 
 func _foreground_count() -> int:
 	var count := 0
-	for operation in State._operations.values():
+	for operation in State.operations._operations.values():
 		if operation.foreground:
 			count += 1
 	return count
@@ -299,7 +299,7 @@ func _foreground_count() -> int:
 
 func _expect_one_foreground(operation_id: int, owner: Node) -> void:
 	expect(_foreground_count() == 1, "one foreground operation reports the clipboard work")
-	for operation in State._operations.values():
+	for operation in State.operations._operations.values():
 		if operation.foreground:
 			expect(operation.id == operation_id, "the reported operation is the tracked one")
 			expect(operation.owner_ref.get_ref() == owner, "the operation belongs to its owner")

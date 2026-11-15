@@ -3,7 +3,8 @@ extends Node
 ## The application singleton for editor state.
 ##
 ## State owns the current document, the current frame, the selection, the undo
-## history, and the operation list. It also owns the one open edit. It is
+## history, and the one open edit. It delegates the operation list to
+## [OperationRegistry] and the user settings to [SettingsStore]. It is
 ## registered as the `State` autoload.
 ##
 ## Use the signals to observe changes. Start model changes through the edit and
@@ -68,73 +69,38 @@ signal tabs_changed()
 ## Emitted when the active tab changes.
 signal active_tab_changed()
 
+## The tracked operation list. See [OperationRegistry].
+const OperationRegistry := preload("res://Globals/State/OperationRegistry.gd")
+## The user settings file. See [SettingsStore].
+const SettingsStore := preload("res://Globals/State/SettingsStore.gd")
+## The tracked operation type. It belongs to [OperationRegistry].
+const Operation := OperationRegistry.Operation
+## The image file extensions that the importer supports. It belongs to
+## [SettingsStore].
+const IMAGE_EXTENSIONS := SettingsStore.IMAGE_EXTENSIONS
+
 ## The main-thread work slice in microseconds for one pumped frame.
 const WORK_SLICE_US := 3000
 ## The user path of the saved default palette.
 const DEFAULT_PALETTE_PATH := "user://default_palette.cfg"
-## The one user settings file. It stores the interface, agent, version, session,
-## and file dialog state.
-const SETTINGS_PATH := "user://settings.cfg"
-## The legacy files that the migration reads once.
-const LEGACY_SETTINGS_PATHS := [
-	"user://interface.cfg",
-	"user://session.cfg",
-	"user://file_dialog.cfg",
-]
 ## The default symmetry origin, at the corner between eight cells.
 const DEFAULT_SYMMETRY_ORIGIN := Vector3(-0.5, -0.5, -0.5)
-## The image file extensions that the importer supports.
-const IMAGE_EXTENSIONS := ["bmp", "dds", "exr", "hdr", "jpg", "jpeg", "ktx", "ktx2", "png", "svg", "tga", "webp"]
 
+## The tracked operations for the status display and the edit lock.
+var operations := OperationRegistry.new()
+## The user settings file and the remembered session.
+var settings := SettingsStore.new()
 ## The palette that the New Document action applies.
 var default_palette := get_builtin_palette()
 ## The settings file. Tests set a temporary path.
-var settings_path := SETTINGS_PATH
+var settings_path: String:
+	get:
+		return settings.settings_path
+	set(value):
+		settings.settings_path = value
 # The host of the editor plugins. It is created on first use.
 var _plugin_host: PluginHost
 
-## One tracked operation for the status display.
-##
-## State owns the list. The owner starts an operation with
-## [method State.begin_operation] and finishes it with
-## [method State.finish_operation].
-class Operation extends RefCounted:
-	## The unique operation id.
-	var id := 0
-	# The artist-facing identity the owner set at begin_operation. It is stable, so
-	# the status display never changes its action name while the operation runs.
-	## The artist-facing action name. It stays fixed for the whole operation.
-	var label := ""
-	# The owner's current progress stage. It is diagnostic only: the status display
-	# shows the begin label, not this stage.
-	## The owner's current progress stage. It is diagnostic only.
-	var phase := ""
-	## A diagnostic detail line for the current stage.
-	var detail := ""
-	## The completed work count.
-	var completed := 0
-	## The total work count. A value below one means an unknown total.
-	var total := -1
-	## Whether the operation owns Escape and the status display.
-	var foreground := false
-	# Set when a cancel request was accepted. The owner finishes the operation, so
-	# completion stays with finish_operation.
-	## Whether a cancel request was accepted. The owner finishes the operation.
-	var cancel_requested := false
-	## A weak reference to the operation owner.
-	var owner_ref: WeakRef
-	# An operation is cancellable only when its owner registered this callback. The
-	# capability is explicit, so a foreground operation without one stays visible and
-	# is not cancellable.
-	var _cancel_callback := Callable()
-
-	## Returns [code]true[/code] when a cancel request can still be accepted.
-	func can_cancel() -> bool:
-		return not cancel_requested and _cancel_callback.is_valid()
-
-var _operations: Dictionary[int, Operation] = {}
-var _next_operation_id := 1
-var _activity_started_ms := 0
 var _erase_job: EraseJob
 var _erase_operation_id := 0
 var _erase_jobs: Array[EraseJob] = []
@@ -423,6 +389,7 @@ var _erase_edit: VoxelEditTransaction
 
 
 func _init() -> void:
+	operations.activity_changed.connect(activity_changed.emit)
 	playback.frame_changing.connect(edit_context_changing.emit)
 	playback.frame_changed.connect(frame_changed.emit)
 	playback.is_playing_toggled.connect(is_playing_toggled.emit)
@@ -434,6 +401,8 @@ func _init() -> void:
 	playback.document = _active_document
 
 func _ready() -> void:
+	operations.tree = get_tree()
+	settings.tree = get_tree()
 	migrate_settings()
 	load_default_palette()
 	document.palette = _copy_palette(default_palette)
@@ -620,9 +589,7 @@ func _adopt_document(value: VoxelDocument) -> void:
 	_material_edit_document = null
 	_material_edit_before = PackedFloat32Array()
 	edit_context_changing.emit()
-	_operations.clear()
-	_activity_started_ms = 0
-	activity_changed.emit()
+	operations.clear()
 	# The owners cancel or finish their own edit on the signal above. An owner that
 	# is not connected leaves its transaction open, so close it here. The captured
 	# frame belongs to the previous document and must not touch the replacement.
@@ -778,141 +745,63 @@ func selection_region(region: VoxelSelection) -> VoxelSelection:
 ## action. A [param total] below one means an unknown total. A [param
 ## cancel_callback] makes the operation cancellable.
 func begin_operation(label: String, total: int = -1, foreground: bool = false, operation_owner: Node = null, cancel_callback: Callable = Callable()) -> int:
-	var operation := Operation.new()
-	operation.label = label
-	operation.total = total
-	operation.foreground = foreground
-	operation._cancel_callback = cancel_callback
-	if operation_owner:
-		operation.owner_ref = weakref(operation_owner)
-	if _operations.is_empty():
-		_activity_started_ms = Time.get_ticks_msec()
-	var operation_id := _next_operation_id
-	_next_operation_id += 1
-	operation.id = operation_id
-	_operations[operation_id] = operation
-	activity_changed.emit()
-	return operation_id
+	return operations.begin_operation(label, total, foreground, operation_owner, cancel_callback)
 
 
-# Request the cancellation of one operation. The owner runs its own cooperative
-# cancel path, so the request marks the operation and calls its callback. A second
-# request returns false, and completion stays with finish_operation. Returns true
-# when the request was accepted.
 ## Requests the cancellation of one operation. Returns [code]true[/code] when
 ## the request was accepted. A second request returns [code]false[/code]. The
 ## owner finishes the operation.
 func cancel_operation(operation_id: int) -> bool:
-	var operation: Operation = _operations.get(operation_id)
-	if operation == null or not operation.can_cancel():
-		return false
-	# Mark the request before the callback, so a repeat request is refused even when
-	# the callback defers its work.
-	operation.cancel_requested = true
-	var callback := operation._cancel_callback
-	activity_changed.emit()
-	if callback.is_valid():
-		callback.call()
-	return true
+	return operations.cancel_operation(operation_id)
 
 
-# Cancel the cancellable foreground operation the status bar shows. Esc uses this,
-# so it still reaches a tool that a tool switch detached from the tree.
 ## Cancels the cancellable foreground operation that the status bar shows.
 ## Returns [code]true[/code] when the request was accepted or already pending.
 func cancel_activity() -> bool:
-	var operation := get_activity()
-	if operation == null or not operation.foreground:
-		return false
-	# A pending cancellation already owns Esc. Report it as handled, so a repeat
-	# Escape is swallowed instead of reaching a tool's own cancel.
-	if operation.cancel_requested:
-		return true
-	return cancel_operation(operation.id)
+	return operations.cancel_activity()
 
 
-# Update the measured progress and the internal stage of one operation. The stage
-# and the detail are diagnostic: the status display shows only the begin label. The
-# begin label is never replaced, so a worker stage cannot change the artist action.
 ## Updates the measured progress of one operation. [param completed] and [param
 ## total] drive the percentage. [param phase] and [param detail] are diagnostic
 ## only.
 func update_operation(operation_id: int, completed: int, total: int = -1, phase: String = "", detail: String = "") -> void:
-	var operation: Operation = _operations.get(operation_id)
-	if operation == null:
-		return
-	if operation.completed == completed and operation.total == total and operation.detail == detail and operation.phase == phase:
-		return
-	operation.completed = completed
-	operation.total = total
-	operation.detail = detail
-	operation.phase = phase
-	activity_changed.emit()
+	operations.update_operation(operation_id, completed, total, phase, detail)
 
 
 ## Finishes one operation and removes it from the list. Does nothing when the id
 ## is unknown.
 func finish_operation(operation_id: int) -> void:
-	if not _operations.erase(operation_id):
-		return
-	if _operations.is_empty():
-		_activity_started_ms = 0
-	activity_changed.emit()
+	operations.finish_operation(operation_id)
 
 
-# Run one edit job on the worker pool while its progress feeds the operation.
-# The caller keeps the job, the operation, the result, and its cancel policy.
-# `on_frame` runs once per pumped frame before the progress update, so a caller
-# can cancel the job when its context changes. The worker is always joined before
-# this returns, even when the operation is removed or the caller detaches. A
-# caller that waits for the worker itself retires `worker_task_id` through
-# `wait_for_worker`, and this stops without a second wait. `wait_for_worker`
-# clears the id after its own wait, so a later external wait never waits on a
-# disposed task.
 ## Runs one edit job on the worker pool and pumps its progress. The worker is
 ## always joined before this returns. [param on_frame] runs once per pumped
 ## frame before the progress update.
 func run_edit_job(job: VoxelFrame.EditJob, operation_id: int, task_name: String, on_frame: Callable = Callable()) -> void:
-	job.worker_task_id = WorkerThreadPool.add_task(job.run, true, task_name)
-	while job.worker_task_id >= 0 and not WorkerThreadPool.is_task_completed(job.worker_task_id):
-		if on_frame.is_valid():
-			on_frame.call()
-		var progress := job.progress()
-		update_operation(operation_id, progress[1], progress[2], progress[0])
-		await get_tree().process_frame
-	job.wait_for_worker()
+	await operations.run_edit_job(job, operation_id, task_name, on_frame)
 
 
 ## Returns [code]true[/code] when the operation id is tracked.
 func has_operation(operation_id: int) -> bool:
-	return _operations.has(operation_id)
+	return operations.has_operation(operation_id)
 
 
 ## Returns the operation for the status display. A foreground operation wins. A
 ## background operation is the fallback.
 func get_activity() -> Operation:
-	var background_operation: Operation = null
-	for operation in _operations.values():
-		if operation.foreground:
-			return operation
-		if background_operation == null:
-			background_operation = operation
-	return background_operation
+	return operations.get_activity()
 
 
 ## Returns the elapsed time of the current activity in milliseconds. Returns
 ## zero when no operation runs.
 func activity_elapsed_ms() -> int:
-	return Time.get_ticks_msec() - _activity_started_ms if not _operations.is_empty() else 0
+	return operations.activity_elapsed_ms()
 
 
 ## Returns [code]true[/code] when a foreground operation blocks an edit. An
 ## operation that [param requester] owns does not block it.
 func edit_busy(requester: Node = null) -> bool:
-	for operation in _operations.values():
-		if operation.foreground and (requester == null or operation.owner_ref == null or operation.owner_ref.get_ref() != requester):
-			return true
-	return false
+	return operations.edit_busy(requester)
 
 
 # Begin one owned edit on the current frame or one named frame. The transaction
@@ -1066,10 +955,7 @@ func deselect_tag() -> void:
 
 
 func _process(delta: float) -> void:
-	for operation_id in _operations.keys():
-		var operation: Operation = _operations[operation_id]
-		if operation.owner_ref and operation.owner_ref.get_ref() == null:
-			finish_operation(operation_id)
+	operations.update()
 	playback.update(delta)
 
 ## Sets the RGB and alpha of the current material and records a history action.
@@ -1317,7 +1203,7 @@ func save_default_palette(path: String = DEFAULT_PALETTE_PATH) -> Error:
 		return ERR_INVALID_DATA
 	var config := ConfigFile.new()
 	config.set_value("palette", "materials", Array(materials))
-	var error := _save_config_file(config, path)
+	var error := settings._save_config_file(config, path)
 	if error == OK:
 		default_palette = _copy_palette(materials)
 		default_palette_changed.emit()
@@ -1338,186 +1224,52 @@ func reset_default_palette(path: String = DEFAULT_PALETTE_PATH) -> Error:
 	return OK
 
 
-## Loads a settings file. A missing file gives an empty configuration. Returns
-## [code]null[/code] when the file exists but cannot be read.
-func _load_settings(path: String) -> ConfigFile:
-	var config := ConfigFile.new()
-	var error := config.load(path)
-	if error == OK or error == ERR_FILE_NOT_FOUND:
-		return config
-	push_warning("Cannot read the user settings: %s" % error_string(error))
-	return null
-
-
-## Returns the path for a settings read or write. An empty path uses the one
-## settings file.
-func _settings_path(path: String) -> String:
-	return settings_path if path.is_empty() else path
-
-
-## Writes a configuration through a temporary file, so a crash cannot truncate
-## the previous file.
-func _save_config_file(config: ConfigFile, path: String) -> Error:
-	var temporary := path + ".tmp"
-	var file := FileAccess.open(temporary, FileAccess.WRITE)
-	if file == null:
-		return FileAccess.get_open_error()
-	file.store_string(config.encode_to_text())
-	file.flush()
-	var error := file.get_error()
-	file.close()
-	if error == OK:
-		error = DirAccess.rename_absolute(temporary, path)
-	if error != OK:
-		DirAccess.remove_absolute(temporary)
-	return error
-
-
 ## Moves every missing key from the legacy files into the target file. The
 ## target wins on a conflict. It removes only the legacy files that it read.
 func migrate_settings(target_path: String = "", legacy_paths: PackedStringArray = PackedStringArray()) -> Error:
-	if target_path.is_empty():
-		target_path = settings_path
-	if legacy_paths.is_empty():
-		legacy_paths = PackedStringArray(LEGACY_SETTINGS_PATHS)
-	var target := _load_settings(target_path)
-	if target == null:
-		return ERR_FILE_CORRUPT
-	var merged := false
-	var loaded_legacy_paths := PackedStringArray()
-	for legacy_path in legacy_paths:
-		var legacy := ConfigFile.new()
-		if legacy.load(legacy_path) != OK:
-			continue
-		loaded_legacy_paths.append(legacy_path)
-		for section in legacy.get_sections():
-			for key in legacy.get_section_keys(section):
-				if target.has_section_key(section, key):
-					continue
-				target.set_value(section, key, legacy.get_value(section, key))
-				merged = true
-	if merged:
-		var error := _save_config_file(target, target_path)
-		if error != OK:
-			push_warning("Cannot save the user settings: %s" % error_string(error))
-			return error
-	for legacy_path in loaded_legacy_paths:
-		if FileAccess.file_exists(legacy_path):
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(legacy_path))
-	return OK
+	return settings.migrate_settings(target_path, legacy_paths)
 
 
 ## Stores the last document path in the settings file.
 func remember_document(path: String, config_path: String = "") -> void:
-	config_path = _settings_path(config_path)
-	var config := _load_settings(config_path)
-	if config == null:
-		return
-	config.set_value("files", "last_document", path)
-	var error := _save_config_file(config, config_path)
-	if error != OK:
-		push_warning("Cannot save the user settings: %s" % error_string(error))
+	settings.remember_document(path, config_path)
 
 
 ## Removes the last document path from the settings file.
 func forget_document(config_path: String = "") -> void:
-	config_path = _settings_path(config_path)
-	var config := ConfigFile.new()
-	if config.load(config_path) != OK:
-		return
-	if config.has_section_key("files", "last_document"):
-		config.erase_section_key("files", "last_document")
-	var error := _save_config_file(config, config_path)
-	if error != OK:
-		push_warning("Cannot save the user settings: %s" % error_string(error))
+	settings.forget_document(config_path)
 
 
 ## Returns the stored last document path, or an empty string.
 func last_document_path(config_path: String = "") -> String:
-	config_path = _settings_path(config_path)
-	var config := ConfigFile.new()
-	if config.load(config_path) != OK:
-		return ""
-	var path: Variant = config.get_value("files", "last_document", "")
-	return path if path is String else ""
+	return settings.last_document_path(config_path)
 
 
 ## Returns the saved tab paths, or an empty array.
 func last_tabs(config_path: String = "") -> PackedStringArray:
-	config_path = _settings_path(config_path)
-	var config := ConfigFile.new()
-	if config.load(config_path) != OK:
-		return PackedStringArray()
-	var stored: Variant = config.get_value("files", "tabs", PackedStringArray())
-	if stored is PackedStringArray:
-		return stored
-	var paths := PackedStringArray()
-	if stored is Array:
-		for value in stored:
-			if value is String:
-				paths.append(value)
-	return paths
+	return settings.last_tabs(config_path)
 
 
 ## Returns the saved active tab index, or zero.
 func last_tab_index(config_path: String = "") -> int:
-	config_path = _settings_path(config_path)
-	var config := ConfigFile.new()
-	if config.load(config_path) != OK:
-		return 0
-	return int(config.get_value("files", "active", 0))
+	return settings.last_tab_index(config_path)
 
 
 ## Writes the open documents that have a path, and the active index. A tab that
 ## was never saved has no path, so a restart cannot reopen it.
 func remember_session(config_path: String = "") -> void:
-	config_path = _settings_path(config_path)
-	var config := _load_settings(config_path)
-	if config == null:
-		return
-	var stored_active := int(config.get_value("files", "active", 0))
-	var paths := PackedStringArray()
-	var active_path := -1
-	for index in tabs.size():
-		var document := tabs[index]
-		# Only a written path is a save path. A bundled sample has a file path
-		# but must not be saved over, so the next launch opens it again.
-		var path := document.edit_save_path
-		if path.is_empty():
-			continue
-		if index == active_tab:
-			active_path = paths.size()
-		paths.append(path)
-	# A pathless active tab, such as the splash, must not discard the saved
-	# active tab. Keep the stored index when it still fits the saved paths.
-	var active := active_path
-	if active < 0:
-		active = clampi(stored_active, 0, maxi(paths.size() - 1, 0))
-	config.set_value("files", "tabs", paths)
-	config.set_value("files", "active", active)
-	if not paths.is_empty():
-		config.set_value("files", "last_document", paths[active])
-	var error := _save_config_file(config, config_path)
-	if error != OK:
-		push_warning("Cannot save the user settings: %s" % error_string(error))
+	settings.remember_session(tabs, active_tab, config_path)
 
 
 ## Returns [code]true[/code] when the current scene is the application Main
 ## scene. A test scene has no current scene, so a null match is not enough.
 func is_app_session() -> bool:
-	var tree := get_tree()
-	if tree == null:
-		return false
-	var main := tree.root.get_node_or_null("Main")
-	return main != null and tree.current_scene == main
+	return settings.is_app_session()
 
 
 ## Returns the file dialog filter for the supported image formats.
 func get_image_file_filter() -> String:
-	var patterns := PackedStringArray()
-	for extension in IMAGE_EXTENSIONS:
-		patterns.append("*." + extension)
-	return ", ".join(patterns) + " ; Images"
+	return settings.get_image_file_filter()
 
 
 ## Loads an image file into [param image]. It handles DDS and KTX buffers and

@@ -955,7 +955,7 @@ func _on_chunks_changed(_updated_frame: int, locations: Array[Vector3i]) -> void
 
 
 func _sample_operations() -> void:
-	for operation in State._operations.values():
+	for operation in State.operations._operations.values():
 		_labels[operation.label] = true
 	_activity = _current_activity_label()
 
