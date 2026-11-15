@@ -4,6 +4,8 @@ extends "res://tests/test.gd"
 
 const OperationRegistry = preload("res://Globals/State/OperationRegistry.gd")
 const SettingsStore = preload("res://Globals/State/SettingsStore.gd")
+const DocumentSession = preload("res://Globals/State/DocumentSession.gd")
+const SelectionState = preload("res://Globals/State/SelectionState.gd")
 
 
 # A job that keeps the worker busy for a few frames, so the pump loop runs.
@@ -32,6 +34,13 @@ var documents: Array[VoxelDocument]
 var settings_path := ""
 var callback_count := 0
 var frames := 0
+var session: DocumentSession
+var selection_model: SelectionState
+var selection_context_result: VoxelFrame.EditContext
+var signal_order: Array[String] = []
+var selection_events := 0
+var frame_events := 0
+var tag_events := 0
 
 
 func _ready() -> void:
@@ -43,6 +52,12 @@ func _ready() -> void:
 	test("the settings store writes through a temporary file", _settings_write, "settings_write")
 	test("the settings store keeps a corrupt file", _settings_corrupt, "settings_corrupt")
 	test("the settings store remembers the session paths", _settings_session, "settings_session")
+	test("a document session adds, activates, and closes tabs", _session_tabs, "session_tabs")
+	test("the document session keeps the adoption signal order", _session_adoption, "session_adoption")
+	test("the State adoption signals keep their order", _state_adoption, "state_adoption")
+	test("the document session plays frames and tags", _session_playback, "session_playback")
+	test("the selection state clears and reports changes", _selection_clear, "selection_clear")
+	test("the selection state derives the context and region", _selection_context, "selection_context")
 
 
 func before_test() -> void:
@@ -55,6 +70,13 @@ func before_test() -> void:
 	second = null
 	third = null
 	documents = []
+	session = null
+	selection_model = null
+	selection_context_result = null
+	signal_order = []
+	selection_events = 0
+	frame_events = 0
+	tag_events = 0
 	settings_path = "user://state_models_%s.cfg" % Time.get_ticks_usec()
 	_remove_file(settings_path)
 	registry = OperationRegistry.new()
@@ -78,6 +100,18 @@ func _remove_file(path: String) -> void:
 
 func _on_cancel() -> void:
 	callback_count += 1
+
+
+func _on_frame_event() -> void:
+	frame_events += 1
+
+
+func _on_tag_event() -> void:
+	tag_events += 1
+
+
+func _on_selection_event() -> void:
+	selection_events += 1
 
 
 func _on_frame() -> void:
@@ -246,5 +280,182 @@ func _settings_session() -> void:
 	)
 	step("Then a test scene is not the application session", func():
 		expect(not store.is_app_session(), "the injected tree is not the app session")
+	)
+
+
+func _session_tabs() -> void:
+	step("Given a session with three documents", func():
+		session = DocumentSession.new()
+		first = session.new_document()
+		second = VoxelDocument.new()
+		session.add_tab(first)
+		session.add_tab(second)
+	)
+	step("Then every document is a tab", func():
+		expect(session.tabs.size() == 3, "the startup tab and both documents are open")
+		expect(session.document == session.tabs[0], "the startup document is active")
+	)
+	step("When the first added tab becomes active", func():
+		expect(session.activate_tab(1), "the tab activates")
+	)
+	step("Then the active document follows", func():
+		expect(session.active_tab == 1, "the active index moves")
+		expect(session.document == first, "the active document is the tab document")
+	)
+	step("When the active tab closes", func():
+		expect(session.close_tab(1), "the tab closes")
+	)
+	step("Then the next tab is active", func():
+		expect(session.tabs.size() == 2, "one tab is removed")
+		expect(session.active_tab == 1, "the tab at the same index is active")
+		expect(session.document == second, "the next document is active")
+	)
+	step("When a tab before the active one closes", func():
+		expect(session.close_tab(0), "the first tab closes")
+	)
+	step("Then the active index moves down", func():
+		expect(session.tabs.size() == 1, "one tab remains")
+		expect(session.active_tab == 0, "the active index moves down")
+		expect(session.document == second, "the active document stays")
+	)
+
+
+func _session_adoption() -> void:
+	step("Given a session with two documents and recorded signals", func():
+		session = DocumentSession.new()
+		session.add_tab(VoxelDocument.new())
+		signal_order = []
+		session.document_deactivating.connect(func(): signal_order.append("deactivating"))
+		session.is_playing_toggled.connect(func(_playing): signal_order.append("playing"))
+		session.document_changed.connect(func(): signal_order.append("document"))
+		session.frames_changed.connect(func(): signal_order.append("frames"))
+		session.frame_changed.connect(func(): signal_order.append("frame"))
+		session.tag_changed.connect(func(): signal_order.append("tag"))
+		session.tabs_changed.connect(func(): signal_order.append("tabs"))
+		session.active_tab_changed.connect(func(): signal_order.append("active_tab"))
+	)
+	step("When the second tab becomes active", func():
+		expect(session.activate_tab(1), "the tab activates")
+	)
+	step("Then the adoption signals keep their order", func():
+		expect(signal_order == ["deactivating", "playing", "document", "frames", "frame", "tag", "active_tab"], "the session emits the adoption signals in order")
+	)
+
+
+func _state_adoption() -> void:
+	step("Given two documents in State", func():
+		var documents: Array[VoxelDocument] = [VoxelDocument.new(), VoxelDocument.new()]
+		State.set_tabs(documents, 0)
+	)
+	step("When the tab set replaces the documents", func():
+		signal_order = []
+		State.document_deactivating.connect(func(): signal_order.append("deactivating"), CONNECT_ONE_SHOT)
+		State.is_playing_toggled.connect(func(_playing): signal_order.append("playing"), CONNECT_ONE_SHOT)
+		State.document_changed.connect(func(): signal_order.append("document"), CONNECT_ONE_SHOT)
+		State.size_changed.connect(func(): signal_order.append("size"), CONNECT_ONE_SHOT)
+		State.palette_changed.connect(func(): signal_order.append("palette"), CONNECT_ONE_SHOT)
+		State.frames_changed.connect(func(): signal_order.append("frames"), CONNECT_ONE_SHOT)
+		State.frame_changed.connect(func(): signal_order.append("frame"), CONNECT_ONE_SHOT)
+		State.tag_changed.connect(func(): signal_order.append("tag"), CONNECT_ONE_SHOT)
+		State.selection_changed.connect(func(): signal_order.append("selection"), CONNECT_ONE_SHOT)
+		State.history_changed.connect(func(): signal_order.append("history"), CONNECT_ONE_SHOT)
+		State.edit_state_changed.connect(func(): signal_order.append("edit_state"), CONNECT_ONE_SHOT)
+		State.tabs_changed.connect(func(): signal_order.append("tabs"), CONNECT_ONE_SHOT)
+		State.active_tab_changed.connect(func(): signal_order.append("active_tab"), CONNECT_ONE_SHOT)
+		var documents: Array[VoxelDocument] = [VoxelDocument.new(), VoxelDocument.new()]
+		State.set_tabs(documents, 1)
+	)
+	step("Then the State signals keep the adoption order", func():
+		expect(signal_order == ["deactivating", "playing", "document", "size", "palette", "frames", "frame", "tag", "selection", "history", "edit_state", "tabs", "active_tab"], "the facade emits the adoption signals in order")
+	)
+
+
+func _session_playback() -> void:
+	step("Given a document with two frames and a tag", func():
+		session = DocumentSession.new()
+		session.document.add_frame()
+		session.document.add_tag("Walk", 0, 1)
+		session.document.frames[0].delay_ms = 10
+		session.document.frames[1].delay_ms = 10
+		session.frame_changed.connect(_on_frame_event)
+		session.tag_changed.connect(_on_tag_event)
+	)
+	step("When the frame and the tag change", func():
+		session.playback.current_frame = 1
+		session.playback.active_tag = 1
+	)
+	step("Then the playback state follows", func():
+		expect(session.playback.current_frame == 1, "the frame moves")
+		expect(session.playback.active_tag == 1, "the tag is active")
+		expect(frame_events == 1, "the frame change is reported")
+		expect(tag_events == 1, "the tag change is reported")
+	)
+	step("When the playback runs for one delay", func():
+		session.playback.is_playing = true
+		session.update(0.02)
+	)
+	step("Then the frame advanced", func():
+		expect(session.playback.current_frame == 0, "the playback wrapped to the first frame")
+	)
+
+
+func _selection_clear() -> void:
+	step("Given a selection model on a session", func():
+		session = DocumentSession.new()
+		selection_model = SelectionState.new()
+		selection_model.session = session
+		session.document.edit_selection.add(Vector3i(1, 2, 3))
+		selection_model.selection_changed.connect(_on_selection_event)
+	)
+	step("Then the model reads the document selection", func():
+		expect(selection_model.selection == session.document.edit_selection, "the model shares the document selection")
+		expect(selection_model.selection.count() == 1, "the selected cell is present")
+	)
+	step("When the selection clears", func():
+		selection_model.clear_selection()
+	)
+	step("Then the selection is empty and the signal fired once", func():
+		expect(selection_model.selection.is_empty(), "the selection is empty")
+		expect(selection_events == 1, "the change signal fired once")
+	)
+	step("When an external write reports a change", func():
+		session.document.edit_selection.add(Vector3i.ONE)
+		selection_model.notify_changed()
+	)
+	step("Then the change signal fired again", func():
+		expect(selection_events == 2, "notify_changed emits the signal")
+	)
+
+
+func _selection_context() -> void:
+	step("Given a drawing context with symmetry, a slice, and a size", func():
+		session = DocumentSession.new()
+		selection_model = SelectionState.new()
+		selection_model.session = session
+		var drawing := VoxelFrame.EditContext.new()
+		drawing.axes = 1
+		drawing.origin_twice = Vector3i(-1, -1, -1)
+		drawing.slice_axis = 1
+		drawing.slice_index = 2
+		drawing.slice_count = 3
+		drawing.bounded_axes = 1
+		drawing.bounds_min = Vector3i.ZERO
+		drawing.bounds_max = Vector3i(4, 4, 4)
+		drawing.selection = {Vector3i(9, 9, 9): true}
+		selection_context_result = selection_model.selection_context(drawing)
+		expect(selection_context_result.axes == 1, "the symmetry is kept")
+		expect(selection_context_result.slice_axis == 1, "the slice axis is kept")
+		expect(selection_context_result.slice_index == 2, "the slice index is kept")
+		expect(selection_context_result.selection.is_empty(), "the selection filter is removed")
+		expect(selection_context_result.bounded_axes == 0, "the document size is removed")
+		expect(drawing.selection.has(Vector3i(9, 9, 9)), "the drawing context keeps its selection")
+	)
+	step("Then the region expands without the selection filter", func():
+		var region := VoxelSelection.new()
+		region.add(Vector3i(2, 3, 4))
+		var expanded := selection_model.selection_region(region, selection_context_result, session.document.frames[0])
+		expect(expanded.count() == 2, "the X symmetry mirrors the region")
+		expect(expanded.contains(Vector3i(2, 3, 4)), "the source cell stays")
+		expect(expanded.contains(Vector3i(-3, 3, 4)), "the mirrored cell is added")
 	)
 
