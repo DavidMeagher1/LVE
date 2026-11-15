@@ -5,6 +5,9 @@ extends VoxelPlugin
 ## It owns the move, rotate, and scale tools. It shows the transform option bar
 ## and switches the active tool.
 
+## The stable id of the transform toolbar. The persisted active tool uses it.
+const TOOL_ID := "transform"
+
 var _settings := preload("./settings.tres")
 
 @onready var _toolbar: MenuButton = preload("./Toolbar.tscn").instantiate()
@@ -20,7 +23,7 @@ var _active := false
 func _ready() -> void:
 	name = "TransformPlugin"
 	_settings.tool_changed.connect(_on_tool_changed)
-	add_tool_bar_item(_toolbar, _settings)
+	add_tool_bar_item(_toolbar, _settings, TOOL_ID)
 
 
 func _notification(what: int) -> void:

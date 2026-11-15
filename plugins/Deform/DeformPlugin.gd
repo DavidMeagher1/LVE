@@ -6,6 +6,9 @@ extends VoxelPlugin
 ## switches the active tool when the deform tool changes. A tool switch ends an
 ## open gesture like a release, so the drag commits as one history action.
 
+## The stable id of the deform toolbar. The persisted active tool uses it.
+const TOOL_ID := "deform"
+
 var _settings := preload("./settings.tres")
 
 @onready var _toolbar: MenuButton = preload("./Toolbar.tscn").instantiate()
@@ -21,7 +24,7 @@ func _ready() -> void:
 	name = "DeformPlugin"
 	_settings.tool_changed.connect(_on_tool_changed)
 	_options.bind(_settings)
-	add_tool_bar_item(_toolbar, _settings)
+	add_tool_bar_item(_toolbar, _settings, TOOL_ID)
 	_select_tool(_settings.tool)
 
 

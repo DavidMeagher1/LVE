@@ -544,7 +544,7 @@ func _refresh_export_status() -> void:
 
 
 func _set_status_context(provider: Callable) -> void:
-	var main := _main()
+	var main: Node = context.main if context != null and is_instance_valid(context.main) else null
 	if main:
 		var status_bar: EditorStatusBar = main.get_node_or_null("%StatusBar")
 		if status_bar:

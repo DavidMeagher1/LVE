@@ -53,6 +53,7 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	remove_from_group("main")
+	State.set_context(null)
 	State.document_changed.disconnect(_on_document_changed)
 	State.tabs_changed.disconnect(_update_window_title)
 	if _title_document:
@@ -113,6 +114,18 @@ func _ready() -> void:
 	if _has_user_arg("--mcp-bridge"):
 		_run_bridge()
 		return
+	var context := EditorContext.new()
+	context.main = self
+	context.menu_bar = %MenuBar as Control
+	context.tab_container = %TabContainer as TabContainer
+	context.editor_tab = %Editor as Control
+	context.tool_bar = %ToolBar as Control
+	context.option_bar = %OptionBar as Control
+	context.viewport = %Viewport as Control
+	context.viewport_scene = %Viewport.get_node("%ViewportScene") as Node3D
+	context.control_bar = %Viewport.get_node("%ControlBar") as Control
+	context.workspace = %EditorWorkspace
+	State.set_context(context)
 	State.reset_plugins()
 	# Godot coalesces pointer motion to one event per render frame by default. A
 	# long frame then turns a curved drag into a chord between two far samples,
@@ -130,6 +143,7 @@ func _ready() -> void:
 		window.size = Vector2i(Vector2(window.size) * window.content_scale_factor).min(Vector2i(Vector2(available) * 0.9))
 		window.move_to_center()
 	%TabContainer.tab_changed.connect(_on_tab_changed)
+	%StatusBar.set_main(self)
 	%StatusBar.set_camera(%Viewport.call("camera"))
 	_on_tab_changed(%TabContainer.current_tab)
 	var window := get_window()
@@ -325,6 +339,7 @@ func set_mcp_enabled(value: bool, persist := false) -> Error:
 	if value:
 		if _mcp == null:
 			_mcp = MCP_SERVER_SCRIPT.new()
+			_mcp.call("set_main", self)
 			add_child(_mcp)
 		var error_value: Variant = _mcp.call("start", mcp_port, _mcp_http_mode)
 		var error: Error = error_value if error_value is int else ERR_UNAVAILABLE

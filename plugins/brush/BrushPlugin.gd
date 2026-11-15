@@ -5,6 +5,9 @@ extends VoxelPlugin
 ## It owns the brush tool and the line tool. It adds their toolbar and option
 ## bar, and it switches the active tool when the brush mode changes.
 
+## The stable id of the brush toolbar. The persisted active tool uses it.
+const TOOL_ID := "brush"
+
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
 @onready var _options := preload("./Options.tscn").instantiate()
 @onready var _brush_tool := preload("./BrushTool.tscn").instantiate()
@@ -19,7 +22,7 @@ func _ready() -> void:
 	_tool = _brush_tool
 	_active_mode = _settings.mode
 	_settings.changed.connect(_on_settings_changed)
-	add_tool_bar_item(_toolbar, _settings)
+	add_tool_bar_item(_toolbar, _settings, TOOL_ID)
 	add_option_bar_item(_options)
 	activate_tool()
 

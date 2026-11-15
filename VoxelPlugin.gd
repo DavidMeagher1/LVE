@@ -21,6 +21,11 @@ func _safe_remove(parent:Node, child:Node) -> void:
 	parent.remove_child(child)
 
 
+## The main-scene nodes that this plugin reads. [PluginHost] sets it before the
+## plugin enters the tree.
+var context: EditorContext
+
+
 ## The button that activates this plugin. [method add_tool_bar_item] sets it, so
 ## the base routes its toggle and releases it. A plugin never touches button
 ## state.
@@ -65,19 +70,16 @@ func _on_tool_button_toggled(on: bool) -> void:
 		deactivate_tool()
 
 
-## Returns the current main scene. A test scene puts Main below its test root,
-## so the plugins find it through the group instead of a fixed tree path.
-func _main() -> Node:
-	# A deferred call can run after the plugin left the tree. `get_tree` is null
-	# then, so every caller must handle a missing Main.
-	return get_tree().get_first_node_in_group("main") if is_inside_tree() else null
+## The stable tool id of each registered tool button. A persisted active tool
+## uses the key `PluginName/tool_id`, so a later node rename keeps the key.
+var _tool_button_ids := {}
+
 
 ## Adds a control to the menu bar before its separator.
 func add_menu_bar_item(control:Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.menu_bar == null:
 		return
-	var menu_bar := main.get_node("%MenuBar")
+	var menu_bar := context.menu_bar
 	_safe_add(menu_bar, control)
 	var separator_index := menu_bar.get_node("Sep1").get_index()
 	if control.get_index() < separator_index:
@@ -86,97 +88,95 @@ func add_menu_bar_item(control:Control) -> void:
 
 ## Removes a control from the menu bar.
 func remove_menu_bar_item(control:Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.menu_bar == null:
 		return
-	_safe_remove(main.get_node("%MenuBar"), control)
+	_safe_remove(context.menu_bar, control)
 
 ## Adds a control as a tab. A control that is not current is disabled.
 func add_tab(control: Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.tab_container == null:
 		return
-	var tabs: TabContainer = main.get_node("%TabContainer")
+	var tabs := context.tab_container
 	_safe_add(tabs, control)
 	control.process_mode = Node.PROCESS_MODE_INHERIT if tabs.get_current_tab_control() == control else Node.PROCESS_MODE_DISABLED
 
 ## Removes a tab. It shows the editor tab when the removed tab was current.
 func remove_tab(control: Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.tab_container == null:
 		return
-	var tabs: TabContainer = main.get_node("%TabContainer")
+	var tabs := context.tab_container
 	if tabs.get_current_tab_control() == control:
 		show_editor_tab()
 	_safe_remove(tabs, control)
 
 ## Shows one tab. It does nothing when the control is not a tab.
 func show_tab(control: Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.tab_container == null:
 		return
-	var tabs: TabContainer = main.get_node("%TabContainer")
+	var tabs := context.tab_container
 	if control.get_parent() == tabs:
 		tabs.current_tab = tabs.get_tab_idx_from_control(control)
 
 ## Shows the editor tab.
 func show_editor_tab() -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.editor_tab == null:
 		return
-	show_tab(main.get_node("%Editor"))
+	show_tab(context.editor_tab)
 
 ## Adds a control to the option bar.
 func add_option_bar_item(control: Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.option_bar == null:
 		return
-	_safe_add(main.get_node("%OptionBar"), control)
+	_safe_add(context.option_bar, control)
 
 ## Removes a control from the option bar.
 func remove_option_bar_item(control: Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.option_bar == null:
 		return
-	_safe_remove(main.get_node("%OptionBar"), control)
+	_safe_remove(context.option_bar, control)
 
 ## Adds a control to the viewport control bar.
 func add_control_bar_item(control:Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.control_bar == null:
 		return
-	_safe_add(main.get_node("%Viewport").get_node("%ControlBar"), control)
+	_safe_add(context.control_bar, control)
 
 ## Removes a control from the viewport control bar.
 func remove_control_bar_item(control:Control) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.control_bar == null:
 		return
-	_safe_remove(main.get_node("%Viewport").get_node("%ControlBar"), control)
+	_safe_remove(context.control_bar, control)
 
 ## Adds a control to the tool bar. An optional settings resource registers with
-## the editor workspace, so its values follow the active document.
-func add_tool_bar_item(control:Control, settings: Resource = null) -> void:
-	var main := _main()
-	if main == null:
+## the editor workspace, so its values follow the active document. [param
+## tool_id] is the stable key of the active tool. A later node rename keeps it.
+func add_tool_bar_item(control:Control, settings: Resource = null, tool_id := "") -> void:
+	if control == null:
 		return
-	_safe_add(main.get_node("%ToolBar"), control)
+	var id := tool_id if not tool_id.is_empty() else String(control.name)
+	control.set_meta("tool_id", id)
+	if context == null or context.tool_bar == null:
+		return
+	_safe_add(context.tool_bar, control)
 	if control is BaseButton:
 		_set_tool_button(control)
-	var workspace := main.get_node_or_null("%EditorWorkspace")
-	if workspace != null and control is BaseButton:
-		workspace.call("register_tool", "%s/%s" % [name, control.name], control, settings)
+		_tool_button_ids[control] = id
+	if context.workspace != null and control is BaseButton:
+		context.workspace.call("register_tool", "%s/%s" % [name, id], control, settings)
 
 ## Removes a control from the tool bar. A removed tool button no longer routes to
 ## this plugin or writes the active tool.
 func remove_tool_bar_item(control:Control) -> void:
-	var main := _main()
-	if main == null:
+	if control == null:
 		return
-	_safe_remove(main.get_node("%ToolBar"), control)
-	var workspace := main.get_node_or_null("%EditorWorkspace")
-	if workspace != null and control is BaseButton:
-		workspace.call("unregister_tool", "%s/%s" % [name, control.name])
+	var id := String(_tool_button_ids.get(control, ""))
+	if id.is_empty() and control is BaseButton:
+		id = str(control.get_meta("tool_id", control.name))
+	_tool_button_ids.erase(control)
+	if context != null and context.tool_bar != null:
+		_safe_remove(context.tool_bar, control)
+	if context != null and context.workspace != null and control is BaseButton and not id.is_empty():
+		context.workspace.call("unregister_tool", "%s/%s" % [name, id])
 	if not is_instance_valid(_tool_button) or control != _tool_button:
 		return
 	if _tool_button.toggled.is_connected(_on_tool_button_toggled):
@@ -185,15 +185,12 @@ func remove_tool_bar_item(control:Control) -> void:
 
 ## Adds a tool node to the viewport scene.
 func add_editor_node(node:Node3D) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.viewport_scene == null:
 		return
-	_safe_add(main.get_node("%Viewport").get_node("%ViewportScene"), node)
+	_safe_add(context.viewport_scene, node)
 	
 ## Removes a tool node from the viewport scene.
 func remove_editor_node(node:Node3D) -> void:
-	var main := _main()
-	if main == null:
+	if context == null or context.viewport_scene == null:
 		return
-	_safe_remove(main.get_node("%Viewport").get_node("%ViewportScene"), node)
-	
+	_safe_remove(context.viewport_scene, node)

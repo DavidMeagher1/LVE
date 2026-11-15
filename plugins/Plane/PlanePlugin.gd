@@ -5,13 +5,16 @@ extends VoxelPlugin
 ## It adds the plane tool and its axis option bar. The plane tool moves the
 ## floor plane.
 
+## The stable id of the plane toolbar. The persisted active tool uses it.
+const TOOL_ID := "plane"
+
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
 @onready var _options := preload("./Options.tscn").instantiate()
 @onready var _tool := preload("./PlaneTool.tscn").instantiate()
 
 func _ready() -> void:
 	name = "PlanePlugin"
-	add_tool_bar_item(_toolbar)
+	add_tool_bar_item(_toolbar, null, TOOL_ID)
 
 
 func _notification(what: int) -> void:

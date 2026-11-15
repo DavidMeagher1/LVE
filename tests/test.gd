@@ -114,18 +114,24 @@ func drag(pos: Vector2, plane: StrokePlane) -> PickResult:
 
 func activate_tool(button_name: String) -> void:
 	for b in main.get_node("%ToolBar").get_children():
-		if b.name == button_name:
+		if b is BaseButton and _toolbar_matches(b, button_name):
 			b.button_pressed = true
 			return
 
 func select_toolbar_item(button_name: String, item_text: String) -> void:
 	for b in main.get_node("%ToolBar").get_children():
-		if b is MenuButton and b.name == button_name:
+		if b is MenuButton and _toolbar_matches(b, button_name):
 			var popup: PopupMenu = b.get_popup()
 			for i in popup.item_count:
 				if popup.get_item_text(i) == item_text:
 					popup.index_pressed.emit(i)
 					return
+
+
+# A toolbar button carries the stable tool id in its metadata. The node name
+# stays as a fallback, so an older test argument still selects the button.
+func _toolbar_matches(control: Node, tool_name: String) -> bool:
+	return control.name == tool_name or str(control.get_meta("tool_id", control.name)) == tool_name
 
 func press_option(tooltip: String) -> void:
 	var b := _find_option_button(tooltip)

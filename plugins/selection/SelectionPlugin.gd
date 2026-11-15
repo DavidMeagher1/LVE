@@ -5,6 +5,9 @@ extends VoxelPlugin
 ## It owns the box, wand, and lasso selection tools. It shows the shared
 ## selection preview and the selection option bar.
 
+## The stable id of the selection toolbar. The persisted active tool uses it.
+const TOOL_ID := "selection"
+
 var _settings := preload("./settings.tres")
 
 @onready var _toolbar:MenuButton = preload("./Toolbar.tscn").instantiate()
@@ -25,7 +28,7 @@ func _ready() -> void:
 	name = "SelectionPlugin"
 	State.selection_changed.connect(_on_selection_changed)
 	_settings.tool_changed.connect(_on_tool_changed)
-	add_tool_bar_item(_toolbar, _settings)
+	add_tool_bar_item(_toolbar, _settings, TOOL_ID)
 	add_editor_node(_selection)
 	
 	_on_selection_changed()

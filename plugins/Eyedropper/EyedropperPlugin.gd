@@ -4,12 +4,15 @@ extends VoxelPlugin
 ##
 ## It adds the eyedropper tool button and its tool.
 
+## The stable id of the eyedropper toolbar. The persisted active tool uses it.
+const TOOL_ID := "eyedropper"
+
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
 @onready var _tool := preload("./EyedropperTool.tscn").instantiate()
 
 func _ready() -> void:
 	name = "EyedropperPlugin"
-	add_tool_bar_item(_toolbar)
+	add_tool_bar_item(_toolbar, null, TOOL_ID)
 
 
 func _notification(what: int) -> void:

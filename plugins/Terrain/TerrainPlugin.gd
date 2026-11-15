@@ -6,6 +6,9 @@ extends VoxelPlugin
 ## ends an open stroke like a release, so the queued work commits as one history
 ## action.
 
+## The stable id of the terrain toolbar. The persisted active tool uses it.
+const TOOL_ID := "terrain"
+
 var _settings := preload("./settings.tres")
 
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
@@ -20,7 +23,7 @@ func _ready() -> void:
 	name = "TerrainPlugin"
 	_tool = _terrain_tool
 	_options.bind(_settings)
-	add_tool_bar_item(_toolbar, _settings)
+	add_tool_bar_item(_toolbar, _settings, TOOL_ID)
 
 
 func _notification(what: int) -> void:

@@ -90,6 +90,8 @@ const IMAGE_EXTENSIONS := ["bmp", "dds", "exr", "hdr", "jpg", "jpeg", "ktx", "kt
 var default_palette := get_builtin_palette()
 ## The settings file. Tests set a temporary path.
 var settings_path := SETTINGS_PATH
+# The host of the editor plugins. It is created on first use.
+var _plugin_host: PluginHost
 
 ## One tracked operation for the status display.
 ##
@@ -447,33 +449,37 @@ func _ready() -> void:
 	palette_changed.connect(_mark_dirty)
 
 
+## Sets the main-scene nodes that the editor plugins read. Main calls this before
+## it resets the plugins.
+func set_context(value: EditorContext) -> void:
+	_get_plugin_host().context = value
+
+
+## Returns the main-scene nodes that the editor plugins read.
+var context: EditorContext:
+	get:
+		return _get_plugin_host().context
+
+
 ## Removes every editor plugin. A test scene calls this before it replaces the
 ## editor, so a plugin cannot outlive the controls it reads.
 func clear_plugins() -> void:
-	var root := get_node("/root")
-	for child in root.get_children():
-		if child is VoxelPlugin:
-			remove_plugin(child)
+	_get_plugin_host().clear_plugins()
 
 
 ## Rebuilds the editor plugins under the current main scene. Main calls this
 ## when it becomes ready. A test scene calls it once per scene so the plugins
 ## bind to that scene's Main node instead of a previous scene.
 func reset_plugins() -> void:
-	clear_plugins()
-	add_plugin(load("res://plugins/brush/BrushPlugin.gd").new())
-	add_plugin(load("res://plugins/Eyedropper/EyedropperPlugin.gd").new())
-	add_plugin(load("res://plugins/paint/PaintPlugin.gd").new())
-	add_plugin(load("res://plugins/Terrain/TerrainPlugin.gd").new())
-	add_plugin(load("res://plugins/Deform/DeformPlugin.gd").new())
-	add_plugin(load("res://plugins/selection/SelectionPlugin.gd").new())
-	add_plugin(load("res://plugins/Transform/TransformPlugin.gd").new())
-	add_plugin(load("res://plugins/Symmetry/SymmetryPlugin.gd").new())
-	add_plugin(load("res://plugins/Plane/PlanePlugin.gd").new())
-	add_plugin(load("res://plugins/Export/ExportPlugin.gd").new())
-	add_plugin(load("res://plugins/Clipboard/ClipboardPlugin.gd").new())
-	add_plugin(load("res://plugins/ImageImport/ImageImportPlugin.gd").new())
-	
+	_get_plugin_host().reset_plugins()
+
+
+func _get_plugin_host() -> PluginHost:
+	if _plugin_host == null:
+		_plugin_host = PluginHost.new()
+		_plugin_host.name = "PluginHost"
+		add_child(_plugin_host)
+	return _plugin_host
 
 
 ## Returns a new empty document with the default palette. Use it for New.
@@ -691,12 +697,11 @@ func redo() -> bool:
 
 ## Adds one plugin under the scene root.
 func add_plugin(plugin: VoxelPlugin) -> void:
-	get_node("/root").add_child.call_deferred(plugin, true)
+	_get_plugin_host().add_plugin(plugin)
 	
 ## Removes one plugin and frees it.
 func remove_plugin(plugin: VoxelPlugin) -> void:
-	get_node("/root").remove_child(plugin)
-	plugin.queue_free()
+	_get_plugin_host().remove_plugin(plugin)
 
 
 ## Paints one cell with the current edit context. It expands the cell through

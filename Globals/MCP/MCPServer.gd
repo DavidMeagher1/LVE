@@ -1125,6 +1125,8 @@ class PeerState extends RefCounted:
 var _server := TCPServer.new()
 var _peers: Array[PeerState] = []
 var _http_mode := false
+## The main scene that owns the editor. Main sets it when it creates the server.
+var _main: Node
 ## The document content revision. The read tools report it.
 var _revision := 0
 ## The bounded journal of cell and chunk changes since a revision.
@@ -1158,6 +1160,12 @@ class WriteJob extends VoxelFrame.EditJob:
 func _ready() -> void:
 	set_process(false)
 	_connect_state()
+
+
+## Sets the main scene that owns the editor viewport. Main calls this before it
+## adds the server to the tree.
+func set_main(value: Node) -> void:
+	_main = value
 
 
 func _exit_tree() -> void:
@@ -3173,7 +3181,9 @@ func _view_angles(view: String) -> Vector2:
 
 
 func _apply_editor_camera(camera: Camera3D) -> bool:
-	var main: Node = get_tree().get_first_node_in_group("main")
+	var main: Node = _main if is_instance_valid(_main) else null
+	if main == null and State.context != null and is_instance_valid(State.context.main):
+		main = State.context.main
 	var editor_viewport: Node = null
 	if main != null:
 		editor_viewport = main.get_node_or_null("%Viewport")

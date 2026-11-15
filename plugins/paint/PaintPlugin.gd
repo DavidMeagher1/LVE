@@ -7,6 +7,9 @@ extends VoxelPlugin
 ## changes. A tool switch ends an open stroke like a release, so the queued work
 ## commits as one history action.
 
+## The stable id of the paint toolbar. The persisted active tool uses it.
+const TOOL_ID := "paint"
+
 var _settings := preload("./settings.tres")
 
 @onready var _toolbar: MenuButton = preload("./Toolbar.tscn").instantiate()
@@ -22,7 +25,7 @@ var _active := false
 func _ready() -> void:
 	name = "PaintPlugin"
 	_settings.tool_changed.connect(_on_tool_changed)
-	add_tool_bar_item(_toolbar, _settings)
+	add_tool_bar_item(_toolbar, _settings, TOOL_ID)
 	_set_tool(_settings.tool)
 
 

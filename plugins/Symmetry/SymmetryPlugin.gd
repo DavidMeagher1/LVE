@@ -5,6 +5,9 @@ extends VoxelPlugin
 ## It adds the symmetry tool and its option bar. The symmetry tool toggles the
 ## mirror axes and moves the symmetry origin.
 
+## The stable id of the symmetry toolbar. The persisted active tool uses it.
+const TOOL_ID := "symmetry"
+
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
 @onready var _options := preload("./Options.tscn").instantiate()
 @onready var _tool := preload("./SymmetryTool.tscn").instantiate()
@@ -12,7 +15,7 @@ extends VoxelPlugin
 
 func _ready() -> void:
 	name = "SymmetryPlugin"
-	add_tool_bar_item(_toolbar)
+	add_tool_bar_item(_toolbar, null, TOOL_ID)
 	add_editor_node(_tool)
 
 

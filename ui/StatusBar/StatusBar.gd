@@ -47,13 +47,28 @@ func _ready() -> void:
 	_checker.latest_release.connect(show_latest)
 	_checker.start.call_deferred()
 	_mcp.pressed.connect(_on_mcp_pressed)
-	_main = get_tree().get_first_node_in_group("main")
+	_mcp.visible = false
+	# A status bar that Main did not create uses the context that Main injected.
+	if State.context != null and is_instance_valid(State.context.main):
+		set_main(State.context.main)
+	_refresh_status()
+
+
+## Sets the main scene that owns the MCP server. Main hands it in, so this
+## control does not walk up to the main scene.
+func set_main(main: Node) -> void:
+	if _main == main:
+		return
+	if is_instance_valid(_main) and _main.is_connected("mcp_changed", _on_mcp_changed):
+		_main.disconnect("mcp_changed", _on_mcp_changed)
+	_main = main
 	if _main == null or not _main.has_signal("mcp_changed"):
 		_mcp.visible = false
-	else:
+		return
+	if not _main.is_connected("mcp_changed", _on_mcp_changed):
 		_main.connect("mcp_changed", _on_mcp_changed)
-		_sync_mcp()
-	_refresh_status()
+	_mcp.visible = true
+	_sync_mcp()
 
 
 ## Sets the camera that supplies the zoom readout. Main hands it in, so this
@@ -139,9 +154,8 @@ func show_latest(version: String, url: String, newer: bool) -> void:
 
 
 func _on_ui_scale_item_selected(index: int) -> void:
-	var main := _main if is_instance_valid(_main) else get_tree().get_first_node_in_group("main")
-	if main != null:
-		main.set_ui_scale(%UIScale.get_item_id(index) / 100.0)
+	if is_instance_valid(_main):
+		_main.call("set_ui_scale", %UIScale.get_item_id(index) / 100.0)
 
 
 ## Sets a context provider that returns the left and right status text. An
