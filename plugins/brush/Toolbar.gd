@@ -11,7 +11,7 @@ const PENCIL_ID := 0
 const LINE_ID := 1
 const ERASER_ID := 2
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./BrushSettings.tres")
 
 func _ready() -> void:
 	get_popup().index_pressed.connect(_on_index_pressed)

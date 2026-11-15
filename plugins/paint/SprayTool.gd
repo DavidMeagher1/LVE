@@ -211,7 +211,7 @@ var _hover_installed_epoch := 0
 
 
 func _init() -> void:
-	_paint_settings = preload("./settings.tres")
+	_paint_settings = preload("./PaintSettings.tres")
 	_settings = _paint_settings
 
 

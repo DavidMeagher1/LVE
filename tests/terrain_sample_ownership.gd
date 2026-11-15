@@ -66,7 +66,7 @@ const HOVER_ANCHORS := [
 	Vector3(0.5, 4.0, 6.0),
 ]
 
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _tool
 var _frame: VoxelFrame
 var _viewport: SubViewport

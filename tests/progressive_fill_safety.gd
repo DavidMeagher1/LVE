@@ -68,7 +68,7 @@ const BLOCK_B := Vector3i(48, 0, 0)
 
 var frame: VoxelFrame
 var tool: Node
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 # Step lambdas capture locals by value, so the frames a later step needs are members.
 var _before: VoxelFrame
 var _expected_frame: VoxelFrame

@@ -31,7 +31,7 @@ const SPECS := [
 	{"name": "hollow1024", "kind": "hollow", "size": 256},
 ]
 
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var _tool
 var _cursor

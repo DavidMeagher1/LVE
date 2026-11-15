@@ -199,7 +199,7 @@ func _empty_button() -> Button:
 	var option_bar := main.get_node("%OptionBar")
 	for container in option_bar.get_children():
 		if container.name == "Options":
-			return container.get_node("empty") as Button
+			return container.get_node("Empty") as Button
 	return null
 
 

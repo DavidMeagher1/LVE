@@ -7,7 +7,7 @@ extends "res://tests/test.gd"
 const BLOCK := 18
 const DISTANT := Vector3i(64, 0, 0)
 
-var _fill_settings := preload("res://plugins/paint/settings.tres")
+var _fill_settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var fill: Node
 var wand: Node

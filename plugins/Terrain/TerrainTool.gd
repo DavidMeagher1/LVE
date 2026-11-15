@@ -97,7 +97,7 @@ const OCCUPANCY_BOX_LIMIT := 4
 const OCCUPANCY_BOX_SPAN := 1 << 20
 
 
-var _settings: TerrainToolSettings = preload("./settings.tres")
+var _settings: TerrainToolSettings = preload("./TerrainSettings.tres")
 
 
 # The stroke state.

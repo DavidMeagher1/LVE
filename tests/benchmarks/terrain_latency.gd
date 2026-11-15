@@ -23,7 +23,7 @@ var _fixture: VoxelFrame
 var _fixture_chunks := {}
 var _renderer: VoxelRenderer
 var _viewport: SubViewport
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _measuring := false
 var _last_frame_us := 0
 var _longest_frame_us := 0

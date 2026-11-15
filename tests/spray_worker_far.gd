@@ -15,7 +15,7 @@ const BLOCK := 8
 
 const VoxelBrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
 
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var viewport: SubViewport
 var center := Vector2.ZERO

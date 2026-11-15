@@ -4,7 +4,7 @@ extends HBoxContainer
 ##
 ## It shows the shared size and falloff, and the pose connected and snap options.
 
-var _settings: DeformToolSettings = preload("./settings.tres")
+var _settings: DeformToolSettings = preload("./DeformSettings.tres")
 
 
 ## Binds the shared deform settings. Call it before the bar enters the tree.

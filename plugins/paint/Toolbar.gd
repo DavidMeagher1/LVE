@@ -11,7 +11,7 @@ const PAINTBRUSH_ID := 0
 const FILL_ID := 1
 const SPRAY_ID := 2
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./PaintSettings.tres")
 
 func _ready() -> void:
 	get_popup().index_pressed.connect(_on_index_pressed)

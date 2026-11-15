@@ -9,7 +9,7 @@ extends VoxelPlugin
 ## The stable id of the terrain toolbar. The persisted active tool uses it.
 const TOOL_ID := "terrain"
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./TerrainSettings.tres")
 
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
 @onready var _options := preload("./Options.tscn").instantiate()

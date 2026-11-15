@@ -5,7 +5,7 @@ extends HBoxContainer
 ## It edits the brush diameter, the shape, and the pixel-perfect flag. It also
 ## builds a selection brush pattern from the current frame or selection.
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./BrushSettings.tres")
 var _source_job: VoxelFrame.EditJob
 var _operation_id := 0
 

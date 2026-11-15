@@ -8,7 +8,7 @@ extends HBoxContainer
 ## spray search size, and the speed. The spot diameter and the search size are
 ## voxel widths, not radii.
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./PaintSettings.tres")
 var _source_job: VoxelFrame.EditJob
 var _operation_id := 0
 

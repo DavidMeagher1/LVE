@@ -15,7 +15,7 @@ var _brush_settings: BrushToolSettings
 
 
 func _init() -> void:
-	_brush_settings = preload("./settings.tres")
+	_brush_settings = preload("./BrushSettings.tres")
 	_settings = _brush_settings
 
 

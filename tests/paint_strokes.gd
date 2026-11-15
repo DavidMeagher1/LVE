@@ -4,7 +4,7 @@ extends "res://tests/test.gd"
 # checks of its original scene. The user arguments after `--` name the tests to
 # run, so an old scene name still selects its own test.
 
-var _brush_settings := preload("res://plugins/brush/settings.tres")
+var _brush_settings := preload("res://plugins/brush/BrushSettings.tres")
 
 var viewport: SubViewport
 var center := Vector2.ZERO

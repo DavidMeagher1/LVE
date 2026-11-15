@@ -22,7 +22,7 @@ const ProbeScript := preload("./terrain_build_profile_probe.gd")
 const VoxelFalloff := preload("res://Globals/State/Tools/VoxelFalloff.gd")
 const TerrainGeometryScript := preload("res://plugins/Terrain/TerrainGeometry.gd")
 
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _tool
 var _frame: VoxelFrame
 var _viewport: SubViewport

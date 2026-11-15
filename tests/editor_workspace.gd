@@ -29,12 +29,12 @@ func _ready() -> void:
 
 func before_test() -> void:
 	_menu = main.get_node("%MenuBar")
-	_brush = load("res://plugins/brush/settings.tres")
-	_paint = load("res://plugins/paint/settings.tres")
-	_selection = load("res://plugins/selection/settings.tres")
-	_transform = load("res://plugins/Transform/settings.tres")
-	_deform = load("res://plugins/Deform/settings.tres")
-	_terrain = load("res://plugins/Terrain/settings.tres")
+	_brush = load("res://plugins/brush/BrushSettings.tres")
+	_paint = load("res://plugins/paint/PaintSettings.tres")
+	_selection = load("res://plugins/selection/SelectionSettings.tres")
+	_transform = load("res://plugins/Transform/TransformSettings.tres")
+	_deform = load("res://plugins/Deform/DeformSettings.tres")
+	_terrain = load("res://plugins/Terrain/TerrainSettings.tres")
 	_reset_workspace()
 
 

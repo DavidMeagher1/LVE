@@ -9,7 +9,7 @@ extends VoxelPlugin
 ## The stable id of the deform toolbar. The persisted active tool uses it.
 const TOOL_ID := "deform"
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./DeformSettings.tres")
 
 @onready var _toolbar: MenuButton = preload("./Toolbar.tscn").instantiate()
 @onready var _options := preload("./Options.tscn").instantiate()

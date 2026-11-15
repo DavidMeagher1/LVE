@@ -11,7 +11,7 @@ extends "res://tests/test.gd"
 const ProbeScript := preload("./terrain_stroke_input_probe.gd")
 const TerrainPreviewScript := preload("res://plugins/Terrain/TerrainPreview.gd")
 
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _viewport: SubViewport
 var _tool
 var _frame: VoxelFrame

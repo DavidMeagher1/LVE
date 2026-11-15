@@ -13,7 +13,7 @@ const IMMEDIATE_LIMIT := 4096
 ## The click rectangle edge length in pixels.
 const CLICK_SIZE := 7.0
 
-var _settings := preload("../settings.tres")
+var _settings := preload("../SelectionSettings.tres")
 
 var _screen_press := Vector2.ZERO
 # The last pointer position a press or drag reported. A tool switch uses it to

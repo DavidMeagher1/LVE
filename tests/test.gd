@@ -5,10 +5,10 @@ extends "res://addons/test_kit/test_case.gd"
 # Every LVE test scene inherits `res://tests/test_base.tscn` and puts one of
 # these scripts on its root node.
 
-const BRUSH_SETTINGS_PATH := "res://plugins/brush/settings.tres"
-const PAINT_SETTINGS_PATH := "res://plugins/paint/settings.tres"
-const SELECTION_SETTINGS_PATH := "res://plugins/selection/settings.tres"
-const TRANSFORM_SETTINGS_PATH := "res://plugins/Transform/settings.tres"
+const BRUSH_SETTINGS_PATH := "res://plugins/brush/BrushSettings.tres"
+const PAINT_SETTINGS_PATH := "res://plugins/paint/PaintSettings.tres"
+const SELECTION_SETTINGS_PATH := "res://plugins/selection/SelectionSettings.tres"
+const TRANSFORM_SETTINGS_PATH := "res://plugins/Transform/TransformSettings.tres"
 
 var main: Node
 var _brush_settings_resource: BrushToolSettings

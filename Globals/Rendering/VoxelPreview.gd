@@ -105,7 +105,7 @@ var _primitive_material := preload("res://VoxelMaterial.tres").duplicate()
 # The instance override is this per-instance lit material, not the carrier. It
 # lights like a voxel and wins the depth tie with the terrain through one
 # clip-space step. The carrier keeps the same values for callers that read it.
-var _lit_material := preload("res://Globals/Rendering/cursor_lit.tres").duplicate()
+var _lit_material := preload("res://Globals/Rendering/CursorLit.tres").duplicate()
 # True while the visible override mirrors the box carrier. The solid and
 # prepared paths mirror the solid carrier, so a material change without a new
 # submit can mirror the carrier that is on screen.

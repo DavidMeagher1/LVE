@@ -6,7 +6,7 @@ extends HBoxContainer
 ## add or the remove direction. Every tool shares the radius, the falloff, and
 ## the radius bound of the shared settings.
 
-var _settings: TerrainToolSettings = preload("./settings.tres")
+var _settings: TerrainToolSettings = preload("./TerrainSettings.tres")
 
 
 ## Binds the shared terrain settings. Call it before the bar enters the tree.

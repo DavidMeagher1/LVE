@@ -423,7 +423,7 @@ func _isolation() -> void:
 			expect(not source.contains(forbidden), "the helper never names %s" % forbidden)
 	)
 	step("Then the mesh build mutates no shared material", func() -> void:
-		var material: StandardMaterial3D = load("res://plugins/cursor_material.tres")
+		var material: StandardMaterial3D = load("res://plugins/CursorMaterial.tres")
 		var albedo := material.albedo_color
 		var shading := material.shading_mode
 		var priority := material.render_priority

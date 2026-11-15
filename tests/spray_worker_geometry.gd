@@ -15,7 +15,7 @@ const SMALL_BLOCK := 6
 
 const SpraySampler := preload("res://plugins/paint/SpraySampler.gd")
 
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var viewport: SubViewport
 var center := Vector2.ZERO

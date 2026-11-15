@@ -9,7 +9,7 @@ extends "res://tests/test.gd"
 
 const ProbeScript := preload("./terrain_normals_probe.gd")
 
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _viewport: SubViewport
 var _tool
 var _frame: VoxelFrame

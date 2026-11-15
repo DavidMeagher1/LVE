@@ -388,7 +388,7 @@ No maximum-size performance claim is made.
 
 The cursor is one separate white leaf ring named `Footprint`.
 It is not the idle `VoxelPreview`.
-A clone of `plugins/cursor_material.tres` sets the color once.
+A clone of `plugins/CursorMaterial.tres` sets the color once.
 The clone is unshaded and sets `no_depth_test`. It has no depth bias.
 Paint color and stroke material never tint the ring.
 The ring is identical in idle, press, pending job, held, drain, and release.

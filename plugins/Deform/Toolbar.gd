@@ -9,7 +9,7 @@ extends ToolMenuButton
 const GRAB_ID := 0
 const POSE_ID := 1
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./DeformSettings.tres")
 
 
 func _ready() -> void:

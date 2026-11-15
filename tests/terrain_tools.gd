@@ -8,7 +8,7 @@ extends "res://tests/test.gd"
 const FLOOR_AXIS := {"right": 0, "left": 0, "top": 1, "bottom": 1, "front": 2, "back": 2, "isometric": 1}
 const VIEW_AXIS := {"right": 0, "left": 0, "top": 1, "bottom": 1, "front": 2, "back": 2, "isometric": 1}
 
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 
 var viewport: SubViewport
 var tool: Node3D

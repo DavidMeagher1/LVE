@@ -5,7 +5,7 @@ extends ToolMenuButton
 ## It selects a transform tool and shows that tool's icon. The transform
 ## shortcuts select a tool too.
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./TransformSettings.tres")
 
 func _ready() -> void:
 	get_popup().index_pressed.connect(_on_index_pressed)

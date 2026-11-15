@@ -5,7 +5,7 @@ extends ToolMenuButton
 ## It selects a selection tool and shows that tool's icon. The selection tool
 ## shortcuts select a tool too.
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./SelectionSettings.tres")
 
 func _ready() -> void:
 	get_popup().index_pressed.connect(_on_index_pressed)

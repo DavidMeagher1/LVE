@@ -13,7 +13,7 @@ const TOOL_ID := "brush"
 @onready var _brush_tool := preload("./BrushTool.tscn").instantiate()
 @onready var _line_tool := preload("./LineTool.tscn").instantiate()
 var _tool: Node3D
-var _settings := preload("./settings.tres")
+var _settings := preload("./BrushSettings.tres")
 var _active_mode := 0
 
 

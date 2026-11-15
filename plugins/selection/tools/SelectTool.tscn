@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dk4jhhhrqeexi" path="res://plugins/selection/tools/SelectTool.gd" id="1_cmmhg"]
 [ext_resource type="Script" path="res://plugins/selection/ScreenBand.gd" id="5_band"]
-[ext_resource type="Material" path="res://plugins/selection/ants_line_material.tres" id="6_ants"]
+[ext_resource type="Material" path="res://plugins/selection/AntsLineMaterial.tres" id="6_ants"]
 
 [node name="SelectionTool" type="Node3D" unique_id=1152130835]
 script = ExtResource("1_cmmhg")

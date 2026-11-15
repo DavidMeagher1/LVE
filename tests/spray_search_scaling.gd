@@ -20,7 +20,7 @@ const VoxelBrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
 const SEED := 20261025
 const WIDTHS := [1, 9, 17, 33, 64]
 
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var tool: Node3D
 var frame: VoxelFrame

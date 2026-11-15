@@ -2,7 +2,7 @@ extends "res://tests/test.gd"
 
 # Exercise the public pointer input without advancing an internal edit clock.
 # Replays must not depend on frame timing or the number of motion events.
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _viewport: SubViewport
 var _tool: Node3D
 var _frame: VoxelFrame

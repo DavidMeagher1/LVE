@@ -15,7 +15,7 @@
 [ext_resource type="Texture2D" uid="uid://bhg85sqfio31d" path="res://icons/grid.svg" id="16_x0727"]
 [ext_resource type="Shader" uid="uid://darib2qppk3b3" path="res://ui/Viewport/Grid.gdshader" id="17_grid"]
 [ext_resource type="Texture2D" uid="uid://denrh23gr1h18" path="res://icons/light.svg" id="18_light"]
-[ext_resource type="Material" uid="uid://dv7wwwbfihlej" path="res://plugins/cursor_material.tres" id="19_handle"]
+[ext_resource type="Material" uid="uid://dv7wwwbfihlej" path="res://plugins/CursorMaterial.tres" id="19_handle"]
 [ext_resource type="Shader" path="res://ui/Viewport/outside_shade.gdshader" id="20_outside"]
 [ext_resource type="Script" path="res://ui/Viewport/OutsideShade.gd" id="21_outside_script"]
 [ext_resource type="Texture2D" uid="uid://do3ouxrp3uwfa" path="res://icons/uniform.svg" id="22_lock"]

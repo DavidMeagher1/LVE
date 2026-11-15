@@ -21,7 +21,7 @@ const FLOOR_AXIS := {
 }
 const DEFORM_LIMB := preload("res://plugins/Deform/DeformLimb.gd")
 
-var _settings := preload("res://plugins/Deform/settings.tres")
+var _settings := preload("res://plugins/Deform/DeformSettings.tres")
 var viewport: SubViewport
 var tool: Node3D
 var frame: VoxelFrame
@@ -571,7 +571,7 @@ func _deform_controls() -> void:
 		expect(not DeformToolSettings.new().connected, "the pose connected option is off by default")
 		expect(DeformToolSettings.new().tool == DeformToolSettings.Tools.POSE, "the pose tool is the default")
 		expect(not _settings.snap, "the pose snap is off by default")
-		expect(not bool(load("res://plugins/Transform/settings.tres").snap), "the rotate tool snap is off by default")
+		expect(not bool(load("res://plugins/Transform/TransformSettings.tres").snap), "the rotate tool snap is off by default")
 		var popup := toolbar.get_popup()
 		expect(popup.item_count == 2, "the deform menu holds two tools")
 		expect(

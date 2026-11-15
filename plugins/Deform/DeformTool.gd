@@ -69,7 +69,7 @@ class DeformJob extends VoxelFrame.EditJob:
 		return context == null or context.allows(cell)
 
 
-var _settings: DeformToolSettings = preload("./settings.tres")
+var _settings: DeformToolSettings = preload("./DeformSettings.tres")
 
 var _last_pick: PickResult
 var _footprint: MeshInstance3D

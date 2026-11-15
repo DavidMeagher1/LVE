@@ -29,7 +29,7 @@ class CountingJob extends VoxelFrame.EditJob:
 		calls += 1
 		return calls < limit
 
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var viewport: SubViewport
 var center := Vector2.ZERO

@@ -10,7 +10,7 @@ const BUILD_ID := 0
 const FLATTEN_ID := 1
 const SMOOTH_ID := 2
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./TerrainSettings.tres")
 
 
 func _ready() -> void:

@@ -19,7 +19,7 @@ Use these words with the same meaning in every diagram.
 | `Main` | Code that runs on the main thread. It can touch Nodes, `State`, and `UndoRedo`. |
 | `Worker` | Code that runs on `WorkerThreadPool`. It reads captured data and writes its own arrays. It must not touch scene Nodes or change shared state. |
 | Captured request | Input captured for one operation. The operation must not change it. Only some containers are read-only. Examples are read-only `_requested_cells`, owned `job.centers`, and the frozen `tx.edit_context` reference. |
-| Shared settings | A value or Resource that many operations read. Examples are the `settings.tres` Resource and the `State.current_material` value. |
+| Shared settings | A value or Resource that many operations read. Examples are the `BrushSettings.tres` Resource and the `State.current_material` value. |
 | Released | The input is finished. The result can still be calculated. |
 | Calculated | The worker body returned. The result is not visible yet. |
 | Published | A calculated batch is written into the live frame. It can be visible before the final commit. |
@@ -208,7 +208,7 @@ The operation must keep the values it needs and must not depend on later shared 
 
 | Item | Lifetime | Owner | Evidence |
 | --- | --- | --- | --- |
-| `settings.tres` | Shared instance, values saved per document | Tool plugin and options | `BrushPlugin._settings` at [`BrushPlugin.gd:13`](../../../plugins/brush/BrushPlugin.gd#L13) |
+| `BrushSettings.tres` | Shared instance, values saved per document | Tool plugin and options | `BrushPlugin._settings` at [`BrushPlugin.gd:13`](../../../plugins/brush/BrushPlugin.gd#L13) |
 | Stroke diameter, shape, and mode | One stroke | `StrokeTool` | `_stroke_diameter` and `_stroke_shape` at [`StrokeTool.gd`](../../../plugins/brush/StrokeTool.gd) |
 | Stroke material pattern | One stroke | `StrokeTool` | `_stroke_material` and `_stroke_material_pattern` at [`StrokeTool.gd`](../../../plugins/brush/StrokeTool.gd) |
 | Edit context | One edit | `VoxelEditTransaction` | `edit_context` at [`VoxelEditTransaction.gd:22`](../../../Globals/State/VoxelEditTransaction.gd#L22) |

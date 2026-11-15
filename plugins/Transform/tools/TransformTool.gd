@@ -15,7 +15,7 @@ const CLICK_SLOP_PX := 4.0
 const VIEW_AXIS_SNAP_DOT := 0.99939
 const TOOL_DIALOG_SCENE := preload("./TransformDialog.tscn")
 
-var _settings := preload("../settings.tres")
+var _settings := preload("../TransformSettings.tres")
 var _dragging := false
 var _pending := false
 var _dragged := false

@@ -13,7 +13,7 @@ var _mirror_lit_material: ShaderMaterial
 
 
 func _ready() -> void:
-	material_override = preload("res://plugins/cursor_material.tres").duplicate()
+	material_override = preload("res://plugins/CursorMaterial.tres").duplicate()
 	super._ready()
 	_mirror_lit_material = _lit_material.duplicate()
 	_mirror_lit_material.set_shader_parameter("flip_normal", true)

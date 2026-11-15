@@ -7,7 +7,7 @@ extends "res://tests/test.gd"
 #   godot --path . res://tests/edit_transaction.tscn
 #   godot --path . res://tests/edit_transaction.tscn -- noop
 
-var _brush_settings := preload("res://plugins/brush/settings.tres")
+var _brush_settings := preload("res://plugins/brush/BrushSettings.tres")
 const BRUSH_SCENE := preload("res://plugins/brush/BrushTool.tscn")
 const MOVE_SCENE := preload("res://plugins/Transform/tools/MoveTool.tscn")
 

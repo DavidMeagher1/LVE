@@ -10,7 +10,7 @@
 [node name="Options" type="HBoxContainer" unique_id=1914023151]
 script = ExtResource("1_script")
 
-[node name="view_axis" type="Button" parent="." unique_id=251207527]
+[node name="ViewAxis" type="Button" parent="." unique_id=251207527]
 layout_mode = 2
 tooltip_text = "Use the view axis. When off, snap to the nearest world axis plane."
 toggle_mode = true
@@ -18,14 +18,14 @@ button_pressed = true
 icon = ExtResource("6_view")
 icon_alignment = 1
 
-[node name="snap" type="Button" parent="." unique_id=251207526]
+[node name="Snap" type="Button" parent="." unique_id=251207526]
 layout_mode = 2
 tooltip_text = "Snap to 90 degrees"
 toggle_mode = true
 icon = ExtResource("2_snap")
 icon_alignment = 1
 
-[node name="uniform" type="Button" parent="." unique_id=1241191382]
+[node name="Uniform" type="Button" parent="." unique_id=1241191382]
 layout_mode = 2
 tooltip_text = "Scale uniformly"
 toggle_mode = true
@@ -33,22 +33,22 @@ button_pressed = true
 icon = ExtResource("5_uniform")
 icon_alignment = 1
 
-[node name="commit" type="Button" parent="." unique_id=829965376]
+[node name="Commit" type="Button" parent="." unique_id=829965376]
 layout_mode = 2
 tooltip_text = "Commit"
 disabled = true
 icon = ExtResource("3_check")
 icon_alignment = 1
 
-[node name="cancel" type="Button" parent="." unique_id=536087596]
+[node name="Cancel" type="Button" parent="." unique_id=536087596]
 layout_mode = 2
 tooltip_text = "Cancel"
 disabled = true
 icon = ExtResource("4_cross")
 icon_alignment = 1
 
-[connection signal="toggled" from="view_axis" to="." method="_on_view_axis_toggled"]
-[connection signal="toggled" from="snap" to="." method="_on_snap_toggled"]
-[connection signal="toggled" from="uniform" to="." method="_on_uniform_toggled"]
-[connection signal="pressed" from="commit" to="." method="_on_commit_pressed"]
-[connection signal="pressed" from="cancel" to="." method="_on_cancel_pressed"]
+[connection signal="toggled" from="ViewAxis" to="." method="_on_view_axis_toggled"]
+[connection signal="toggled" from="Snap" to="." method="_on_snap_toggled"]
+[connection signal="toggled" from="Uniform" to="." method="_on_uniform_toggled"]
+[connection signal="pressed" from="Commit" to="." method="_on_commit_pressed"]
+[connection signal="pressed" from="Cancel" to="." method="_on_cancel_pressed"]

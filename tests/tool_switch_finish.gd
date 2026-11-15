@@ -11,8 +11,8 @@ const HELD_SIDE := 5
 const WORKER_SIDE := 18
 const SETTLE_FRAMES := 600
 
-var _brush_settings := preload("res://plugins/brush/settings.tres")
-var _selection_settings := preload("res://plugins/selection/settings.tres")
+var _brush_settings := preload("res://plugins/brush/BrushSettings.tres")
+var _selection_settings := preload("res://plugins/selection/SelectionSettings.tres")
 
 var viewport: SubViewport
 var center := Vector2.ZERO

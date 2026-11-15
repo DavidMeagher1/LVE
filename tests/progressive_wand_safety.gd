@@ -19,7 +19,7 @@ const PREVIEW_SCRIPT := preload("res://Globals/Rendering/VoxelPreview.gd")
 const OUTLINE_REFERENCE := preload("res://tests/outline_reference.gd")
 const WAND_SCENE := preload("res://plugins/selection/tools/WandSelectTool.tscn")
 const JOB_STATUS_SCENE := preload("res://ui/JobStatus/JobStatus.tscn")
-var _wand_settings := preload("res://plugins/selection/settings.tres")
+var _wand_settings := preload("res://plugins/selection/SelectionSettings.tres")
 
 const WAND_SIDE := 40
 const WAND_TOTAL := WAND_SIDE * WAND_SIDE * WAND_SIDE

@@ -108,7 +108,7 @@ func _run() -> void:
 			expect(plugin("TransformPlugin")._current_tool._settings.transforming, "view rotation keeps the transform pending")
 		)
 		step("When the user presses the transform Cancel button", func():
-			plugin("TransformPlugin")._options.get_node("cancel").pressed.emit()
+			plugin("TransformPlugin")._options.get_node("Cancel").pressed.emit()
 		)
 		step("Then the button restores the original shape and selection", func():
 			expect(frame.count() == 1 and frame.get_color(Vector3i.ZERO) == Color.RED, "the cancelled transform restores the source voxel")

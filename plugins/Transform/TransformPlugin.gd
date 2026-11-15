@@ -8,7 +8,7 @@ extends VoxelPlugin
 ## The stable id of the transform toolbar. The persisted active tool uses it.
 const TOOL_ID := "transform"
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./TransformSettings.tres")
 
 @onready var _toolbar: MenuButton = preload("./Toolbar.tscn").instantiate()
 @onready var _options := preload("./Options.tscn").instantiate()

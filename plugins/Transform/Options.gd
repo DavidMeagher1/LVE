@@ -6,7 +6,7 @@ extends HBoxContainer
 ## the active transform drag. The visible options follow the active transform
 ## tool.
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./TransformSettings.tres")
 
 func _ready() -> void:
 	_settings.changed.connect(_refresh)
@@ -14,13 +14,13 @@ func _ready() -> void:
 
 
 func _refresh() -> void:
-	$view_axis.set_pressed_no_signal(_settings.view_axis)
-	$snap.visible = _settings.tool == _settings.Tools.ROTATE
-	$snap.set_pressed_no_signal(_settings.snap)
-	$uniform.visible = _settings.tool == _settings.Tools.SCALE
-	$uniform.set_pressed_no_signal(_settings.uniform)
-	$commit.disabled = not _settings.transforming
-	$cancel.disabled = not _settings.transforming
+	$ViewAxis.set_pressed_no_signal(_settings.view_axis)
+	$Snap.visible = _settings.tool == _settings.Tools.ROTATE
+	$Snap.set_pressed_no_signal(_settings.snap)
+	$Uniform.visible = _settings.tool == _settings.Tools.SCALE
+	$Uniform.set_pressed_no_signal(_settings.uniform)
+	$Commit.disabled = not _settings.transforming
+	$Cancel.disabled = not _settings.transforming
 
 
 func _on_view_axis_toggled(toggled_on: bool) -> void:

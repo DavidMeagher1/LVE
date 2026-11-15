@@ -23,7 +23,7 @@ const KEY_AXIS := "axis"
 ## The state key of the uniform flag.
 const KEY_UNIFORM := "uniform"
 
-var _settings := preload("../settings.tres")
+var _settings := preload("../TransformSettings.tres")
 var _mode := MODE_SCALE
 var _updating := false
 

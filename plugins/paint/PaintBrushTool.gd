@@ -9,7 +9,7 @@ extends "res://plugins/brush/StrokeTool.gd"
 
 
 func _init() -> void:
-	_settings = preload("./settings.tres")
+	_settings = preload("./PaintSettings.tres")
 
 
 ## Returns [code]true[/code] when a press pick uses the add target in front of

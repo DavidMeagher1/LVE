@@ -29,7 +29,7 @@ const AB_WARMUPS := 1
 const SETTINGS := [[1, 9, 8], [8, 17, 16], [32, 33, 64]]
 const SETTING_NAMES := ["default", "medium", "max"]
 
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var tool: Node3D
 var frame: VoxelFrame

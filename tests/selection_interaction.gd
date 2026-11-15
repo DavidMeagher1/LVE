@@ -12,7 +12,7 @@ const RAY_DEPTHS := [4.0, 7.0, 10.0]
 const PLATE_SIZE := 5
 const MARKER := Vector3i(20, 0, 20)
 
-var _selection_settings := preload("res://plugins/selection/settings.tres")
+var _selection_settings := preload("res://plugins/selection/SelectionSettings.tres")
 
 var viewport: SubViewport
 var center := Vector2.ZERO
@@ -114,7 +114,7 @@ func _empty_button() -> Button:
 	var box := _options_box()
 	if box == null:
 		return null
-	return box.get_node("empty") as Button
+	return box.get_node("Empty") as Button
 
 
 func _depth_button() -> Button:
@@ -184,7 +184,7 @@ func _selection() -> void:
 		_drag_rectangle(_drag_rectangle_of(ray_cells))
 		expect(State.selection.count() > ray_cells.size(), "the empty cell drag selects empty cells")
 		_empty_button().button_pressed = false
-		_mode_button("subtract").button_pressed = true
+		_mode_button("Subtract").button_pressed = true
 	)
 
 	step("When the user subtracts the same rectangle without the option", func():
@@ -212,7 +212,7 @@ func _selection() -> void:
 	)
 
 	step("Given the depth test on, the replace mode, and the empty option off", func():
-		_mode_button("replace").button_pressed = true
+		_mode_button("Replace").button_pressed = true
 		expect(not _empty_button().button_pressed, "the empty cell option stays off")
 		press_option("Depth test")
 		expect(_depth_button().button_pressed, "the depth test turns on")
@@ -388,7 +388,7 @@ func _lasso() -> void:
 	)
 
 	step("Given the add mode", func():
-		_press_mode("add")
+		_press_mode("Add")
 	)
 	step("When the user draws a second loop at the far corner", func():
 		_lasso_around(_block(Vector3i(3, 0, 3)))
@@ -400,7 +400,7 @@ func _lasso() -> void:
 	)
 
 	step("Given the subtract mode", func():
-		_press_mode("subtract")
+		_press_mode("Subtract")
 	)
 	step("When the user draws the second loop again", func():
 		_lasso_around(_block(Vector3i(3, 0, 3)))
@@ -418,7 +418,7 @@ func _lasso() -> void:
 	)
 
 	step("Given the replace mode and a cleared selection", func():
-		_press_mode("replace")
+		_press_mode("Replace")
 		State.clear_selection()
 	)
 	step("When the user drags a straight line across the plate", func():

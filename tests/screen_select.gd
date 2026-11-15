@@ -61,7 +61,7 @@ func _run() -> void:
 	)
 
 	step("Given the subtract mode", func():
-		_press_mode("subtract")
+		_press_mode("Subtract")
 	)
 
 	step("When the user drags the same rectangle again", func():
@@ -84,7 +84,7 @@ func _run() -> void:
 	step("Given the X symmetry plane and the replace mode", func():
 		State.symmetry_axes = 1
 		State.symmetry_origin = State.DEFAULT_SYMMETRY_ORIGIN
-		_press_mode("replace")
+		_press_mode("Replace")
 	)
 
 	step("When the user drags the rectangle with symmetry", func():
@@ -403,7 +403,7 @@ func _empty_button() -> Button:
 	var selection_plugin := plugin("SelectionPlugin")
 	if selection_plugin == null:
 		return null
-	return selection_plugin._options.get_node("empty") as Button
+	return selection_plugin._options.get_node("Empty") as Button
 
 
 func _depth_button() -> Button:

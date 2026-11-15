@@ -32,7 +32,7 @@ var frame: VoxelFrame
 var fill_tool: Node
 var wand_tool: Node
 var preview: MeshInstance3D
-var _fill_settings := preload("res://plugins/paint/settings.tres")
+var _fill_settings := preload("res://plugins/paint/PaintSettings.tres")
 var _first_visible_us := 0
 var _started_us := 0
 var _longest_frame_us := 0

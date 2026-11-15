@@ -432,9 +432,9 @@ flowchart LR
 
 | Tool | Engine | Settings | Submode | Writes |
 | --- | --- | --- | --- | --- |
-| Brush | `StrokeTool` | `brush/settings.tres`, `BrushToolSettings` | `PENCIL`, `LINE`, `ERASER` | Add or remove the footprint |
+| Brush | `StrokeTool` | `brush/BrushSettings.tres`, `BrushToolSettings` | `PENCIL`, `LINE`, `ERASER` | Add or remove the footprint |
 | Line | `BrushTool` (extends `StrokeTool`) | `BrushToolSettings` | `LINE` selected by `BrushPlugin` | Add the footprint along a path |
-| Paint Brush | `StrokeTool` | `paint/settings.tres`, `PaintToolSettings` | `PAINTBRUSH` | Replace existing cells |
+| Paint Brush | `StrokeTool` | `paint/PaintSettings.tres`, `PaintToolSettings` | `PAINTBRUSH` | Replace existing cells |
 | Fill | `VoxelTool` and `FillJob` | `PaintToolSettings` | `FILL`, `connected` true or false | Replace a matching region |
 | Spray | `StrokeTool` | `PaintToolSettings` | `SPRAY` | Replace sampled spots |
 

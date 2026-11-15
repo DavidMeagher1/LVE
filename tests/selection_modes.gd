@@ -190,7 +190,7 @@ func _clear_button() -> Button:
 	var box := _options_box()
 	if box == null:
 		return null
-	return box.get_node_or_null("clear") as Button
+	return box.get_node_or_null("Clear") as Button
 
 
 func _click_clear() -> void:
@@ -268,7 +268,7 @@ func _clear_waits() -> void:
 		var box := _options_box()
 		expect(box != null, "the selection options are visible")
 		if box != null:
-			expect(box.get_node("clear").disabled, "the clear button is disabled")
+			expect(box.get_node("Clear").disabled, "the clear button is disabled")
 	)
 	step("When the user presses clear", func():
 		var box := _options_box()
@@ -280,7 +280,7 @@ func _clear_waits() -> void:
 		State.finish_operation(_clear_operation)
 		var box := _options_box()
 		if box != null:
-			expect(not box.get_node("clear").disabled, "the clear button enables")
+			expect(not box.get_node("Clear").disabled, "the clear button enables")
 			box._on_clear_pressed()
 			expect(State.selection.is_empty(), "the clear works after the job")
 	)

@@ -13,7 +13,7 @@ extends "res://tests/test.gd"
 const ProbeScript := preload("./terrain_build_follow_probe.gd")
 const ToolScript := preload("res://plugins/Terrain/TerrainTool.gd")
 
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _tool
 var _frame: VoxelFrame
 var _viewport: SubViewport

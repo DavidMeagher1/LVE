@@ -5,7 +5,7 @@ extends HBoxContainer
 ## It edits the selection mode and the selection options. It also clears the
 ## selection. The visible options follow the active selection tool.
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./SelectionSettings.tres")
 
 func _enter_tree() -> void:
 	if not _settings.changed.is_connected(_sync):
@@ -33,16 +33,16 @@ func _ready() -> void:
 
 
 func _sync() -> void:
-	$clear.disabled = State.edit_busy()
-	var mode_buttons := [$replace, $add, $subtract]
+	$Clear.disabled = State.edit_busy()
+	var mode_buttons := [$Replace, $Add, $Subtract]
 	mode_buttons[_settings.mode].button_pressed = true
 	$Connected.set_pressed_no_signal(_settings.connected)
 	$Connected.visible = _settings.tool == _settings.Tools.WAND
 	$Sep.visible = $Connected.visible
-	$empty.set_pressed_no_signal(_settings.include_empty)
+	$Empty.set_pressed_no_signal(_settings.include_empty)
 	# The wand picks a voxel. It has no empty cell option.
 	var show_empty := _settings.tool != _settings.Tools.WAND
-	for control in [$EmptySep, $empty]:
+	for control in [$EmptySep, $Empty]:
 		control.visible = show_empty
 	$Depth.set_pressed_no_signal(_settings.depth_test)
 	# The depth test reads the screen shape. The wand picks a voxel.

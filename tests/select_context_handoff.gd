@@ -4,7 +4,7 @@ extends "res://tests/test.gd"
 # must release its own edit, so the command can run, and the stale mouse release
 # must not commit a selection.
 
-var _selection_settings := preload("res://plugins/selection/settings.tres")
+var _selection_settings := preload("res://plugins/selection/SelectionSettings.tres")
 
 var viewport: SubViewport
 var center := Vector2.ZERO

@@ -14,11 +14,11 @@ func _ready() -> void:
 func _sync() -> void:
 	match State.floor_axis:
 		Vector3.Axis.AXIS_X:
-			$x.button_pressed = true
+			$X.button_pressed = true
 		Vector3.Axis.AXIS_Y:
-			$y.button_pressed = true
+			$Y.button_pressed = true
 		Vector3.Axis.AXIS_Z:
-			$z.button_pressed = true
+			$Z.button_pressed = true
 	if int($Layers.value) != State.slice_layers:
 		$Layers.set_value_no_signal(State.slice_layers)
 

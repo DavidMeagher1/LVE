@@ -35,7 +35,7 @@ const SPECS := [
 	{"name": "sparse256_max", "kind": "sparse", "size": 256, "spot": 64, "search": 64, "speed": 64},
 ]
 
-var _settings := preload("res://plugins/paint/settings.tres")
+var _settings := preload("res://plugins/paint/PaintSettings.tres")
 
 var _tool
 var _cursor

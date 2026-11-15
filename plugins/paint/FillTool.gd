@@ -32,7 +32,7 @@ const NOTIFY_MIN_FRAMES := 3
 ## The minimum time gap between chunk notifications in microseconds.
 const NOTIFY_MIN_INTERVAL_US := 20000
 
-var _settings := preload("./settings.tres")
+var _settings := preload("./PaintSettings.tres")
 var _source_document: VoxelDocument
 var _source_frame: VoxelFrame
 var _replacement_material := VoxelFrame.material(Color.TRANSPARENT)

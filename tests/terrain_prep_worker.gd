@@ -16,7 +16,7 @@ const TerrainPreviewScript := preload("res://plugins/Terrain/TerrainPreview.gd")
 const TERRAIN := preload("res://plugins/Terrain/TerrainTool.gd")
 const Prep := preload("res://plugins/Terrain/TerrainPrep.gd")
 
-var _settings := preload("res://plugins/Terrain/settings.tres")
+var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _tool
 var _frame: VoxelFrame
 var _viewport: SubViewport
