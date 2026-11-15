@@ -25,6 +25,7 @@ func _ready() -> void:
 	test("the document stores its playback state", _playback_run, "playback")
 	test("a cancelled edit reports the stopped playback state", _play_cancel_run, "play_cancel")
 	test("a new-version startup restores each saved workspace after the splash", _startup_workspace_run, "startup_workspace")
+	test("an old brush tool id restores the brush", _legacy_tool_id_run, "legacy_tool_id")
 
 
 func before_test() -> void:
@@ -36,6 +37,33 @@ func before_test() -> void:
 	_deform = load("res://plugins/Deform/DeformSettings.tres")
 	_terrain = load("res://plugins/Terrain/TerrainSettings.tres")
 	_reset_workspace()
+
+
+func _legacy_tool_id_run() -> void:
+	var workspace := main.get_node("%EditorWorkspace")
+	step("Given the brush button released and the old saved active id", func():
+		var button := _tool_button("brush")
+		expect(button != null, "the brush tool button is registered")
+		if button != null:
+			button.set_pressed_no_signal(false)
+		workspace.call("_apply_active_tool", "BrushPlugin/Toolbar")
+	)
+	step("Then the old brush id selects the brush", func():
+		var button := _tool_button("brush")
+		expect(button != null and button.button_pressed, "the old brush id selects the brush")
+	)
+	step("Then the old symmetry id maps to the stable id", func():
+		var constants: Dictionary = load("res://Globals/State/EditorWorkspace.gd").get_script_constant_map()
+		var aliases: Dictionary = constants.get("LEGACY_TOOL_IDS", {})
+		expect(aliases.get("SymmetryPlugin/Symmetry", "") == "SymmetryPlugin/symmetry", "the old symmetry id maps")
+	)
+
+
+func _tool_button(tool_id: String) -> BaseButton:
+	for control in main.get_node("%ToolBar").get_children():
+		if control is BaseButton and str(control.get_meta("tool_id", control.name)) == tool_id:
+			return control
+	return null
 
 
 func _on_test_play_toggled(on: bool) -> void:

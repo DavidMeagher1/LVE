@@ -9,6 +9,13 @@ extends Node
 
 # The accepted range of each exported enum. A value outside its range is ignored,
 # so a damaged document cannot select an unknown tool.
+## Persisted active-tool keys that changed when the brush and symmetry toolbars
+## received stable ids. A document saved before that change still restores.
+const LEGACY_TOOL_IDS := {
+	"BrushPlugin/Toolbar": "BrushPlugin/brush",
+	"SymmetryPlugin/Symmetry": "SymmetryPlugin/symmetry",
+}
+
 const ENUM_RANGES := {
 	"BrushPlugin": {"mode": Vector2i(0, 2), "shape": Vector2i(0, 2)},
 	"PaintPlugin": {"tool": Vector2i(0, 2), "shape": Vector2i(0, 2)},
@@ -204,6 +211,7 @@ func _apply_pending_tool() -> void:
 func _apply_active_tool(id: String) -> void:
 	if id.is_empty():
 		return
+	id = str(LEGACY_TOOL_IDS.get(id, id))
 	var button: BaseButton = _tool_buttons.get(id)
 	if button == null or not is_instance_valid(button) or button.button_pressed:
 		return
