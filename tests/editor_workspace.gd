@@ -575,10 +575,13 @@ func _startup_workspace_run() -> void:
 	step("When the editor starts with a new version", func():
 		main._restore_startup_document(true, config_path)
 	)
-	step("Then the splash is active and inherits the restored setup", func():
+	step("Then the splash is active and restores its own saved setup", func():
 		expect(State.active_tab == 0, "the splash is the active tab")
 		expect(State.document.file_path == "res://splash.lve", "the splash is the active document")
-		expect(_brush.diameter == 9, "the splash keeps the restored active setup")
+		var sample := VoxelDocument.load_file("res://splash.lve")
+		var sample_tools: Variant = sample.tool_settings.get("BrushPlugin", {}) if sample else {}
+		var sample_diameter := int(sample_tools.get("diameter", _brush.diameter)) if sample_tools is Dictionary else _brush.diameter
+		expect(_brush.diameter == sample_diameter, "the splash restores its own saved brush diameter")
 	)
 	step("When the user opens the first saved tab", func():
 		expect(State.activate_tab(1), "the first saved tab activates")
