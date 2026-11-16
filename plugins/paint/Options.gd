@@ -3,10 +3,10 @@ extends HBoxContainer
 ## The paint option bar.
 ##
 ## It shows the options of the active paint tool. The brush section edits the
-## paintbrush diameter, the shape, and the pixel-perfect flag. The fill section
-## edits the connected option. The spray section edits the spot diameter, the
-## spray search size, and the speed. The spot diameter and the search size are
-## voxel widths, not radii.
+## paintbrush diameter, the shape, and the pixel-perfect flag. It also edits the
+## dither density and offset. The fill section edits the connected option. The
+## spray section edits the spot diameter, the spray search size, and the speed.
+## The spot diameter and the search size are voxel widths, not radii.
 
 var _settings := preload("./PaintSettings.tres")
 
@@ -18,7 +18,8 @@ func _ready() -> void:
 
 func _sync() -> void:
 	var tool: int = _settings.tool
-	$Brush.visible = tool == _settings.Tools.PAINTBRUSH
+	var uses_brush := tool == _settings.Tools.PAINTBRUSH or tool == _settings.Tools.DITHER
+	$Brush.visible = uses_brush
 	$Fill.visible = tool == _settings.Tools.FILL
 	$Spray.visible = tool == _settings.Tools.SPRAY
 	$Brush/Diameter.set_value_no_signal(_settings.diameter)
@@ -28,6 +29,10 @@ func _sync() -> void:
 		shape = _settings.BrushShape.CUBE
 	shape_buttons[shape].button_pressed = true
 	$Brush/PixelPerfect.set_pressed_no_signal(_settings.pixel_perfect)
+	var dither := tool == _settings.Tools.DITHER
+	$Brush/DitherSeparator.visible = dither
+	$Brush/DitherDensity.visible = dither
+	$Brush/DitherDensity.set_value_no_signal(_settings.dither_density)
 	$Fill/Connected.set_pressed_no_signal(_settings.connected)
 	$Spray/SpotSize.set_value_no_signal(_settings.spot_diameter)
 	$Spray/SpraySize.set_value_no_signal(_settings.spray_size)
@@ -48,6 +53,10 @@ func _on_sphere_pressed() -> void:
 
 func _on_pixel_perfect_toggled(toggled_on: bool) -> void:
 	_settings.pixel_perfect = toggled_on
+
+
+func _on_dither_density_changed(value: float) -> void:
+	_settings.dither_density = value
 
 
 func _on_connected_toggled(toggled_on: bool) -> void:
