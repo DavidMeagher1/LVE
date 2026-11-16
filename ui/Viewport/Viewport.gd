@@ -188,6 +188,12 @@ func set_lighting_settings(settings: Dictionary) -> void:
 	lighting_changed.emit()
 
 
+## Applies one orthographic state and updates the camera menu. It does not save
+## the document view.
+func set_orthographic(value: bool) -> void:
+	_set_orthographic(value, false)
+
+
 ## Returns the editor view settings. The keys match the `view` dictionary in
 ## `docs/DOCUMENT_FORMAT.md`.
 func get_view_settings() -> Dictionary:

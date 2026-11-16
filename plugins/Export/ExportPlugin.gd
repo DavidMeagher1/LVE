@@ -185,7 +185,8 @@ func _restore_export_settings() -> void:
 	_model_camera._yaw = _pending_export_camera.get("yaw", _default_camera.yaw)
 	_model_camera._pitch = _pending_export_camera.get("pitch", _default_camera.pitch)
 	_model_camera.fov = _pending_export_camera.get("fov", _default_camera.fov)
-	_model_camera.is_orthogonal = _pending_export_camera.get("orthographic", _default_camera.orthographic)
+	# Use the scene method so the camera menu check follows the restored projection.
+	_model_scene.set_orthographic(_pending_export_camera.get("orthographic", _default_camera.orthographic))
 	_gif_button.set_pressed_no_signal(false)
 	_controls.get_node("Preview").clear_animation()
 	_restoring_export_settings = false
