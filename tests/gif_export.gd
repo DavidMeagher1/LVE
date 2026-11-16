@@ -23,6 +23,7 @@ func _ready() -> void:
 	if DisplayServer.get_name() != "headless":
 		timeout = 30.0
 		test("the export workspace writes the sprite animation as a GIF", _export_run, "gif_export")
+		test("the exported GIF composites moving frames without trails", _composite_run, "gif_composite")
 		test("the GIF toggle animates the sheet preview", _preview_run, "gif_preview")
 		test("a cancelled GIF export writes no file", _cancel_run, "gif_cancel")
 
@@ -205,6 +206,47 @@ func _export_run() -> void:
 	)
 
 
+func _composite_run() -> void:
+	gif_path = "user://voxel_gif_composite_%s.gif" % Time.get_ticks_usec()
+	step("Given three frames that move a voxel across the canvas", func():
+		State.document.set_cell(0, Vector3i(-6, 0, 0), VoxelFrame.material(Color.RED))
+		State.document.add_frame()
+		State.document.add_frame()
+		State.document.set_cell(2, Vector3i(6, 0, 0), VoxelFrame.material(Color.GREEN))
+		State.document.frames[0].delay_ms = 100
+		State.document.frames[1].delay_ms = 100
+		State.document.frames[2].delay_ms = 100
+		State.frames_changed.emit()
+		var lighting: Dictionary = exporter._model_scene.get_lighting_settings()
+		lighting.shaded = false
+		exporter._model_scene.set_lighting_settings(lighting)
+		exporter._sheet_settings.get_node("ViewRow/View").select(2)
+		exporter._sheet_settings.get_node("ViewRow/View").item_selected.emit(2)
+		exporter._model_camera.is_orthogonal = true
+		exporter._sheet_settings.get_node("ViewRow/Center").set_pressed_no_signal(true)
+		exporter._sheet_settings.get_node("SizeRow/Size").set_value_no_signal(64)
+		exporter._sheet_settings.get_node("TurntableRow/Turntable").set_pressed_no_signal(false)
+		exporter._gif_button.button_pressed = true
+	)
+	var error: Error = await exporter.export_gif(gif_path)
+	step("Then each composed frame holds only its own voxels", func():
+		expect(error == OK, "the GIF export completes")
+		var bytes := FileAccess.get_file_as_bytes(gif_path)
+		var reader = GIF_READER.new()
+		expect(reader.read(bytes), "the exported GIF parses")
+		expect(reader.frames.all(func(frame: Dictionary) -> bool: return int(frame.disposal) == 2), "every frame clears its area for the next frame, including the loop seam")
+		var composed := reader.compose()
+		expect(composed.size() == 3, "the GIF contains three composed frames")
+		if composed.size() != 3:
+			return
+		expect(_hue_count(composed[0], "r") > 0, "the first frame holds the red voxel")
+		expect(_hue_count(composed[0], "g") == 0, "the first frame holds no green voxel")
+		expect(_opaque_count(composed[1]) == 0, "the empty middle frame clears the red voxel")
+		expect(_hue_count(composed[2], "g") > 0, "the last frame holds the green voxel")
+		expect(_hue_count(composed[2], "r") == 0, "the last frame holds no red voxel")
+	)
+
+
 func _preview_run() -> void:
 	step("Given three colored frames and two turntable views", func():
 		State.document.set_cell(0, Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -297,6 +339,29 @@ func _cancel_run() -> void:
 func _start_cancelled_export() -> void:
 	cancelled_result = await exporter.export_gif(cancel_path)
 	cancelled_done = true
+
+
+func _opaque_count(image: Image) -> int:
+	var count := 0
+	for y in image.get_height():
+		for x in image.get_width():
+			if image.get_pixel(x, y).a >= 0.5:
+				count += 1
+	return count
+
+
+func _hue_count(image: Image, hue: String) -> int:
+	var count := 0
+	for y in image.get_height():
+		for x in image.get_width():
+			var color := image.get_pixel(x, y)
+			if color.a < 0.5:
+				continue
+			if (hue == "r" and color.r > color.g and color.r > color.b) \
+					or (hue == "g" and color.g > color.r and color.g > color.b) \
+					or (hue == "b" and color.b > color.r and color.b > color.g):
+				count += 1
+	return count
 
 
 func _dominant_hue(image: Image) -> String:

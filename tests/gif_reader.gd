@@ -75,6 +75,8 @@ func read(data: PackedByteArray) -> bool:
 		elif label == 0x2C:
 			if pos + 9 > data.size():
 				return false
+			var frame_left := data[pos] | (data[pos + 1] << 8)
+			var frame_top := data[pos + 2] | (data[pos + 3] << 8)
 			var frame_width := data[pos + 4] | (data[pos + 5] << 8)
 			var frame_height := data[pos + 6] | (data[pos + 7] << 8)
 			var descriptor := data[pos + 8]
@@ -103,13 +105,60 @@ func read(data: PackedByteArray) -> bool:
 			var image := _image(indices, frame_width, frame_height, table, transparent)
 			if image == null:
 				return false
-			frames.append({"image": image, "delay": delay, "disposal": disposal, "transparent": transparent})
+			frames.append({
+				"image": image,
+				"delay": delay,
+				"disposal": disposal,
+				"transparent": transparent,
+				"rect": Rect2i(frame_left, frame_top, frame_width, frame_height),
+			})
 			delay = 0
 			transparent = -1
 			disposal = 0
 		else:
 			return false
 	return false
+
+
+## Composites the raw frames as a standard viewer does. It applies the previous
+## frame's disposal before it draws the next frame. It returns one full-canvas
+## RGBA8 image per frame.
+func compose() -> Array[Image]:
+	var composed: Array[Image] = []
+	if width <= 0 or height <= 0:
+		return composed
+	var canvas := Image.create(width, height, false, Image.FORMAT_RGBA8)
+	canvas.fill(Color.TRANSPARENT)
+	var previous: Dictionary = {}
+	var saved: Image = null
+	var saved_rect := Rect2i()
+	for frame: Dictionary in frames:
+		if not previous.is_empty():
+			var previous_rect: Rect2i = previous.rect
+			match int(previous.disposal):
+				2:
+					canvas.fill_rect(previous_rect, Color.TRANSPARENT)
+				3:
+					if saved != null:
+						canvas.blit_rect(saved, Rect2i(Vector2i.ZERO, saved_rect.size), saved_rect.position)
+						saved = null
+		var rect: Rect2i = frame.rect
+		if rect.size.x <= 0 or rect.size.y <= 0 or not Rect2i(Vector2i.ZERO, Vector2i(width, height)).encloses(rect):
+			return composed
+		if int(frame.disposal) == 3:
+			saved = canvas.get_region(rect)
+			saved_rect = rect
+		var image: Image = frame.image
+		if image == null or image.get_size() != rect.size:
+			return composed
+		for y in rect.size.y:
+			for x in rect.size.x:
+				var color := image.get_pixel(x, y)
+				if color.a >= 0.5:
+					canvas.set_pixel(rect.position.x + x, rect.position.y + y, color)
+		composed.append(canvas.duplicate())
+		previous = frame
+	return composed
 
 
 func _table(data: PackedByteArray, start: int, count: int) -> PackedInt32Array:
