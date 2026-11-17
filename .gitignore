@@ -7,3 +7,6 @@
 
 # Export output
 /dist/
+
+# Local prototypes
+/prototypes/

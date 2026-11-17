@@ -5,6 +5,8 @@ extends "res://tests/test.gd"
 # loopback transport.
 
 const MCPServerScript := preload("res://Globals/MCP/MCPServer.gd")
+const MCPGuideScript := preload("res://Globals/MCP/MCPGuide.gd")
+const GifReader := preload("res://tests/gif_reader.gd")
 
 var server: Node
 var peer: StreamPeerTCP
@@ -16,6 +18,7 @@ func _ready() -> void:
 	test("set_tool changes the real toolbar and settings", _set_tool, "set_tool")
 	test("a driven brush stroke writes cells and one undo action", _stroke, "stroke")
 	test("a driven fill uses the current material", _fill, "fill")
+	test("a matching fill remaps every cell of a color", _fill_matching, "fill_matching")
 	test("write_cells writes boxes and runs", _write, "write_cells")
 	test("write_cells accepts per-cell materials", _write_materials, "write_materials")
 	test("write_cells writes several frames as one undo", _write_frames, "write_frames")
@@ -33,6 +36,8 @@ func _ready() -> void:
 	test("the loopback transport answers MCP requests", _tcp, "tcp")
 	test("the HTTP transport answers a POST and opens an SSE stream", _http, "http")
 	test("a screenshot saves a file and returns an image on request", _screenshot, "screenshot")
+	test("a screenshot clip renders only the box", _screenshot_clip, "screenshot_clip")
+	test("a model sheet renders the seven standard views", _model_sheet, "model_sheet")
 	test("the compact state stays small", _budget, "budget")
 	test("inspect_document summarizes frames and islands", _inspect, "inspect_document")
 	test("inspect_document groups islands with box and material filters", _islands, "island_filters")
@@ -49,6 +54,9 @@ func _ready() -> void:
 	test("inspect_document returns the palette", _palette, "palette")
 	test("the export settings are readable", _export_settings, "export_settings")
 	test("a sprite sheet uses the requested settings", _export_sheet, "export_sheet", {"timeout": 30.0})
+	test("a GIF export writes every frame and delay", _export_gif, "export_gif", {"timeout": 30.0})
+	test("the workspace carries the saved editor setup", _workspace, "workspace")
+	test("set_palette replaces the document palette", _set_palette, "set_palette")
 	test("a model export uses the requested settings", _export_model, "export_model", {"timeout": 30.0})
 	test("a save without a path saves the open document", _save_main, "save_main")
 	test("a save creates a missing folder", _save_folder, "save_folder")
@@ -57,6 +65,7 @@ func _ready() -> void:
 	test("the tag tools default to the active tag", _tag_defaults, "tag_defaults")
 	test("inspect_document puts one frame at the root", _inspect_root, "inspect_root")
 	test("the instructions carry a tool index", _tool_index, "tool_index")
+	test("the server publishes the guide and the format as resources", _resources, "resources")
 
 
 func before_test() -> void:
@@ -103,16 +112,16 @@ func _peer_idle() -> void:
 	await get_tree().process_frame
 	step("Then the server accepts the peer", func():
 		expect(idle_peer.get_status() == StreamPeerTCP.STATUS_CONNECTED, "the peer is connected")
-		expect(server._peers.size() == 1, "the server accepts the peer")
+		expect(server._transport._peers.size() == 1, "the server accepts the peer")
 	)
 	step("When a partial request passes the deadline", func():
-		if not server._peers.is_empty():
-			server._peers[0].buffer = PackedByteArray([123, 34])
-			server._peers[0].last_read_ms = Time.get_ticks_msec() - server.PEER_IDLE_MS - 1
-		server._process(0.0)
+		if not server._transport._peers.is_empty():
+			server._transport._peers[0].buffer = PackedByteArray([123, 34])
+			server._transport._peers[0].last_read_ms = Time.get_ticks_msec() - server._transport.PEER_IDLE_MS - 1
+		server.call("_process", 0.0)
 	)
 	step("Then the peer is removed", func():
-		expect(server._peers.is_empty(), "the idle peer is removed")
+		expect(server._transport._peers.is_empty(), "the idle peer is removed")
 		idle_peer.disconnect_from_host()
 	)
 
@@ -308,6 +317,28 @@ func _fill() -> void:
 	)
 
 
+func _fill_matching() -> void:
+	step("Given two separate red cells and a blue material", func():
+		State.set_material(VoxelFrame.material(Color.BLUE))
+		var frame := State.get_current_voxel_frame()
+		frame.set_cell(Vector3i(0, 0, 0), VoxelFrame.material(Color.RED))
+		frame.set_cell(Vector3i(4, 0, 0), VoxelFrame.material(Color.RED))
+		State.document._bounds_dirty = true
+		State.undo_redo.clear_history()
+	)
+	await _call("set_tool", {"tool": "fill", "connected": false})
+	var response := await _call("fill", {"seed": [0, 0, 0]})
+	step("Then every matching cell changes and the gap stays empty", func():
+		expect(not _is_error(response), "the matching fill succeeds: %s" % _result_text(response))
+		var frame := State.get_current_voxel_frame()
+		expect(frame.get_color(Vector3i(0, 0, 0)).is_equal_approx(Color.BLUE), "the seed cell is blue")
+		expect(frame.get_color(Vector3i(4, 0, 0)).is_equal_approx(Color.BLUE), "the separate red cell is blue")
+		expect(not frame.has(Vector3i(2, 0, 0)), "the gap stays empty")
+		expect(State.undo_redo.get_history_count() == 1, "the remap is one history action")
+	)
+	await _call("set_tool", {"tool": "fill", "connected": true})
+
+
 func _write() -> void:
 	step("Given a blue material", func():
 		State.current_color = Color.BLUE
@@ -332,6 +363,13 @@ func _write() -> void:
 		expect(frame.has(Vector3i(2, 0, 0)), "the run start is written")
 		expect(frame.has(Vector3i(4, 0, 0)), "the run end is written")
 	)
+	var layer_response := await _call("write_cells", {"materials": [{"color": "#00ff00"}], "cells": [[0, 0, 0, 0]]})
+	step("Then a later cell call layers over the box", func():
+		expect(not _is_error(layer_response), "the layer write succeeds")
+		var frame := State.get_current_voxel_frame()
+		expect(frame.get_color(Vector3i.ZERO).is_equal_approx(Color("#00ff00")), "the later cell wins")
+		expect(frame.get_color(Vector3i(1, 0, 1)).is_equal_approx(Color.BLUE), "the rest of the box stays blue")
+	)
 	var erase_response := await _call("write_cells", {"boxes": [[-1, 0, -1, -1, 0, -1]], "erase": true})
 	step("Then a box can erase", func():
 		expect(not _is_error(erase_response), "the erase write succeeds")
@@ -342,6 +380,12 @@ func _write() -> void:
 	var invalid_response := await _call("write_cells", {"boxes": [[1, 0, 0, 0, 0, 0]]})
 	step("Then an invalid box writes nothing", func():
 		expect(_is_error(invalid_response), "the invalid box reports an error")
+	)
+	var mixed_response := await _call("write_cells", {"cells": [[5, 0, 0]], "boxes": [[5, 0, 0, 5, 0, 0]]})
+	step("Then two shape forms in one call are refused", func():
+		expect(_is_error(mixed_response), "the mixed write reports an error")
+		expect(_result_text(mixed_response).contains("Provide one of"), "the error names the one-form rule")
+		expect(not State.get_current_voxel_frame().has(Vector3i(5, 0, 0)), "the mixed write writes nothing")
 	)
 	var far_response := await _call("write_cells", {"boxes": [[1100000, 0, 0, 1100001, 0, 0]]})
 	step("Then a box outside the cell range is refused", func():
@@ -387,6 +431,13 @@ func _write_materials() -> void:
 	var missing := await _call("write_cells", {"cells": [[0, 0, 0, 0]]})
 	step("Then a material index without a table is refused", func():
 		expect(_is_error(missing), "the missing table reports an error")
+	)
+	await _call("set_palette", {"materials": [{"color": "#ff0000"}, {"color": "#0000ff"}]})
+	var palette_write := await _call("write_cells", {"cells": [[0, 0, 0, 1]]})
+	step("Then a shape index names the palette without a table", func():
+		expect(not _is_error(palette_write), "the palette index write succeeds: %s" % _result_text(palette_write))
+		var color := State.get_current_voxel_frame().get_color(Vector3i(0, 0, 0))
+		expect(color.is_equal_approx(Color("#0000ff")), "the cell uses palette entry 1")
 	)
 
 
@@ -1296,6 +1347,12 @@ func _http_post(port: int, headers: String, body: String) -> String:
 
 
 func _screenshot() -> void:
+	# The screenshot default is a shared user:// file. The live editor uses the
+	# same path, so keep the test on its own file and restore the default.
+	var test_path := ProjectSettings.globalize_path("user://mcp_test_shot.png")
+	var default_path := ProjectSettings.globalize_path("user://mcp_screenshot.png")
+	var had_default := FileAccess.file_exists(default_path)
+	var default_bytes := FileAccess.get_file_as_bytes(default_path) if had_default else PackedByteArray()
 	step("Given one red cell in the current frame", func():
 		var frame := State.get_current_voxel_frame()
 		frame.set_cell(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -1318,8 +1375,15 @@ func _screenshot() -> void:
 		expect(bool(data.get("shaded", false)), "the default view is shaded")
 		expect(not bool(data.get("wireframe", true)), "the default view is not wireframe")
 	)
+	if had_default:
+		var file := FileAccess.open(default_path, FileAccess.WRITE)
+		if file != null:
+			file.store_buffer(default_bytes)
+	elif FileAccess.file_exists(default_path):
+		DirAccess.remove_absolute(default_path)
 	var options_response := await _call("screenshot", {
 		"size": 64,
+		"path": test_path,
 		"orthographic": false,
 		"environment": false,
 		"shadows": false,
@@ -1335,7 +1399,7 @@ func _screenshot() -> void:
 		expect(not bool(options_data.get("shaded", true)), "unshaded is reported")
 		expect(bool(options_data.get("wireframe", false)), "wireframe is reported")
 	)
-	var inline_response := await _call("screenshot", {"size": 64, "inline": true})
+	var inline_response := await _call("screenshot", {"size": 64, "path": test_path, "inline": true})
 	step("Then inline true returns the image", func():
 		expect(not _is_error(inline_response), "the inline screenshot succeeds")
 		var result: Dictionary = inline_response.get("result", {})
@@ -1357,7 +1421,7 @@ func _screenshot() -> void:
 		frame.set_cell(Vector3i(4, 4, 4), VoxelFrame.material(Color.BLUE))
 		State.document._bounds_dirty = true
 	)
-	var views_response := await _call("screenshot", {"views": ["isometric", "front", "right", "top"], "size": 64})
+	var views_response := await _call("screenshot", {"views": ["isometric", "front", "right", "top"], "size": 64, "path": test_path})
 	var views_data := _result_data(views_response)
 	step("Then the contact sheet holds four tiles", func():
 		expect(not _is_error(views_response), "the contact sheet succeeds")
@@ -1367,7 +1431,7 @@ func _screenshot() -> void:
 		var views: Array = views_data.get("views", [])
 		expect(views.size() == 4, "the contact sheet names four views")
 	)
-	var story_response := await _call("screenshot", {"frames": [0, 1], "view": "isometric", "size": 64})
+	var story_response := await _call("screenshot", {"frames": [0, 1], "view": "isometric", "size": 64, "path": test_path})
 	var story_data := _result_data(story_response)
 	step("Then the storyboard holds both frames", func():
 		expect(not _is_error(story_response), "the storyboard succeeds")
@@ -1376,6 +1440,77 @@ func _screenshot() -> void:
 		expect(int(story_data.get("columns", 0)) == 2, "the storyboard uses two columns")
 		expect(int(story_data.get("rows", 0)) == 1, "the storyboard uses one row")
 	)
+	var custom_path := ProjectSettings.globalize_path("user://mcp_shot_folder/custom.png")
+	var custom_response := await _call("screenshot", {"size": 64, "path": custom_path})
+	var custom_data := _result_data(custom_response)
+	step("Then a custom path is used and its folder is created", func():
+		expect(not _is_error(custom_response), "the custom path screenshot succeeds: %s" % _result_text(custom_response))
+		expect(str(custom_data.get("path", "")).replace("\\", "/").ends_with("mcp_shot_folder/custom.png"), "the result names the custom path")
+		expect(FileAccess.file_exists(custom_path), "the custom file exists")
+		DirAccess.remove_absolute(custom_path)
+		DirAccess.remove_absolute(custom_path.get_base_dir())
+	)
+	DirAccess.remove_absolute(test_path)
+
+
+func _model_sheet() -> void:
+	var path := ProjectSettings.globalize_path("user://mcp_model_sheet.png")
+	step("Given one red cell in frame 0 and the current frame at 1", func():
+		State.get_current_voxel_frame().set_cell(Vector3i.ZERO, VoxelFrame.material(Color.RED))
+		State.document._bounds_dirty = true
+		State.add_frame()
+		State.get_current_voxel_frame().set_cell(Vector3i(4, 4, 4), VoxelFrame.material(Color.BLUE))
+		State.current_frame = 1
+		DirAccess.remove_absolute(path)
+	)
+	var response := await _call("model_sheet", {"size": 64, "columns": 4, "path": path})
+	var data := _result_data(response)
+	step("Then the standard seven views fill a four by two sheet", func():
+		expect(not _is_error(response), "model_sheet succeeds: %s" % _result_text(response))
+		expect(int(data.get("frame", -1)) == 0, "the sheet uses frame 0, not the current frame")
+		var views: Array = data.get("views", [])
+		expect(views.size() == 7, "the sheet holds seven views")
+		expect(views == ["front", "back", "left", "right", "top", "bottom", "isometric"], "the sheet uses the standard order")
+		expect(int(data.get("columns", 0)) == 4, "the sheet uses four columns")
+		expect(int(data.get("rows", 0)) == 2, "the sheet uses two rows")
+		expect(str(data.get("path", "")).replace("\\", "/").ends_with("mcp_model_sheet.png"), "the result names the custom path")
+		expect(FileAccess.file_exists(path), "the sheet exists")
+		var image := Image.load_from_file(path)
+		expect(image != null, "the sheet is a readable PNG")
+		if image != null:
+			expect(image.get_width() == 4 * 64 + 3 * 4, "the width matches four tiles")
+			expect(image.get_height() == 2 * 64 + 4, "the height matches two tiles")
+		DirAccess.remove_absolute(path)
+	)
+
+
+func _screenshot_clip() -> void:
+	var test_path := ProjectSettings.globalize_path("user://mcp_test_clip.png")
+	step("Given two separated red cells", func():
+		var frame := State.get_current_voxel_frame()
+		frame.set_cell(Vector3i(0, 0, 0), VoxelFrame.material(Color.RED))
+		frame.set_cell(Vector3i(4, 0, 0), VoxelFrame.material(Color.RED))
+		State.document._bounds_dirty = true
+	)
+	var response := await _call("screenshot", {"size": 64, "view": "front", "path": test_path, "clip": [-1, -1, -1, 1, 1, 1]})
+	var data := _result_data(response)
+	step("Then only the cells inside the clip box set the bounds", func():
+		expect(not _is_error(response), "the clipped screenshot succeeds: %s" % _result_text(response))
+		var bounds: Dictionary = data.get("bounds", {})
+		var min_bound: Array = bounds.get("min", [])
+		var max_bound: Array = bounds.get("max", [])
+		var is_one_cell := min_bound.size() == 3 and max_bound.size() == 3
+		expect(is_one_cell and int(min_bound[0]) == 0 and int(min_bound[1]) == 0 and int(min_bound[2]) == 0, "the bounds cover the clipped cell only")
+		expect(is_one_cell and int(max_bound[0]) == 0 and int(max_bound[1]) == 0 and int(max_bound[2]) == 0, "the clipped bounds end at the cell")
+		var clip: Array = data.get("clip", [])
+		var echo_ok := clip.size() == 6 and int(clip[0]) == -1 and int(clip[1]) == -1 and int(clip[2]) == -1 and int(clip[3]) == 1 and int(clip[4]) == 1 and int(clip[5]) == 1
+		expect(echo_ok, "the result echoes the clip")
+	)
+	var empty_response := await _call("screenshot", {"size": 64, "view": "front", "path": test_path, "clip": [10, 10, 10, 12, 12, 12]})
+	step("Then an empty clip is refused", func():
+		expect(_is_error(empty_response), "an empty clip reports an error")
+	)
+	DirAccess.remove_absolute(test_path)
 
 
 func _wait_client(client: StreamPeerTCP) -> void:
@@ -1453,6 +1588,18 @@ func _schemas() -> void:
 		var list: Variant = result.get("tools", [])
 		if list is Array:
 			tools = list
+	step("Then the tools that take a path declare it", func():
+		var declared := {}
+		for value in tools:
+			var tool: Dictionary = value
+			var schema_value: Variant = tool.get("inputSchema", {})
+			var schema: Dictionary = schema_value if schema_value is Dictionary else {}
+			var properties_value: Variant = schema.get("properties", {})
+			var properties: Dictionary = properties_value if properties_value is Dictionary else {}
+			declared[str(tool.get("name", ""))] = properties.has("path")
+		for name in ["screenshot", "model_sheet", "save_document", "open_document", "export_model", "export_sprite_sheet", "export_gif"]:
+			expect(bool(declared.get(name, false)), "%s declares path" % name)
+	)
 	step("Then every tool declares a root object output schema", func():
 		expect(tools.size() >= 31, "the server lists every tool")
 		var missing: PackedStringArray = []
@@ -1555,6 +1702,183 @@ func _export_sheet() -> void:
 		if image != null:
 			expect(image.get_width() == int(data.get("width", -1)), "the image width matches the response")
 			expect(image.get_height() == int(data.get("height", -1)), "the image height matches the response")
+	)
+
+
+func _export_gif() -> void:
+	var folder := ProjectSettings.globalize_path("user://mcp_gif_folder/nested")
+	var path := folder.path_join("anim.gif")
+	step("Given two frames with different delays and a missing folder", func():
+		var frame := State.get_current_voxel_frame()
+		frame.set_cell(Vector3i(0, 0, 0), VoxelFrame.material(Color.RED))
+		frame.delay_ms = 100
+		State.add_frame()
+		State.get_current_voxel_frame().set_cell(Vector3i(0, 1, 0), VoxelFrame.material(Color.BLUE))
+		State.document.frames[1].delay_ms = 150
+		State.document._bounds_dirty = true
+		State.is_playing = true
+		DirAccess.remove_absolute(path)
+		DirAccess.remove_absolute(folder)
+		expect(not DirAccess.dir_exists_absolute(folder), "the folder is missing")
+	)
+	var response := await _call("export_gif", {"path": path, "first_frame": 0, "last_frame": 1, "tile_size": 32, "view": "front", "views": 1, "orthographic": true, "center": true})
+	var data := _result_data(response)
+	step("Then the GIF holds every frame, delay, and the folder", func():
+		expect(not _is_error(response), "export_gif succeeds: %s" % _result_text(response))
+		expect(DirAccess.dir_exists_absolute(folder), "the export creates the folder")
+		expect(FileAccess.file_exists(path), "the GIF exists")
+		var reader = GifReader.new()
+		var bytes := FileAccess.get_file_as_bytes(path)
+		expect(reader.read(bytes), "the GIF parses")
+		expect(reader.frames.size() == 2, "the GIF holds two frames")
+		expect(reader.width == 32 and reader.height == 32, "the GIF uses the requested tile size")
+		expect(int(reader.frames[0].delay) == 10, "the first frame lasts 100 ms")
+		expect(int(reader.frames[1].delay) == 15, "the second frame lasts 150 ms")
+		expect(reader.loop_count == 0, "the GIF loops forever")
+		expect(int(data.get("frames", 0)) == 2, "the response names two frames")
+		expect(int(data.get("tile_size", 0)) == 32, "the response names the tile size")
+		expect(State.document.edit_playing, "the export keeps the playback state")
+		DirAccess.remove_absolute(path)
+		DirAccess.remove_absolute(folder)
+		DirAccess.remove_absolute(folder.get_base_dir())
+	)
+	State.stop()
+
+
+func _workspace() -> void:
+	var path := ProjectSettings.globalize_path("user://mcp_workspace_test.lve")
+	var rig := camera_rig()
+	var basis := [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+	step("Given a different editor camera and export setup", func():
+		DirAccess.remove_absolute(path)
+		State.document.edit_camera = {}
+		State.document.lighting_settings = {}
+		State.document.view_settings = {}
+		State.document.export_settings = {}
+	)
+	var view_response := await _call("set_workspace", {"view": {"grid": true, "wireframe": false, "orthographic": false, "view_mode": 0, "environment_open": false}})
+	step("Then an omitted section keeps its value", func():
+		expect(not _is_error(view_response), "set_workspace succeeds with one section")
+		expect(State.document.edit_camera.is_empty(), "the camera stays empty")
+		expect(State.document.lighting_settings.is_empty(), "the lighting stays empty")
+		expect(State.document.export_settings.is_empty(), "the export stays empty")
+		expect(not State.document.edit_dirty, "the workspace change does not mark the document edited")
+	)
+	var response := await _call("set_workspace", {
+		"camera": {"yaw": -0.6, "pitch": 0.3, "distance": 30.0, "initial_distance": 20.0, "target": [1.0, 2.0, 3.0]},
+		"lighting": {"basis": basis, "color": "#ffcc00", "energy": 2.0, "ambient_color": "#203040", "ambient_energy": 0.5, "shadows": true, "shaded": false, "view_locked": false, "view_basis": basis},
+		"view": {"grid": false, "wireframe": false, "orthographic": true, "view_mode": 0.0, "environment_open": false},
+		"export": {"view": 2.0, "frame_size": 128.0, "views": 1.0, "turntable": false, "metadata": false, "center": true, "sprite_center": true, "model_tag": -1.0, "sheet_tag": -1.0},
+		"playing": true,
+	})
+	step("Then the document, the viewport, and the export tab hold the workspace", func():
+		expect(not _is_error(response), "set_workspace succeeds: %s" % _result_text(response))
+		var target: Vector3 = State.document.edit_camera.get("target", Vector3.ZERO)
+		expect(target.is_equal_approx(Vector3(1.0, 2.0, 3.0)), "the camera target is set")
+		expect(is_equal_approx(float(State.document.edit_camera.get("yaw", 0.0)), -0.6), "the camera yaw is set")
+		expect(is_equal_approx(rig._yaw, -0.6), "the viewport camera uses the yaw")
+		expect(is_equal_approx(rig._dist, 30.0), "the viewport camera uses the distance")
+		var light: Color = State.document.lighting_settings.get("color", Color.WHITE)
+		expect(Color(light.r, light.g, light.b, 1.0).is_equal_approx(Color("#ffcc00")), "the light color is stored")
+		expect(is_equal_approx(light.a, 2.0), "the light energy is stored in the alpha")
+		expect(not bool(State.document.lighting_settings.get("shaded", true)), "the shaded flag is stored")
+		expect(bool(State.document.view_settings.get("orthographic", false)), "the view state is stored")
+		expect(int(State.document.export_settings.get("view", -1)) == 2, "the export view is stored")
+		expect(is_equal_approx(float(State.document.export_settings.get("frame_size", 0.0)), 128.0), "the export tile size is stored")
+		expect(is_equal_approx(float(State.document.export_settings.get("views", 0.0)), 1.0), "the export views stay 1")
+		expect(State.document.edit_playing, "the document plays on open")
+	)
+	var plugin := get_node_or_null("/root/ExportPlugin")
+	step("Then the export tab shows the saved settings", func():
+		if plugin != null:
+			var settings: Dictionary = plugin.call("current_export_settings")
+			var sprite: Dictionary = settings.get("sprite", {})
+			expect(str(sprite.get("view", "")) == "front", "the export tab selects the saved view")
+			expect(int(sprite.get("tile_size", 0)) == 128, "the export tab uses the saved tile size")
+	)
+	var read_response := await _call("get_workspace", {})
+	var read_data := _result_data(read_response)
+	step("Then get_workspace returns the same shapes", func():
+		expect(not _is_error(read_response), "get_workspace succeeds")
+		var camera: Dictionary = read_data.get("camera", {})
+		var target: Array = camera.get("target", [])
+		expect(target.size() == 3 and int(target[0]) == 1 and int(target[1]) == 2 and int(target[2]) == 3, "the camera target is a vector")
+		var lighting: Dictionary = read_data.get("lighting", {})
+		expect(is_equal_approx(float(lighting.get("energy", 0.0)), 2.0), "the light energy is a separate field")
+		expect(str(lighting.get("color", "")) == "#ffcc00", "the light color has no alpha")
+		expect(bool(read_data.get("playing", false)), "the workspace reports playback")
+	)
+	var invalid_response := await _call("set_workspace", {"camera": {"target": "middle"}})
+	step("Then an invalid camera is refused without a change", func():
+		expect(_is_error(invalid_response), "an invalid camera reports an error")
+		var target: Vector3 = State.document.edit_camera.get("target", Vector3.ZERO)
+		expect(target.is_equal_approx(Vector3(1.0, 2.0, 3.0)), "the camera stays")
+	)
+	var save_response := await _call("save_document", {"path": path, "copy": false})
+	step("Then the workspace survives a save and a load", func():
+		expect(not _is_error(save_response), "save_document succeeds")
+		var loaded := VoxelDocument.load_file(path)
+		expect(loaded != null, "the document loads")
+		if loaded != null:
+			var target: Vector3 = loaded.edit_camera.get("target", Vector3.ZERO)
+			expect(target.is_equal_approx(Vector3(1.0, 2.0, 3.0)), "the loaded camera keeps the target")
+			var light: Color = loaded.lighting_settings.get("color", Color.WHITE)
+			expect(is_equal_approx(light.a, 2.0), "the loaded lighting keeps the energy")
+			expect(bool(loaded.view_settings.get("orthographic", false)), "the loaded view keeps the projection")
+			expect(int(loaded.export_settings.get("view", -1)) == 2, "the loaded export keeps the view")
+			expect(loaded.edit_playing, "the loaded document plays on open")
+		DirAccess.remove_absolute(path)
+	)
+	var locked_response := await _call("set_workspace", {
+		"camera": {"yaw": -0.8, "pitch": 0.2, "distance": 25.0, "initial_distance": 20.0, "target": [0.0, 1.0, 0.0]},
+		"lighting": {"basis": basis, "color": "#22ff88", "energy": 1.5, "ambient_color": "#101820", "ambient_energy": 0.4, "shadows": true, "shaded": true, "view_locked": true, "view_basis": basis},
+	})
+	step("Then a view-locked camera keeps the requested light", func():
+		expect(not _is_error(locked_response), "the view-locked workspace succeeds")
+		var light: Color = State.document.lighting_settings.get("color", Color.WHITE)
+		expect(Color(light.r, light.g, light.b, 1.0).is_equal_approx(Color("#22ff88")), "the light keeps its color")
+		expect(is_equal_approx(light.a, 1.5), "the light keeps its energy")
+	)
+	State.stop()
+
+
+func _set_palette() -> void:
+	step("Given a palette with one entry", func():
+		State.set_palette([VoxelFrame.material(Color.WHITE)], "Test Palette")
+		State.undo_redo.clear_history()
+	)
+	var response := await _call("set_palette", {"materials": [
+		{"color": "#f07c9a", "roughness": 0.88},
+		{"color": "#f2c14e", "roughness": 0.55, "metallic": 0.2},
+		{"color": "#1a1618"},
+	]})
+	var data := _result_data(response)
+	step("Then the palette holds the entries in order", func():
+		expect(not _is_error(response), "set_palette succeeds: %s" % _result_text(response))
+		expect(State.document.palette.size() == 3, "the palette holds three entries")
+		var first := State.document.palette[0]
+		expect(VoxelFrame.material_color(first).is_equal_approx(Color("#f07c9a")), "the first entry is the requested color")
+		expect(is_equal_approx(first[VoxelFrame.MATERIAL_ROUGHNESS], 0.88), "the first entry keeps its roughness")
+		expect(is_equal_approx(State.document.palette[1][VoxelFrame.MATERIAL_METALLIC], 0.2), "the second entry keeps its metallic")
+		expect(is_equal_approx(State.document.palette[2][VoxelFrame.MATERIAL_ROUGHNESS], VoxelFrame.DEFAULT_ROUGHNESS), "a missing roughness uses the default")
+		expect(int(data.get("count", 0)) == 3, "the result names the palette count")
+		expect(State.document.edit_dirty, "the palette change marks the document edited")
+	)
+	var inspect_response := await _call("inspect_document", {"palette": true})
+	var inspect_data := _result_data(inspect_response)
+	step("Then the document summary reports the same palette", func():
+		expect(not _is_error(inspect_response), "inspect_document succeeds")
+		var document: Dictionary = inspect_data.get("document", {})
+		var palette: Array = document.get("palette", [])
+		expect(palette.size() == 3, "the summary carries three entries")
+		if palette.size() == 3:
+			var material: Dictionary = palette[2].get("material", {})
+			expect(str(material.get("color", "")) == "#1a1618", "the last entry is the requested color")
+	)
+	var empty_response := await _call("set_palette", {"materials": []})
+	step("Then an empty palette is refused", func():
+		expect(_is_error(empty_response), "an empty palette reports an error")
+		expect(State.document.palette.size() == 3, "the palette stays")
 	)
 
 
@@ -1718,6 +2042,64 @@ func _inspect_root() -> void:
 	)
 
 
+func _resources() -> void:
+	var list_response: Variant = await server.call("_dispatch_request", {"id": 1, "method": "resources/list", "params": {}})
+	var resources: Array = []
+	if list_response is Dictionary:
+		var result: Dictionary = (list_response as Dictionary).get("result", {})
+		var values: Variant = result.get("resources", [])
+		if values is Array:
+			resources = values
+	step("Then the guide index, topic guides, and format are listed", func():
+		expect(resources.size() == 10, "the server lists the index, eight topics, and the format")
+		var uris: Array = []
+		for value in resources:
+			var entry: Dictionary = value
+			uris.append(str(entry.get("uri", "")))
+			expect(int(entry.get("size", 0)) > 0, "%s reports a size" % str(entry.get("uri", "")))
+		expect(uris.has("lve://guide"), "the guide index is listed")
+		expect(uris.has("lve://guide/tools"), "the tools topic is listed")
+		expect(uris.has("lve://guide/workspace"), "the workspace topic is listed")
+		expect(uris.has("lve://document-format"), "the format is listed")
+	)
+	var read_response: Variant = await server.call("_dispatch_request", {"id": 2, "method": "resources/read", "params": {"uri": "lve://guide"}})
+	var contents: Array = []
+	if read_response is Dictionary:
+		var result: Dictionary = (read_response as Dictionary).get("result", {})
+		var values: Variant = result.get("contents", [])
+		if values is Array:
+			contents = values
+	step("Then the guide index names the topic resources", func():
+		expect(contents.size() == 1, "the read returns one content entry")
+		if contents.size() == 1:
+			var entry: Dictionary = contents[0]
+			expect(str(entry.get("mimeType", "")) == "text/markdown", "the guide is Markdown")
+			var text := str(entry.get("text", ""))
+			expect(text.contains("# MCP server"), "the index keeps the guide intro")
+			expect(text.contains("lve://guide/tools"), "the index names the tools topic")
+	)
+	var topic_response: Variant = await server.call("_dispatch_request", {"id": 3, "method": "resources/read", "params": {"uri": "lve://guide/workspace"}})
+	var topic_contents: Array = []
+	if topic_response is Dictionary:
+		var result: Dictionary = (topic_response as Dictionary).get("result", {})
+		var values: Variant = result.get("contents", [])
+		if values is Array:
+			topic_contents = values
+	step("Then a topic returns only its sections", func():
+		expect(topic_contents.size() == 1, "the topic read returns one content entry")
+		if topic_contents.size() == 1:
+			var text := str((topic_contents[0] as Dictionary).get("text", ""))
+			expect(text.contains("## Workspace"), "the topic keeps its heading")
+			expect(text.contains("set_workspace"), "the topic keeps its body")
+			expect(not text.contains("## Export"), "the topic stops at the next section")
+	)
+	var missing_response: Variant = await server.call("_dispatch_request", {"id": 4, "method": "resources/read", "params": {"uri": "lve://guide/missing"}})
+	step("Then an unknown resource is refused", func():
+		var is_error := missing_response is Dictionary and (missing_response as Dictionary).has("error")
+		expect(is_error, "the unknown resource reports an error")
+	)
+
+
 func _tool_index() -> void:
 	var text := str(server.call("_instructions_text"))
 	var init_response: Variant = await server.call("_dispatch_request", {"id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}})
@@ -1734,12 +2116,31 @@ func _tool_index() -> void:
 		expect(text.contains("save_document(path?"), "an optional argument carries a question mark")
 		expect(text.contains("get_changes(since,"), "a required argument carries no mark")
 	)
-	step("Then initialize carries the instructions and no resources", func():
+	step("Then each tool names a published guide topic", func():
+		var topics := {}
+		for value in MCPServerScript.TOOLS:
+			var tool: Dictionary = value
+			var name := str(tool.get("name", ""))
+			var description := str(tool.get("description", ""))
+			var prefix := "Guide: `lve://guide/"
+			var start := description.find(prefix)
+			expect(start >= 0, "%s names its guide topic" % name)
+			if start >= 0:
+				var uri_start := start + prefix.length()
+				var uri_end := description.find("`", uri_start)
+				expect(uri_end > uri_start, "%s closes its guide URI" % name)
+				if uri_end > uri_start:
+					topics[description.substr(uri_start, uri_end - uri_start)] = true
+		for uri in topics:
+			expect(not MCPGuideScript.read("lve://guide/" + uri).is_empty(), "%s is a published topic" % uri)
+	)
+	step("Then initialize carries the instructions and resources", func():
 		expect(str(init_result.get("protocolVersion", "")) == "2025-06-18", "the server answers 2025-06-18")
 		var capabilities: Dictionary = init_result.get("capabilities", {})
 		expect(capabilities.has("tools"), "the server declares tools")
-		expect(not capabilities.has("resources"), "the server declares no resources")
+		expect(capabilities.has("resources"), "the server declares resources")
 		expect(str(init_result.get("instructions", "")).contains("get_state("), "initialize carries the tool index")
+		expect(str(init_result.get("instructions", "")).contains("lve://guide"), "initialize names the guide resource")
 	)
 
 

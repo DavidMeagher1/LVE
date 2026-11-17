@@ -233,6 +233,18 @@ func _restore_document_view() -> void:
 	_view_document = State.document
 
 
+## Applies the active document's saved lighting to this viewport. The MCP
+## workspace write calls it after it replaces the document settings.
+func apply_document_lighting() -> void:
+	_restore_document_lighting()
+
+
+## Applies the active document's saved view state to this viewport. The MCP
+## workspace write calls it after it replaces the document settings.
+func apply_document_view() -> void:
+	_restore_document_view()
+
+
 func _set_grid_visible(value: bool, save := true) -> void:
 	%Grid.visible = value
 	%ControlBar.get_node("GridToggle").set_pressed_no_signal(value)

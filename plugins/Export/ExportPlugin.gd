@@ -192,6 +192,17 @@ func _restore_export_settings() -> void:
 	_restoring_export_settings = false
 
 
+## Applies the active document's saved export workspace to this tab. The MCP
+## workspace write calls it after it replaces the document settings.
+func apply_document_export_settings() -> void:
+	_restore_export_settings()
+	# Do not call _source_changed here: its save path writes the clamped tab
+	# controls back over the settings the caller just stored.
+	_model_dirty = true
+	_preview_revision += 1
+	_preview_due_ms = Time.get_ticks_msec() + PREVIEW_DELAY_MS
+
+
 ## Returns the settings the export tab uses now. An agent can start from these
 ## values and override what it needs.
 func current_export_settings() -> Dictionary:
@@ -443,6 +454,14 @@ func _refresh_model() -> void:
 	# the setters above, so they do not restart the clock.
 	preview_document.edit_playing = was_playing
 	_show_model_frame()
+	_apply_export_camera()
+	_on_preview_camera_changed()
+	_model_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+
+## Applies the saved export camera and the centering option. The preview tab may
+## be closed, so an export cannot rely on the preview process loop.
+func _apply_export_camera() -> void:
 	_restoring_export_settings = true
 	if _model_camera_needs_center or not _pending_export_camera.is_empty():
 		_model_camera.center_active()
@@ -455,8 +474,15 @@ func _refresh_model() -> void:
 		_pending_export_camera = {}
 	_model_camera_needs_center = false
 	_restoring_export_settings = false
-	_on_preview_camera_changed()
-	_model_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+
+
+## Applies the export camera before an export. The preview process does not run
+## while the export tab is closed, so the camera may still hold its old pose.
+func _ensure_export_camera() -> void:
+	if _model_dirty:
+		_refresh_model()
+	else:
+		_apply_export_camera()
 
 
 func _show_model_frame() -> void:
@@ -957,6 +983,7 @@ func export_sprite_sheet_settings(path: String, settings: Dictionary) -> Error:
 		return ERR_BUSY
 	if DisplayServer.get_name() == "headless":
 		return ERR_UNAVAILABLE
+	_ensure_export_camera()
 	var tab: Dictionary = current_export_settings().sprite
 	var frame_count := State.get_frame_count()
 	var first_frame := int(settings.get("first_frame", 0))
@@ -1029,6 +1056,7 @@ func export_gif_settings(path: String, settings: Dictionary) -> Error:
 		return ERR_BUSY
 	if DisplayServer.get_name() == "headless":
 		return ERR_UNAVAILABLE
+	_ensure_export_camera()
 	var tab: Dictionary = current_export_settings().sprite
 	var frame_count := State.get_frame_count()
 	var first := int(settings.get("first_frame", tab.first_frame))

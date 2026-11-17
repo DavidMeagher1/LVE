@@ -214,7 +214,7 @@ icon_alignment = 1
 [node name="Views" type="SpinBox" parent="Panels/SheetPanel/Margin/Sheet/Settings/TurntableRow" unique_id=1152451950]
 layout_mode = 2
 size_flags_horizontal = 3
-min_value = 2.0
+min_value = 1.0
 max_value = 64.0
 value = 8.0
 suffix = "views"

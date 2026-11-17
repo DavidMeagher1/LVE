@@ -556,6 +556,28 @@ static func valid_material(value: Variant) -> bool:
 	return true
 
 
+## Returns [code]true[/code] when the value is a valid editor lighting
+## dictionary. The light strength is stored in each color alpha.
+static func valid_lighting_settings(value: Variant) -> bool:
+	return _valid_lighting(value, false)
+
+
+## Returns [code]true[/code] when the value is a valid editor view dictionary.
+static func valid_view_settings(value: Variant) -> bool:
+	return _valid_view_settings(value)
+
+
+## Returns [code]true[/code] when the value is a valid camera pose dictionary.
+static func valid_camera_pose(value: Variant) -> bool:
+	return _valid_camera(value)
+
+
+## Returns [code]true[/code] when the value is a valid export workspace
+## dictionary. The tag indices must name a tag or -1.
+static func valid_export_settings(value: Variant, tag_count: int) -> bool:
+	return _valid_export(value, tag_count)
+
+
 static func _integer_in(value: Variant, low: int, high: int) -> bool:
 	return value is int and value >= low and value <= high
 
