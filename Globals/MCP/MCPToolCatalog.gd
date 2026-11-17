@@ -592,7 +592,7 @@ const TOOLS := [
 	},
 	{
 		"name": "fill",
-		"description": "Fill a connected or matching region from an occupied seed cell. Select the fill tool first. Set connected false on the fill tool to replace every matching cell in the frame. The whole region is one undo action. Guide: `lve://guide/write`.",
+		"description": "Fill a connected or matching region from an occupied seed cell. Select the fill tool first. Set connected false on the fill tool to replace every matching cell in the frame. The fill changes only cells inside the shared selection. The whole region is one undo action. Guide: `lve://guide/write`.",
 		"inputSchema": {
 			"type": "object",
 			"properties": {
