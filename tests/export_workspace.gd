@@ -176,13 +176,9 @@ func _run() -> void:
 		exporter._model.get_node("AnimationRow/Play").button_pressed = false
 		exporter._model_playback.current_frame = 0
 		exporter._model.get_node("AnimationRow/Play").button_pressed = true
-		# Hold an unfinished surface and a pending frame, as a slow build does.
 		exporter._model_pending_frame = 0
 		exporter._model_back_renderer._pending_surface_keys[Vector3i.ZERO] = PackedInt64Array([1])
 		expect(not exporter._model_back_renderer.is_settled(), "the test holds an unfinished frame build")
-		# A correct playback clock applies every elapsed frame duration. With a
-		# two-frame loop and a full second the frame index can wrap back to zero,
-		# so count the frame changes instead of one final index.
 		var frames_seen := [0]
 		exporter._model_playback.frame_changed.connect(func() -> void: frames_seen[0] += 1, CONNECT_ONE_SHOT)
 		exporter._process(1.0)
@@ -383,7 +379,6 @@ func _preview_behavior() -> void:
 	get_viewport().get_texture().get_image().save_png(_dir() + "/Workspace.png")
 
 
-# Feed the same elapsed time to one controller. Return each displayed frame.
 func _clock_steps(playback: AnimationPlayback, offset: int, ticks := 40) -> Array[int]:
 	var steps: Array[int] = []
 	playback.is_playing = false

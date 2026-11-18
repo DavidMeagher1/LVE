@@ -1,18 +1,5 @@
 extends "res://tests/test.gd"
 
-# The padded snapshot corner normals, and their in-process A/B, in one process.
-#
-# A direct textured build reads occupancy from its padded snapshot. The
-# differential test compares that path with the frame-based reference on the same
-# groups, so both must emit identical vertices, normals, and indices. Fixtures
-# cover chunk boundaries, edges, corners, negative locations, and a stored
-# transparent voxel. The A/B compares a frozen whole-surface build with the
-# production one on independent group copies. Compare timings within one run.
-# Only geometry parity is an assertion.
-#
-# Each test keeps the steps and checks of its original scene. The user arguments
-# after `--` name the tests to run, so an old scene name still selects its own
-# test.
 
 const BUILDER := preload("res://Globals/Rendering/VoxelMeshBuilder.gd")
 const SURFACE := preload("res://Globals/Rendering/VoxelSurface.gd")
@@ -28,12 +15,9 @@ func _ready() -> void:
 	test("snapshot normal performance and geometry parity", _bench_snapshot_normals, "_bench_snapshot_normals")
 
 
-# Each test starts from fresh group state, so a test runs alone or in any order.
 func before_test() -> void:
 	fixtures = []
 
-
-# --- snapshot_normals ---------------------------------------------------------
 
 func _snapshot_normals() -> void:
 	step("Given chunks that exercise boundaries, edges, corners, and negative locations", func():
@@ -88,7 +72,6 @@ func _expect_all_corners(frame: VoxelFrame, origin: Vector3, occupancy: PackedIn
 	expect(equal, "%s: all 4913 lattice corner normals match exactly" % label)
 
 
-# The real direct build against the greedy round trip the exporter uses.
 func _expect_end_to_end(fixture: Dictionary) -> void:
 	var frame: VoxelFrame = fixture["frame"]
 	var chunk: Vector3i = fixture["chunk"]
@@ -121,9 +104,6 @@ func _expect_end_to_end(fixture: Dictionary) -> void:
 	expect(_same_geometry(reference, direct.surface_arrays), "the direct textured build matches the greedy frame build")
 
 
-# The snapshot path and the frame path run on independent copies of the same
-# groups, so the comparison isolates the normal source. Both paths share the
-# padded snapshot inputs.
 func _finish_pair(frame: VoxelFrame, origin: Vector3, builder: VoxelMeshBuilder, colors: PackedColorArray, occupancy: PackedInt32Array, materials: PackedFloat32Array, planes: PackedInt32Array, always: Callable) -> Array:
 	var reference_bake: RefCounted = ATLAS.new()
 	var snapshot_bake: RefCounted = ATLAS.new()
@@ -132,7 +112,6 @@ func _finish_pair(frame: VoxelFrame, origin: Vector3, builder: VoxelMeshBuilder,
 	return [reference, snapshot_result]
 
 
-# The same groups feed both paths, so the full arrays must match, indices included.
 func _same_arrays(a: Array, b: Array) -> bool:
 	if not _same_geometry(a, b):
 		return false
@@ -141,7 +120,6 @@ func _same_arrays(a: Array, b: Array) -> bool:
 	return a_indices == b_indices
 
 
-# Positions and normals in the same order, like the viewport and export check.
 func _same_geometry(a: Array, b: Array) -> bool:
 	var a_positions: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
 	var b_positions: PackedVector3Array = b[Mesh.ARRAY_VERTEX]
@@ -193,8 +171,6 @@ func _opposite_corner() -> VoxelFrame:
 	return frame
 
 
-# A stored transparent voxel. `VoxelFrame.has` is true for it, but its color is
-# transparent, so only the frame rule and the occupancy map count it.
 func _transparent() -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	frame.set_cell(Vector3i(5, 5, 5), VoxelFrame.material(Color.RED))
@@ -212,11 +188,7 @@ func _inject(frame: VoxelFrame, cell: Vector3i, cell_material: PackedFloat32Arra
 	chunk.store(cell, cell_material)
 
 
-# --- _bench_snapshot_normals --------------------------------------------------
-
 func _bench_snapshot_normals() -> void:
-	# One solid chunk with no neighbors, so every face is exposed and the build
-	# produces geometry. The interior corners exercise the all-occupied read path.
 	var frame := VoxelFrame.new()
 	var material := VoxelFrame.material(Color.RED)
 	var cells := {}
@@ -285,8 +257,6 @@ func _corner_micro(frame: VoxelFrame, origin: Vector3, occupancy: PackedInt32Arr
 		print("  corner run %d: frame %d us | snapshot %d us | %f" % [repeat, frame_us, snapshot_us, warm.length()])
 
 
-# A full surface build per path. The groups and the atlas bake are the same, so
-# the difference is the corner-normal source inside the emission.
 func _full_build(frame: VoxelFrame, chunk: Vector3i, origin: Vector3, builder: VoxelMeshBuilder, colors: PackedColorArray, occupancy: PackedInt32Array, materials: PackedFloat32Array, planes: PackedInt32Array) -> void:
 	var frame_us := 0
 	var snapshot_us := 0
@@ -323,7 +293,6 @@ func _max_delta(a: PackedVector3Array, b: PackedVector3Array) -> float:
 	return worst
 
 
-# Repeat the surface comparison on the material-rich draw_latency fixture.
 func _material_rich() -> void:
 	var frame := VoxelFrame.new()
 	var palette: Array[PackedFloat32Array] = []

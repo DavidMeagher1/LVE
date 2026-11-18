@@ -1,14 +1,7 @@
 extends VoxelPlugin
 
-## The primitive plugin.
-##
-## It owns three tools: Box, Ellipsoid, and Cylinder. It also exposes the one
-## commit path that the mouse tools and the MCP server call, so both paths share
-## the SDF evaluator, the undo scope, and the publication rules.
 
-## The stable id of the primitive toolbar. The persisted active tool uses it.
 const TOOL_ID := "primitive"
-## The work below which the shape runs inline. A larger shape uses a worker.
 const INLINE_CELLS := 4096
 
 const PrimitiveField := preload("res://Globals/State/Tools/PrimitiveField.gd")
@@ -56,7 +49,6 @@ func _notification(what: int) -> void:
 			node.free()
 
 
-## Activates the selected primitive tool and shows the option bar.
 func activate_tool() -> void:
 	if not _toolbar.button_pressed:
 		_toolbar.button_pressed = true
@@ -66,8 +58,6 @@ func activate_tool() -> void:
 	_on_tool_changed(_settings.tool)
 
 
-## Deactivates the active primitive tool. A pending primitive commits like a
-## transform, before the tool leaves the viewport.
 func _end_deactivation() -> void:
 	_active = false
 	remove_option_bar_item(_options)
@@ -77,7 +67,6 @@ func _end_deactivation() -> void:
 	_active_tool = null
 
 
-## Switches the mounted tool when the toolbar selects another shape.
 func _on_tool_changed(tool: PrimitiveToolSettings.Tools) -> void:
 	if not _active:
 		return
@@ -98,11 +87,6 @@ func _on_tool_changed(tool: PrimitiveToolSettings.Tools) -> void:
 	add_editor_node(_active_tool)
 
 
-## Builds one primitive request. This is the shared commit path for the mouse
-## tools and the MCP server. [param allow_large] skips the cell limit for a
-## mouse commit, which already showed the shape in the preview. Returns the
-## applied count, the scan bounds, the changed bounds, the chunk count, and the
-## warnings. A failure returns an [code]error[/code] key.
 func build_shape(request: Dictionary, allow_large := false) -> Dictionary:
 	var validation := PrimitiveField.validate_request(request, allow_large)
 	if not validation.is_empty():
@@ -132,8 +116,6 @@ func build_shape(request: Dictionary, allow_large := false) -> Dictionary:
 		var operation := State.begin_operation("Building shape", total, true, self, job.cancel)
 		await State.run_edit_job(job, operation, "Build shape")
 		State.finish_operation(operation)
-	# Clear the pending fields before the signals, so a handler can start a new
-	# edit on this plugin without this call clearing it.
 	_active_job = null
 	_active_tx = null
 	if State.active_edit() != tx:

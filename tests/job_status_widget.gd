@@ -4,8 +4,6 @@ const CANCEL_TOOLTIP := "Cancel operation"
 const LONG_LABEL := "Filling a very large connected selection across many chunks and animation frames"
 const LONG_DETAIL := "twelve thousand cells remaining in the current region"
 
-# The widget script is preloaded as a type alias. A new class_name is not in the
-# global class cache until the editor regenerates it.
 const JobStatusWidget = preload("res://ui/JobStatus/JobStatus.gd")
 
 var widget: JobStatusWidget
@@ -54,18 +52,14 @@ func before_test() -> void:
 	while State.get_activity() != null:
 		await get_tree().process_frame
 	widget = load("res://ui/JobStatus/JobStatus.tscn").instantiate()
-	# Show every operation at once, so the tests do not wait for the display delay.
 	widget.delay_ms = 0
 	main.add_child(widget)
-	# A plain Control parent does not size its children, so give the widget a real
-	# rectangle for layout and GUI hit tests.
 	widget.size = Vector2(360, 40)
 	await get_tree().process_frame
 
 
 func after_test() -> void:
 	if is_instance_valid(_viewport):
-		# Freeing the viewport frees the widget or status bar inside it.
 		_viewport.queue_free()
 		_viewport = null
 	if is_instance_valid(widget) and widget.get_parent() == main:
@@ -324,8 +318,6 @@ func _stale_target() -> void:
 func _stale_mouse() -> void:
 	step("Given a widget in a sized viewport with a cancellable operation", func():
 		_first_id = _start("First", 10, true, true)
-		# The headless window is tiny, so a real GUI hit test needs its own sized
-		# viewport for the widget.
 		_viewport = SubViewport.new()
 		_viewport.size = Vector2i(360, 40)
 		_viewport.gui_disable_input = false
@@ -391,8 +383,6 @@ func _keyboard() -> void:
 func _mouse() -> void:
 	step("Given a widget in a sized viewport with a cancellable operation", func():
 		_start("Filling", 10, true, true)
-		# The headless window is tiny, so a real GUI hit test needs its own sized
-		# viewport for the widget.
 		_viewport = SubViewport.new()
 		_viewport.size = Vector2i(360, 40)
 		_viewport.gui_disable_input = false
@@ -476,7 +466,6 @@ func _long_label() -> void:
 		_status = load("res://ui/StatusBar/StatusBar.tscn").instantiate()
 		_viewport.add_child(_status)
 		_status.size = Vector2(520, 40)
-		# Show the operation at once, so the geometry is ready without the delay.
 		_status.get_node("Activity").delay_ms = 0
 		_operation_id = _start(LONG_LABEL, 100, true, true)
 		State.update_operation(_operation_id, 40, 100, "", LONG_DETAIL)
@@ -640,7 +629,6 @@ func _button(position: Vector2, pressed: bool) -> void:
 	event.position = position
 	event.global_position = position
 	if _viewport != null:
-		# The event position is already in the subviewport's coordinates.
 		_viewport.push_input(event, true)
 	else:
 		get_tree().root.push_input(event)

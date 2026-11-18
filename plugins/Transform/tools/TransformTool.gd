@@ -1,17 +1,8 @@
 extends VoxelTool
 
-## Base class for the move, rotate, and scale tools.
-##
-## A press grabs the selection or the whole frame. A drag previews the
-## transform. A release leaves it pending, and Enter or the option bar commits
-## it. Escape cancels it. The whole transform is one history action.
 
-## The estimated work above which a job runs on the worker pool.
 const INLINE_EDIT_LIMIT := 4096
-## The pointer travel in pixels above which a press becomes a drag.
 const CLICK_SLOP_PX := 4.0
-## The dot product above which a view normal counts as a world axis. It holds a
-## snap within about two degrees, so a named view keeps exact grid alignment.
 const VIEW_AXIS_SNAP_DOT := 0.99939
 const TOOL_DIALOG_SCENE := preload("./TransformDialog.tscn")
 
@@ -59,9 +50,6 @@ var _jobs: Array[VoxelFrame.EditJob] = []
 var _active_preview_job: TransformJob
 var _symmetry_axes := 0
 var _symmetry_origin_twice := Vector3i.ZERO
-# The frozen symmetry and slice scope of the open transform. It carries no
-# selection, because a transform moves cells to destinations outside the source
-# selection.
 var _symmetry_scope: VoxelFrame.EditContext
 var _gizmo = null
 var _gizmo_camera: Camera3D
@@ -69,25 +57,14 @@ var _gizmo_grab_ready := false
 var _gizmo_selection_revision := -1
 var _gizmo_selection_bounds := AABB()
 
-## One cancellable job that reads the transform source.
-##
-## It collects the selected cells, or the whole frame, with their materials and
-## bounds. [method VoxelFrame.EditJob.run] is the worker body.
 class SourceJob extends VoxelFrame.EditJob:
-	## The frame snapshot to read.
 	var source_frame: VoxelFrame
-	## The source cells. An empty mask reads the whole frame.
 	var selection_mask := {}
-	## The source cell positions.
 	var cell_positions: Array[Vector3i] = []
-	## The source colors, keyed by cell position.
 	var cell_colors := {}
-	## The source full materials, keyed by cell position.
 	var cell_materials := {}
-	## The bounds of the source cells.
 	var bounds := AABB()
 
-	## Reads the source cells. This is the worker body.
 	func run() -> void:
 		if not selection_mask.is_empty():
 			stage("Preparing transform", selection_mask.size())
@@ -116,59 +93,31 @@ class SourceJob extends VoxelFrame.EditJob:
 		var cell_bounds := AABB(Vector3(cell_position) - Vector3.ONE * 0.5, Vector3.ONE)
 		bounds = bounds.merge(cell_bounds) if bounds.has_volume() else cell_bounds
 
-## One cancellable transform preview or commit job.
-##
-## The job computes the destination cells from the source and the offset, then
-## mirrors them through the symmetry. It writes the destination and restores
-## the cells that the transform uncovers.
-## [method VoxelFrame.EditJob.run] is the worker body.
 class TransformJob extends VoxelFrame.EditJob:
-	## The source cell positions.
 	var source_positions: Array[Vector3i] = []
-	## The source colors, keyed by cell position.
 	var source_colors := {}
-	## The source full materials, keyed by cell position.
 	var source_materials := {}
-	## The bounds of the source cells.
 	var source_bounds := AABB()
-	## The cells that the previous preview wrote.
 	var old_positions: Array[Vector3i] = []
-	## The cells that the previous preview covered, keyed by cell position.
 	var previous_covered := {}
-	## The materials of the previous covered cells.
 	var previous_covered_materials := {}
-	## The frame snapshot to write.
 	var edited_frame: VoxelFrame
-	## Whether the destination selection follows the transform.
 	var track_selection := false
-	## The destination colors, keyed by cell position.
 	var destination_colors := {}
-	## The destination full materials, keyed by cell position.
 	var destination_materials := {}
-	## The destination cell positions.
 	var destination_positions: Array[Vector3i] = []
-	## The destination selection, keyed by cell position.
 	var destination_selection := {}
-	## The bounds of the destination cells.
 	var destination_bounds := AABB()
-	## The cells that the transform covered, keyed by cell position.
 	var covered := {}
-	## The materials of the covered cells.
 	var covered_materials := {}
-	## The chunk locations that the transform changed.
 	var changed_chunks: Array[Vector3i] = []
-	## The cell offset of the transform.
 	var offset := Vector3i.ZERO
-	## The symmetry axes as a bit mask.
 	var symmetry_axes := 0
-	## Twice the symmetry origin in cell units.
 	var symmetry_origin_twice := Vector3i.ZERO
 
-	## Returns the estimated source cell count.
 	func estimated_work() -> int:
 		return source_positions.size()
 
-	## Computes and applies the transform. This is the worker body.
 	func run() -> void:
 		_reduce_to_fundamental_domain()
 		compute_destination()
@@ -234,8 +183,6 @@ class TransformJob extends VoxelFrame.EditJob:
 		context.origin_twice = symmetry_origin_twice
 		return context
 
-	# Keep one representative per symmetry orbit. Transform that, then mirror the result.
-	# The model stays symmetric and a rotation does not add extra reflected copies.
 	func _reduce_to_fundamental_domain() -> void:
 		if symmetry_axes == 0:
 			return
@@ -281,8 +228,6 @@ class TransformJob extends VoxelFrame.EditJob:
 			destination_selection = context.expand(destination_selection, edited_frame, false, null, self)
 
 
-## Handles one input event. A press grabs the source. A drag previews. A release
-## leaves the transform pending. Enter commits and Escape cancels.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	if event is InputEventMouse:
 		_set_gizmo_pointer(pos)
@@ -345,12 +290,8 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE:
 		for job in _jobs:
 			job.cancel()
-			# Retire the handle, so the helper that is awaiting the job stops
-			# instead of waiting on a disposed task again.
 			job.wait_for_worker()
 		_jobs.clear()
-		# A pending grab or preview holds the one open edit. A freed tool cannot
-		# finish it, so roll it back here or every later edit stays blocked.
 		abort_stroke()
 
 
@@ -375,8 +316,6 @@ func _on_mouse_button(event: InputEventMouseButton, pos: Vector2) -> bool:
 
 func _on_mouse_motion(event: InputEventMouseMotion, pos: Vector2) -> bool:
 	if event.button_mask == 0 and (_dragging or _grab_waiting):
-		# A release outside the window sends no button event. End the gesture
-		# the same way a release does.
 		_mouse_down = false
 		_release()
 		return true
@@ -446,8 +385,6 @@ func _press(origin: Vector3, dir: Vector3) -> void:
 		if source_count <= INLINE_EDIT_LIMIT:
 			job.run()
 		else:
-			# Register the worker before the first await, so a cancel or context
-			# change during the preparation reaches this job.
 			_jobs.append(job)
 			await State.run_edit_job(job, preparation_id, "Transform source")
 			_jobs.erase(job)
@@ -460,9 +397,6 @@ func _press(origin: Vector3, dir: Vector3) -> void:
 		_colors = job.cell_colors
 		_materials = job.cell_materials
 		_source_bounds = job.bounds
-		# The slice limits the cells that the transform can clear. A source outside
-		# it must stay put, or the refused clear would leave a copy at a writable
-		# destination.
 		if _symmetry_scope.slice_axis >= 0:
 			_keep_slice_sources()
 			if _cells.is_empty():
@@ -485,9 +419,6 @@ func _press(origin: Vector3, dir: Vector3) -> void:
 	_disconnect_context_if_idle()
 
 
-# Keeps only the source cells that the slice allows to be cleared. The slice
-# limits every write, so a source outside the slab cannot be cleared. Moving it
-# anyway would write a copy at a destination inside the slab.
 func _keep_slice_sources() -> void:
 	var kept: Array[Vector3i] = []
 	var kept_colors := {}
@@ -570,7 +501,6 @@ func _apply_preview() -> void:
 		var job := _make_job()
 		job.symmetry_axes = _symmetry_axes
 		job.symmetry_origin_twice = _symmetry_origin_twice
-		# The write gate keeps every destination on the slice layer.
 		job.edit_context = _symmetry_scope
 		job.source_positions = _cells
 		job.source_colors = _colors
@@ -579,8 +509,6 @@ func _apply_preview() -> void:
 		job.old_positions.assign(_dest_colors.keys() if not _dest_cells.is_empty() else _colors.keys())
 		job.previous_covered = _covered
 		job.previous_covered_materials = _covered_materials
-		# The preview writes its own frame. `job_frame` shares the source chunks
-		# and copies a chunk only when the preview writes it.
 		job.edited_frame = VoxelFrame.job_frame(_source_frame)
 		job.track_selection = _track_selection
 		_active_preview_job = job
@@ -593,8 +521,6 @@ func _apply_preview() -> void:
 		_active_preview_job = null
 		if revision != _preview_revision or not _context_valid() or not State.has_operation(operation_id):
 			continue
-		# Publish only the chunks the preview wrote. The job reverts the cells it
-		# no longer covers, so its changed list holds every chunk to restore.
 		_source_frame.apply_published(job.changed_chunks, job.edited_frame)
 		_covered = job.covered
 		_covered_materials = job.covered_materials
@@ -632,8 +558,6 @@ func _finish_context_edit() -> void:
 	_preview_requested = false
 	for job in _jobs:
 		job.cancel()
-	# Capture the operation before the commit signals, so the cleanup finishes only
-	# this operation, never a replacement one a handler started.
 	var operation_id := _operation_id
 	_operation_id = 0
 	_commit_now()
@@ -674,17 +598,12 @@ func _cancel() -> void:
 		job.cancel()
 	_dragging = false
 	_pending = false
-	# Clear the grab and input state before the cancel signals, so a handler that
-	# opens a new stroke keeps its own captured state. The cancel does not call
-	# `_end`, because that would close the replacement stroke the handler opened.
 	_clear_grab()
 	_settings.transforming = false
 	_flush_cells()
 	_plane = null
 	_last_target = VoxelPicking.NONE
 	_stroke_active = false
-	# Capture the operation before the signals, so the cleanup finishes only this
-	# operation, never a replacement one a handler started.
 	var operation_id := _operation_id
 	_operation_id = 0
 	abort_stroke()
@@ -785,9 +704,6 @@ func _nearest_axis() -> int:
 	return VoxelPicking.view_axis(_grab_forward)
 
 
-## Returns the unit normal of the drag plane. A view-axis drag faces the camera.
-## The nearest world axis is used within two degrees, so a named view keeps exact
-## grid alignment.
 func _drag_normal() -> Vector3:
 	var toward := -_grab_forward
 	if not _settings.view_axis:
@@ -801,19 +717,15 @@ func _drag_normal() -> Vector3:
 	return toward.normalized()
 
 
-## Returns a plane through one point that faces the drag normal. The transform
-## tools use only the point and the normal.
 func _drag_plane_through(point: Vector3) -> StrokePlane:
 	var plane := StrokePlane.new()
 	plane.axis = _nearest_axis()
-	plane.idx = roundi(point[plane.axis])
+	plane.cell_index = roundi(point[plane.axis])
 	plane.point = point
 	plane.normal = _drag_normal()
 	return plane
 
 
-## Returns the world axis that one normal faces, or -1 when it is not a world
-## axis.
 func _axis_of(normal: Vector3) -> int:
 	var axis := normal.abs().max_axis_index()
 	if absf(normal[axis]) >= VIEW_AXIS_SNAP_DOT:
@@ -821,7 +733,6 @@ func _axis_of(normal: Vector3) -> int:
 	return -1
 
 
-## Returns the captured camera basis. It maps screen X and Y to the view plane.
 func _screen_basis() -> Basis:
 	return Basis(_grab_camera_right, _grab_camera_up, -_grab_forward)
 
@@ -956,6 +867,5 @@ func _update_params(_origin: Vector3, _dir: Vector3) -> bool:
 	return false
 
 
-## Returns [code]true[/code] when no preview or grab is pending.
 func is_settled() -> bool:
 	return not _preview_running and not _grab_waiting

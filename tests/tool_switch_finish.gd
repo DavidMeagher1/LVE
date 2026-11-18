@@ -1,10 +1,5 @@
 extends "res://tests/test.gd"
 
-# A tool switch finishes the work a Pencil or Eraser stroke queued and commits it
-# as one history action. A Box or Lasso switch applies the outline a held drag
-# already drew, and a released calculation finishes after the detach. Escape and a
-# frame or document change keep their rollback. The line preview and the streamed
-# wand keep their own policy.
 
 const BRUSH_DIAMETER := 20
 const HELD_SIDE := 5
@@ -82,8 +77,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# A wide cube brush with one center needs more than the inline limit, so the press
-# starts a foreground worker.
 func _wide_brush() -> void:
 	_brush_settings.shape = BrushToolSettings.BrushShape.CUBE
 	_brush_settings.diameter = BRUSH_DIAMETER
@@ -546,7 +539,6 @@ func _brush_pixel_perfect_switch() -> void:
 	)
 
 
-# --- helpers ---------------------------------------------------------------
 func _select_setup(tool_name: String) -> void:
 	activate_tool("selection")
 	select_toolbar_item("selection", tool_name)
@@ -571,8 +563,6 @@ func _place_block(side: int) -> Array[Vector3i]:
 	return cells
 
 
-# A solid block for the eraser cases. The camera centers on it, so a press at the
-# viewport center lands on its top face.
 func _fill_frame(side: int) -> int:
 	frame.clear()
 	var material := VoxelFrame.material(Color.from_rgba8(150, 150, 150))
@@ -599,8 +589,6 @@ func _drag_rectangle_of(cells: Array) -> Rect2:
 	return Rect2(low - margin, (high - low) + margin * 2.0)
 
 
-# The lasso drag keeps the same path for the reference and the switch case, so the
-# last sampled point is the one the switch applies.
 func _lasso_drag() -> void:
 	_press(block_rectangle.position)
 	_move_to(Vector2(block_rectangle.end.x, block_rectangle.position.y))
@@ -691,7 +679,6 @@ func _brush_connections() -> int:
 	return _context_connections(brush, "_cancel_edit")
 
 
-# Count the exact callable on the tool, never every connection of the signal.
 func _context_connections(tool: Node, method: String) -> int:
 	if tool == null:
 		return -1
@@ -714,8 +701,6 @@ func _history_connections(tool: Node, method: String) -> int:
 	return count
 
 
-# The same slow path for the release and the switch, so the pixel-perfect filter
-# queues the same centers.
 func _pixel_perfect_stroke() -> void:
 	_press(center)
 	for i in 4:

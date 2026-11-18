@@ -1,39 +1,23 @@
 class_name PrimitiveToolSettings
 extends Resource
 
-## The shared primitive tool settings.
-##
-## The resource is shared by the primitive toolbar, the option bar, and the
-## tools. The exported scalar values are saved with the active document.
 
-## Emitted when the active primitive tool changes.
 signal tool_changed(tool: Tools)
-## Emitted when the option bar requests a commit.
 signal commit_requested()
-## Emitted when the option bar requests a cancel.
 signal cancel_requested()
 
-## The primitive tool.
 enum Tools {
-	## An axis-aligned box.
 	BOX,
-	## An axis-aligned ellipsoid.
 	ELLIPSOID,
-	## A cone with two radii. A top radius of 1 makes a cylinder.
 	CYLINDER
 }
 
-## The operation that the primitive applies.
 enum Op {
-	## Add the primitive cells.
 	ADD,
-	## Remove the primitive cells.
 	SUBTRACT,
-	## Keep only the existing cells inside the primitive.
 	INTERSECT
 }
 
-## The active primitive tool.
 @export var tool: Tools = Tools.BOX:
 	set(value):
 		if value == tool:
@@ -42,7 +26,6 @@ enum Op {
 		tool_changed.emit(tool)
 		emit_changed()
 
-## The primitive operation.
 @export var op: Op = Op.ADD:
 	set(value):
 		if value == op:
@@ -50,8 +33,6 @@ enum Op {
 		op = value
 		emit_changed()
 
-## The smooth blend from 0 to 1. One is the largest blend that the shape
-## allows, which is half of its smallest extent.
 @export_range(0.0, 1.0, 0.05) var smooth := 0.0:
 	set(value):
 		value = clampf(value, 0.0, 1.0)
@@ -60,7 +41,6 @@ enum Op {
 		smooth = value
 		emit_changed()
 
-## The shell thickness in cells. Zero means a solid shape.
 @export_range(0, 16, 1) var shell := 0:
 	set(value):
 		value = clampi(value, 0, 16)
@@ -69,8 +49,6 @@ enum Op {
 		shell = value
 		emit_changed()
 
-## The top radius from 0 to 1. One equals the base radius, which makes a
-## cylinder. Zero makes a point.
 @export_range(0.0, 1.0, 0.01) var second_radius := 1.0:
 	set(value):
 		value = clampf(value, 0.0, 1.0)
@@ -79,8 +57,6 @@ enum Op {
 		second_radius = value
 		emit_changed()
 
-## The roundness from 0 to 1. It rounds cube edges and blends the cylinder ends
-## between flat and round.
 @export_range(0.0, 1.0, 0.05) var roundness := 0.0:
 	set(value):
 		value = clampf(value, 0.0, 1.0)
@@ -89,7 +65,6 @@ enum Op {
 		roundness = value
 		emit_changed()
 
-## Whether a primitive is pending. The option bar enables Commit and Cancel.
 var editing := false:
 	set(value):
 		if value == editing:
@@ -97,10 +72,8 @@ var editing := false:
 		editing = value
 		emit_changed()
 
-## Emits [signal commit_requested].
 func commit() -> void:
 	commit_requested.emit()
 
-## Emits [signal cancel_requested].
 func cancel() -> void:
 	cancel_requested.emit()

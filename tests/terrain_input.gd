@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# Exercise the public pointer input without advancing an internal edit clock.
-# Replays must not depend on frame timing or the number of motion events.
 var _settings := preload("res://plugins/Terrain/TerrainSettings.tres")
 var _viewport: SubViewport
 var _tool: Node3D
@@ -108,7 +106,6 @@ func _stationary() -> void:
 		_after_press = _frame.capture()
 		expect(_frame.count() > 0, "the press applies before the hold")
 	)
-	# This wait exercises the actual runtime process callbacks, not a test clock.
 	await get_tree().create_timer(1.2).timeout
 	step("When repeated motion events report the same pointer position", func():
 		for _event in 4:
@@ -290,9 +287,6 @@ func _curved_drag() -> void:
 			if _frame.has(cell):
 				arc_hits += 1
 		expect(arc_hits >= motions - 2, "the arc keeps a cell near every pointer position (%d of %d)" % [arc_hits, motions - 1])
-		# The chord from the first cell to the last passes through (12, 1, 12).
-		# The arc is about seven cells away there, so a straight chord leaves it
-		# empty.
 		expect(not _frame.has(Vector3i(12, 1, 12)), "the stroke does not cut the straight chord")
 	)
 

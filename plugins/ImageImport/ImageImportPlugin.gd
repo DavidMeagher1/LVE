@@ -1,44 +1,30 @@
 extends VoxelPlugin
 
-## The image import plugin.
-##
-## It imports an image or an Aseprite JSON sidecar as a new document. Each frame
-## becomes one voxel frame. A pixel above the alpha clip becomes a cell.
 
-## The alpha value above which an image pixel becomes a cell.
 const ALPHA_CLIP := 0.5
 
 var _import_job: ImportJob
 
-## One cancellable image import job.
-##
-## The job reads the image and its optional JSON sidecar, then builds a
-## document. [method VoxelFrame.EditJob.run] is the worker body.
 class ImportJob extends VoxelFrame.EditJob:
-	## The image file path.
-	var path := ""
-	## The world axis that the image plane faces.
+	var image_path := ""
 	var plane_axis := Vector3.Axis.AXIS_Y
-	## The import error code.
 	var error: Error = OK
-	## The imported document.
 	var imported_document := VoxelDocument.new()
 	var _patterns: Array[Dictionary] = []
 	var _occupied_bounds := AABB()
 	var _palette_colors := {}
 
-	## Reads the image and builds the document. This is the worker body.
 	func run() -> void:
 		stage("Reading image", -1)
 		var image := Image.new()
-		error = State.load_image(path, image)
+		error = State.load_image(image_path, image)
 		if error != OK or not checkpoint(0):
 			return
-		imported_document.file_path = path
+		imported_document.file_path = image_path
 		imported_document.frames.clear()
 		var descriptors: Array = []
 		var metadata := {}
-		var sidecar_path := path.get_basename() + ".json"
+		var sidecar_path := image_path.get_basename() + ".json"
 		if FileAccess.file_exists(sidecar_path):
 			var parser := JSON.new()
 			error = parser.parse(FileAccess.get_file_as_string(sidecar_path))
@@ -146,8 +132,6 @@ func _ready() -> void:
 	name = "ImageImportPlugin"
 
 
-## Imports one image as a new document and returns the error code. A busy
-## editor or a replaced document returns [constant ERR_BUSY].
 func import_image(path: String) -> Error:
 	if State.edit_busy() or _import_job:
 		return ERR_BUSY
@@ -156,11 +140,10 @@ func import_image(path: String) -> Error:
 	var document := State.document
 	var frame := State.get_current_voxel_frame()
 	var job := ImportJob.new()
-	job.path = path
+	job.image_path = path
 	job.plane_axis = State.floor_axis
 	_import_job = job
 	var operation_id := State.begin_operation("Importing image", -1, true, self)
-	# The import must stop when its document or frame changes under the worker.
 	await State.run_edit_job(job, operation_id, "Image import", func() -> void:
 		if State.document != document or State.get_current_voxel_frame() != frame:
 			job.cancel()
@@ -172,8 +155,6 @@ func import_image(path: String) -> Error:
 	if job.error != OK:
 		return job.error
 	State.document = job.imported_document
-	# The import replaced the document with content that no history action
-	# produced. Mark it dirty, so Close, Quit, and Autosave keep it.
 	State.mark_dirty()
 	return OK
 

@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# The per-test watchdog must cover asynchronous fixture setup.
-
 
 func _ready() -> void:
 	timeout = 0.05

@@ -1,10 +1,7 @@
 extends "res://tests/test.gd"
 
-# Screen selection projects every voxel center through the camera.
-# The drag selects the full volume, including the voxels hidden behind the front one.
 
 const RAY_DEPTHS := [4.0, 7.0, 10.0]
-# The sparse frame spans 31 cells on each axis.
 const SPARSE_FIRST := Vector3i(0, 0, 0)
 const SPARSE_SECOND := Vector3i(30, 30, 30)
 const SPARSE_CELLS := 31 * 31 * 31
@@ -280,7 +277,6 @@ func _frame() -> VoxelFrame:
 	return State.document.frames[State.current_frame]
 
 
-# Wait for the worker job of a large screen selection.
 func _await_selection(count: int) -> void:
 	for _frame_index in 600:
 		if State.selection.count() == count:
@@ -295,7 +291,6 @@ func _await_idle() -> void:
 		await get_tree().process_frame
 
 
-# Fill one solid block around the origin.
 func _place_block(size: int) -> Array[Vector3i]:
 	var frame := _frame()
 	frame.clear()
@@ -311,7 +306,6 @@ func _place_block(size: int) -> Array[Vector3i]:
 	return cells
 
 
-# Place one voxel on the view ray at each depth. Every one projects onto the center.
 func _place_ray_voxels() -> Array[Vector3i]:
 	var frame := _frame()
 	frame.clear()

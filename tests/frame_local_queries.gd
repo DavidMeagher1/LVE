@@ -1,12 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused checks for the frame-local data APIs.
-#
-# `copy_chunks` returns a frozen subset of present chunks without scanning the
-# whole chunk dictionary. `get_bounds` caches the merged bounds and invalidates
-# on every frame write, clear, restore, and decode. A raw chunk add or remove is
-# caught by the chunk count guard. A raw chunk entry change must call
-# `invalidate_bounds`, which repairs the bounds only.
 
 var BLUE: PackedFloat32Array = VoxelFrame.material(Color.BLUE)
 var GREEN: PackedFloat32Array = VoxelFrame.material(Color.GREEN)
@@ -17,9 +10,6 @@ var _saved_selection := {}
 
 
 func before_test() -> void:
-	# The undo case needs the global document and history. Back them up, so the
-	# cases stay independently selectable and the scene leaves State as it found
-	# it.
 	_saved_document = State.document
 	_saved_selection = State.selection.all_cells()
 	State.stop()
@@ -182,8 +172,6 @@ func _subset_bounds() -> void:
 	var zero := Vector3i.ZERO
 	var far := Vector3i(10, 0, 0)
 	var frame := _seed_frame([zero, far])
-	# Warm the source cache before the copy. A read-only subset must not dirty
-	# the source bounds cache.
 	var live_bounds := frame.get_bounds()
 	var subset := frame.copy_chunks([zero])
 	step("Given a frame with a near and a far chunk", func():
@@ -279,8 +267,6 @@ func _bounds_raw_edit() -> void:
 	var frame := _seed_frame([zero])
 	step("Given a cached frame and a chunk method edit", func():
 		expect(frame.get_bounds().size.is_equal_approx(Vector3.ONE), "the cache covers the voxel")
-		# Chunk.erase keeps the occupied count and the occupancy revision, so the
-		# bounds-only repair is enough here.
 		var chunk: VoxelFrame.Chunk = frame.chunks[zero]
 		chunk.erase(_cell(zero))
 		frame.invalidate_bounds()
@@ -291,8 +277,6 @@ func _bounds_raw_edit() -> void:
 func _bounds_empty_chunk() -> void:
 	var far := Vector3i(10, 0, 0)
 	var frame := VoxelFrame.new()
-	# A raw entry replacement is the documented mode for a well-formed chunk.
-	# These chunks are not shared, so the bounds-only contract is enough.
 	var occupied := VoxelFrame.Chunk.new()
 	occupied.location = far
 	occupied.store(_cell(far), BLUE)

@@ -1,9 +1,5 @@
 extends VoxelTool
 
-## The plane tool.
-##
-## It moves the floor plane. A drag sets the floor index. The X, Y, and Z keys
-## set the floor axis. It changes no cells.
 
 var _dragging := false
 var _grab_point := Vector3.ZERO
@@ -31,8 +27,6 @@ func _sync_cursor_rotation() -> void:
 			$Cursor.basis = Basis.IDENTITY
 
 
-## Handles one input event. A drag moves the floor plane. The X, Y, and Z keys
-## set the floor axis.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	var r := _ray(pos)
 	var origin: Vector3 = r[0]
@@ -71,8 +65,6 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 			return false
 		if k.ctrl_pressed or k.alt_pressed or k.meta_pressed or k.shift_pressed:
 			return false
-		# Use the Input Map, so the axis keys follow the physical layout and can
-		# be rebound like every other shortcut.
 		if event.is_action_pressed("axis_x"):
 			State.floor_axis = Vector3.Axis.AXIS_X
 			return true

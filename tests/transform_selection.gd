@@ -84,8 +84,6 @@ func _run() -> void:
 		expect(frame.count() == 4, "only the source voxel expands into four voxels")
 	)
 	step("When the user doubles the selection again", func():
-		# The scaled selection is centred on 0.5, so the second drag doubles the
-		# distance from that centre.
 		_drag(Vector3(5.5, 5.5, 0), Vector3(10.5, 10.5, 0))
 		_press_option("Commit")
 	)

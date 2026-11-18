@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-## Checks that a tab keeps its camera pose and that no other camera overwrites
-## the pose of the active document.
 
 var rig: EditorCameraRig
 var first: VoxelDocument

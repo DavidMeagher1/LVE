@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# A heavy GLB export runs its mesh worker across several frames, so the status
-# cancel button and Escape can cancel it while the job is still running. The test
-# uses the real plugin call and a real GUI input, not a fake callback.
 
 const FRAMES := 96
 const CANCEL_PATH := "user://voxel_gltf_cancel_test.glb"
@@ -30,12 +27,10 @@ func before_test() -> void:
 	exporter = plugin("ExportPlugin")
 	_remove_file(CANCEL_PATH)
 	_build_heavy_document()
-	# The real flow opens the export workspace before a GLB save.
 	exporter._menu_item.get_node("ExportBtn").button_pressed = true
 
 
 func after_test() -> void:
-	# Own the job on every path, so a failed step leaves no worker or operation.
 	if is_instance_valid(exporter) and exporter._gltf != null and exporter._gltf._export_job != null:
 		exporter._gltf.cancel()
 	if is_instance_valid(exporter) and exporter._menu_item != null:
@@ -62,7 +57,6 @@ func _cancel_with_button() -> void:
 		expect(_op_id != 0 and State.get_activity().foreground, "the export owns a foreground operation")
 		expect(State.get_activity().owner_ref.get_ref() == exporter, "the export operation belongs to the export plugin")
 		expect(State.get_activity().can_cancel(), "the export operation registers a cancel action")
-		# The widget helper needs its own sized viewport for a real GUI hit test.
 		viewport = SubViewport.new()
 		viewport.size = Vector2i(360, 40)
 		viewport.gui_disable_input = false

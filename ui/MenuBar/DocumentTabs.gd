@@ -1,15 +1,8 @@
 extends TabBar
 
-## The document tab strip in the menu bar.
-##
-## It shows the open documents and switches the active one. A close request goes
-## to the menu bar, which owns the save prompt.
 
-## Emitted when the user asks to close one tab.
 signal close_requested(index: int)
 
-# Guards the programmatic current tab writes, so the view does not activate a
-# document that it is only mirroring.
 var _syncing := false
 
 
@@ -38,8 +31,6 @@ func _sync() -> void:
 
 func _title(document: VoxelDocument) -> String:
 	var title := document.get_file_name()
-	# Keep the unsaved marker at the start. A long name is clipped from the end
-	# by the tab width, so a trailing marker would disappear.
 	return "* " + title if document.edit_dirty else title
 
 

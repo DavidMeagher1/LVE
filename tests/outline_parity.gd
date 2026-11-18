@@ -1,15 +1,5 @@
 extends "res://tests/test.gd"
 
-# Differential and performance test for the selection outline builder.
-#
-# `tests/outline_reference.gd` freezes the original builder and calls no
-# production code. Every shape here is built with both builders and compared as a
-# canonical segment set. The live builder emits lines in mask order, so the vertex
-# order is not the reference order; a repeated live build must be identical. The
-# A/B measurement alternates the implementations in one process and reports
-# medians with their sample counts, so no result rests on a single minimum.
-#
-#   godot --path . res://tests/outline_parity.tscn
 
 const REFERENCE := preload("res://tests/outline_reference.gd")
 const PREVIEW_SCRIPT := preload("res://Globals/Rendering/VoxelPreview.gd")
@@ -21,8 +11,6 @@ const RANDOM_SHAPES := 24
 const RANDOM_SEED := 20261018
 const MASK_ORIGINS := [Vector3i.ZERO, Vector3i(-1, -1, -1), Vector3i(15, 15, 15)]
 
-# A job that cancels itself after a fixed number of checkpoints, so the build is
-# stopped in the middle rather than before it starts.
 class CancelAfterJob extends VoxelFrame.EditJob:
 	var checks := 0
 	var cancel_after := 1
@@ -34,10 +22,6 @@ class CancelAfterJob extends VoxelFrame.EditJob:
 		return super.checkpoint(completed)
 
 
-# Test-only candidate that isolates the emission and merge choice. It keeps the
-# shared neighbor scan, but writes the original five-element record list and
-# merges it with the original comparator. Only the emission and the merge differ
-# from the live builder, so an A/B row against it separates the two changes.
 class SharedMaskVariant extends RefCounted:
 	static func outline_vertices(selection: VoxelSelection) -> PackedVector3Array:
 		var records := PackedInt32Array()
@@ -315,8 +299,6 @@ func _expect_no_mismatches(label: String) -> void:
 	expect(_compared > 0, "%s compare at least one shape" % label)
 
 
-# A canonical segment is one endpoint pair with the lexicographic first endpoint
-# in front. Counting them compares coverage without depending on the output order.
 func _canonical_counts(vertices: PackedVector3Array) -> Dictionary:
 	var counts := {}
 	for index in range(0, vertices.size(), 2):
@@ -353,32 +335,19 @@ func _mask_selections() -> Array:
 
 func _representative_selections() -> Array:
 	var out := []
-	# A cavity: a hollow shell.
 	out.append(_shell_selection(Vector3i.ZERO, Vector3i(7, 7, 7)))
-	# A notch: a box with an interior sub-box removed.
 	out.append(_box_with_gap(Vector3i.ZERO, Vector3i(7, 7, 7), Vector3i(3, 3, 3), Vector3i(5, 5, 5)))
-	# Corner contact: two boxes that touch at one corner only.
 	out.append(_pair_selection(_box_selection(Vector3i.ZERO, Vector3i(2, 2, 2)), _box_selection(Vector3i(3, 3, 3), Vector3i(5, 5, 5))))
-	# Edge contact: two boxes that share one edge.
 	out.append(_pair_selection(_box_selection(Vector3i.ZERO, Vector3i(2, 2, 2)), _box_selection(Vector3i(3, 3, 0), Vector3i(5, 5, 2))))
-	# Face contact: two boxes that share one face.
 	out.append(_pair_selection(_box_selection(Vector3i.ZERO, Vector3i(2, 2, 2)), _box_selection(Vector3i(3, 0, 0), Vector3i(5, 2, 2))))
-	# Disconnected cells with gaps on every axis.
 	out.append(_scattered_selection(20, 4))
-	# Negative coordinates.
 	out.append(_box_selection(Vector3i(-5, -5, -5), Vector3i(2, 2, 2)))
-	# A box across the origin.
 	out.append(_box_selection(Vector3i(-1, -1, -1), Vector3i(1, 1, 1)))
-	# A box across a chunk boundary.
 	out.append(_box_selection(Vector3i(14, 14, 14), Vector3i(17, 17, 17)))
-	# A box that spans several chunks on every axis.
 	out.append(_box_selection(Vector3i(0, 0, 0), Vector3i(19, 19, 19)))
-	# A shell and a gap that span several chunks.
 	out.append(_shell_selection(Vector3i(-2, -2, -2), Vector3i(19, 19, 19)))
 	out.append(_box_with_gap(Vector3i(0, 0, 0), Vector3i(19, 19, 19), Vector3i(7, 7, 7), Vector3i(12, 12, 12)))
-	# A stepped diagonal.
 	out.append(_stair_selection())
-	# Near the inline limit.
 	out.append(_box_selection(Vector3i.ZERO, Vector3i(15, 15, 15)))
 	out.append(_box_with_gap(Vector3i.ZERO, Vector3i(15, 15, 15), Vector3i(7, 7, 7), Vector3i(8, 8, 8)))
 	return out
@@ -487,7 +456,6 @@ func _measure_ab() -> void:
 		var variant_times: Array[int] = []
 		var production_times: Array[int] = []
 		for sample in AB_SAMPLES:
-			# Rotate the order so a slow frame cannot favour one side.
 			match sample % 3:
 				0:
 					reference_times.append(_time_reference(selection))
@@ -516,7 +484,6 @@ func _measure_ab() -> void:
 	expect(_compared > 0 and _geometry_mismatches == 0, "the A/B shapes already matched the reference")
 
 
-# The candidate must be a faithful shared-mask build, or its A/B row means nothing.
 func _expect_variant_matches() -> void:
 	var mismatches := 0
 	for selection: VoxelSelection in _representative_selections():

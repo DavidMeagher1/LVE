@@ -1,13 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused checks for the spray sampler symmetry mirror and the read-only
-# occupancy view.
-#
-# These checks build a small dense fixture and expand many material patterns, so
-# they are split from the worker pipeline scene `spray_worker`. Each scene then
-# stays under the shared runner deadline while the window is open.
-#
-#   godot --path . res://tests/spray_worker_geometry.tscn
 
 const SEED := 20261023
 const BLOCK := 8
@@ -61,8 +53,6 @@ func before_test() -> void:
 	tool._hover_installed_epoch = 0
 
 
-# A solid block around the origin, so the search sphere and the spot sphere are
-# fully occupied and the reach estimate passes the inline limit.
 func _block(half: int) -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
@@ -71,13 +61,9 @@ func _block(half: int) -> void:
 			for z in range(-half, half + 1):
 				frame.set_cell(Vector3i(x, y, z), VoxelFrame.material(Color.BLUE))
 	camera_rig().center_on(frame.get_bounds())
-	# A new document drops the preview surface of the previous fixture.
 	tool._clear_cursor_preview()
 
 
-# One expansion case. It compares the sampler occupancy view with the edit
-# context expansion by cell count, by key order, and by material, so the read
-# view is exact and not only a matching set.
 func _expand_pair(label: String, changes: Dictionary, axes: int, origin_twice: Vector3i, selection: Dictionary) -> void:
 	var context := VoxelFrame.EditContext.new()
 	context.axes = axes
@@ -99,9 +85,6 @@ func _expand_pair(label: String, changes: Dictionary, axes: int, origin_twice: V
 	expect(same, "the occupancy view matches EditContext.expand exactly for %s (%d cells)" % [label, reference.size()])
 
 
-# The read view must reproduce the edit context expansion for the identity, the
-# symmetry, the selection filter, negative chunks, missing chunks, and the whole
-# even pattern.
 func _worker_expand_view() -> void:
 	step("Given a dense block with a distinct material per cell", func():
 		_block(SMALL_BLOCK)
@@ -204,9 +187,6 @@ func _worker_mirror() -> void:
 	)
 
 
-# Returns true when the frame holds the cell and one of its six face neighbors
-# is empty. A half-cell mirror can land on a buried voxel, and the surface rule
-# keeps that voxel out.
 func _exposed(cell: Vector3i) -> bool:
 	if not frame.has(cell):
 		return false

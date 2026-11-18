@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the spray can tests. The tests drive the real viewport input
-# path and seed the sampling, so a run repeats exactly. The user arguments after
-# `--` name the tests to run.
 
 const PLATE := 8
 const BLOCK := 4
@@ -85,8 +82,6 @@ func _ready() -> void:
 	test("an in-flight sample never installs its old material", _material_install_gate, "spray_display_material_install")
 
 
-# Each test starts from a fresh document, the default symmetry, and the default
-# spray options.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -112,7 +107,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# A square plate on the floor plane, so the top view lands on its surface.
 func _plate() -> void:
 	for x in range(-PLATE, PLATE + 1):
 		for z in range(-PLATE, PLATE + 1):
@@ -120,15 +114,12 @@ func _plate() -> void:
 	camera_rig().center_on(frame.get_bounds())
 
 
-# Three voxels in a row, so the candidate pool is smaller than the speed.
 func _small_plate() -> void:
 	for x in 3:
 		frame.set_cell(Vector3i(x, 0, 0), VoxelFrame.material(Color.BLUE))
 	camera_rig().center_on(frame.get_bounds())
 
 
-# A solid block around the origin, so a spot sphere is fully occupied. A surface
-# pick would clip the sphere, so the footprint test reads the whole shape.
 func _block() -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
@@ -139,7 +130,6 @@ func _block() -> void:
 	camera_rig().center_on(frame.get_bounds())
 
 
-# Samples the batch for one cell without a ray.
 func _hover_cell(cell: Vector3i) -> void:
 	var pick := PickResult.new()
 	pick.target = cell
@@ -147,15 +137,12 @@ func _hover_cell(cell: Vector3i) -> void:
 	tool.update_visual(pick)
 
 
-# The brush sphere offsets for one diameter. The spray spot uses this same
-# shared helper, so the two shapes must agree.
 func _pattern_offsets(diameter: int) -> Array[Vector3i]:
 	var offsets: Array[Vector3i] = []
 	offsets.assign(BrushToolSettings.build_pattern(diameter, BrushToolSettings.BrushShape.SPHERE).keys())
 	return offsets
 
 
-# The whole brush sphere of one diameter centered on a cell.
 func _pattern_cells(center: Vector3i, diameter: int) -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	for offset in _pattern_offsets(diameter):
@@ -163,7 +150,6 @@ func _pattern_cells(center: Vector3i, diameter: int) -> Array[Vector3i]:
 	return cells
 
 
-# The brush sphere cells that the frame holds. A hole inside the sphere stays out.
 func _occupied_pattern(center: Vector3i, diameter: int) -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	for offset in _pattern_offsets(diameter):
@@ -173,8 +159,6 @@ func _occupied_pattern(center: Vector3i, diameter: int) -> Array[Vector3i]:
 	return cells
 
 
-# The brush sphere cells that the frame holds and that expose an empty face. A
-# buried cell stays out, because the spray never paints it.
 func _exposed_pattern(center: Vector3i, diameter: int) -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	for offset in _pattern_offsets(diameter):
@@ -184,8 +168,6 @@ func _exposed_pattern(center: Vector3i, diameter: int) -> Array[Vector3i]:
 	return cells
 
 
-# Returns true when the frame holds the cell and one of its six face neighbors
-# is empty. It is the naive oracle of the production surface mask.
 func _exposed(cell: Vector3i) -> bool:
 	if not frame.has(cell):
 		return false
@@ -258,8 +240,6 @@ func _key(code: Key) -> void:
 	get_tree().root.push_input(event)
 
 
-# Waits until the cursor preview installs its mesh. A solid preview builds on a
-# worker, so the test must let the worker finish and the preview install it.
 func _settle_cursor(cursor: MeshInstance3D) -> void:
 	for i in 240:
 		await get_tree().process_frame
@@ -267,18 +247,12 @@ func _settle_cursor(cursor: MeshInstance3D) -> void:
 			return
 
 
-# Drops the shared preview mesh cache, so the next preview request builds on a
-# worker and cannot install during the input event. The spray scene does not
-# depend on cache warmth.
 func _clear_preview_cache() -> void:
 	VoxelPreview._mesh_cache.clear()
 	VoxelPreview._cache_order.clear()
 	VoxelPreview._cache_bytes = 0
 
 
-# The world AABB of every visible mesh of the cursor and its mirror children.
-# A mirror child is a separate MeshInstance3D, so the cursor mesh alone does not
-# show it.
 func _rendered_aabb(root: Node3D) -> AABB:
 	var result := AABB()
 	var found := false
@@ -300,8 +274,6 @@ func _mesh_nodes(root: Node) -> Array[MeshInstance3D]:
 	return nodes
 
 
-# The world AABB of a set of cells. A voxel spans one unit centered on its cell
-# coordinate, so it reaches half a unit on each side.
 func _cells_aabb(cells: Array[Vector3i]) -> AABB:
 	if cells.is_empty():
 		return AABB()
@@ -365,8 +337,6 @@ func _preview_parity() -> void:
 	)
 
 
-# A completed click must reroll the next preview. A still pointer must not. The
-# seeded pool holds many candidates, so two samples almost surely differ.
 func _reroll_after_click() -> void:
 	step("Given a plate and a spray with a seeded pool of many candidates", func():
 		_plate()
@@ -407,7 +377,6 @@ func _reroll_after_click() -> void:
 	)
 
 
-# One candidate leaves no random choice, so a reroll must keep the same preview.
 func _reroll_single_candidate() -> void:
 	step("Given one voxel and a spray with one candidate", func():
 		State.document = VoxelDocument.new()
@@ -502,9 +471,6 @@ func _candidate_shortage() -> void:
 	)
 
 
-# The spot footprint must be the shared brush sphere of the spot diameter, so an
-# even diameter keeps the brush's even alignment instead of a rounded radius.
-# The spot keeps only exposed voxels, so the solid block contributes its shell.
 func _spot_footprint() -> void:
 	var pick_cell := Vector3i(0, BLOCK, 0)
 	for diameter in [1, 2, 3, 4, 5]:
@@ -522,8 +488,6 @@ func _spot_footprint() -> void:
 		)
 
 
-# A buried voxel has no empty face neighbor, so it never becomes a spot center
-# and a spot centered on it paints nothing.
 func _buried_offers_nothing() -> void:
 	step("Given a solid block and a spray centered on a buried voxel", func():
 		_block()
@@ -539,9 +503,6 @@ func _buried_offers_nothing() -> void:
 	)
 
 
-# The production surface mask must match a naive six-neighbor scan. The fixture
-# crosses chunk edges and negative coordinates, and one hole exposes inner
-# faces, so every boundary direction is covered.
 func _surface_mask_parity() -> void:
 	var failures := 0
 	var compared := 0
@@ -572,7 +533,6 @@ func _surface_mask_parity() -> void:
 	)
 
 
-# The spot diameter clamps to the same range as the brush diameter.
 func _diameter_clamp() -> void:
 	step("When the user sets the spot diameter below its minimum", func():
 		_settings.spot_diameter = 0
@@ -761,9 +721,6 @@ func _sparse_region() -> void:
 	)
 
 
-# The dense spot union must equal the exact union of the spot spheres. The
-# interval union in the production footprint path trades the per-spot cell test
-# for a scanline union, so it must keep the exact cell set at the maximum size.
 func _dense_union() -> void:
 	var spots: Array[Vector3i] = [Vector3i.ZERO, Vector3i(20, 0, 0), Vector3i(0, -20, 12), Vector3i(9, 9, 9)]
 	step("Given a dense block and four maximum spot centers", func():
@@ -801,8 +758,6 @@ func _dense_union() -> void:
 	)
 
 
-# A spot sphere that crosses a hole must keep the hole out of the preview and
-# the write, so a spot never paints an empty cell.
 func _spot_hole() -> void:
 	step("Given a plate with a hole beside the brush voxel", func():
 		_plate()
@@ -882,9 +837,6 @@ func _mirror_empty() -> void:
 	)
 
 
-# The rendered mesh must sit on the world cells of the batch. A tool that moves
-# to the brush cell and also passes world cells to the cursor translates the
-# mesh a second time.
 func _rendered_position() -> void:
 	var hover_cell := Vector3i(3, 0, 2)
 	step("Given a plate and a spray with five spots", func():
@@ -904,8 +856,6 @@ func _rendered_position() -> void:
 	)
 
 
-# The batch already holds the mirrored destinations, so the cursor must not
-# mirror its mesh again. A second mirror would draw empty or unpermitted voxels.
 func _rendered_mirror() -> void:
 	step("Given a voxel whose X mirror is empty", func():
 		State.document = VoxelDocument.new()
@@ -964,8 +914,6 @@ func _rendered_mirror() -> void:
 	)
 
 
-# A wide spot on a sparse frame reads the occupied chunks instead of the whole
-# reach ball. It must still offer only the real voxels.
 func _wide_radius() -> void:
 	step("Given one voxel and a spray with the widest spot and search size", func():
 		State.document = VoxelDocument.new()
@@ -994,8 +942,6 @@ func _wide_radius() -> void:
 	)
 
 
-# A batch cell that the frame no longer holds must leave the preview. A frame
-# switch and a detach and re-entry must drop the stale batch too.
 func _stale_occupancy() -> void:
 	var hover_cell := Vector3i(3, 0, 0)
 	step("Given a plate and a hover preview", func():
@@ -1034,8 +980,6 @@ func _stale_occupancy() -> void:
 	)
 
 
-# A press that loses its release event must still end the stroke. A motion with
-# no button down while the stroke is open ends it like a release.
 func _lost_release() -> void:
 	step("Given a plate and a press that painted voxels", func():
 		_plate()
@@ -1059,9 +1003,6 @@ func _lost_release() -> void:
 	)
 
 
-# An unchanged hover must reuse the sampled batch and its prepared preview, so it
-# never draws a new sample. The random source state proves the sampler did not
-# run again.
 func _preview_reuse() -> void:
 	var hover_cell := Vector3i(3, 0, 2)
 	step("Given a plate and a hover preview", func():
@@ -1086,8 +1027,6 @@ func _preview_reuse() -> void:
 	)
 
 
-# A material-only write bumps the chunk revision but keeps every preview cell
-# occupied, so the batch must not reroll.
 func _material_keeps_sample() -> void:
 	var hover_cell := Vector3i(3, 0, 2)
 	step("Given a plate and a hover preview", func():
@@ -1113,9 +1052,6 @@ func _material_keeps_sample() -> void:
 	)
 
 
-# A chunk that a direct assignment replaces keeps the batch when it still holds
-# every preview cell. A replacement that drops one rerolls the batch, even though
-# its revision did not move.
 func _chunk_identity_revalidates() -> void:
 	var hover_cell := Vector3i(3, 0, 2)
 	step("Given a plate and a hover preview", func():
@@ -1151,8 +1087,6 @@ func _chunk_identity_revalidates() -> void:
 	)
 
 
-# A frame restore replaces the chunk objects. An equal restore keeps the batch,
-# and a restore that dropped a preview cell rerolls it.
 func _restore_and_replace() -> void:
 	var hover_cell := Vector3i(3, 0, 2)
 	step("Given a plate and a hover preview", func():
@@ -1184,7 +1118,6 @@ func _restore_and_replace() -> void:
 	)
 
 
-# A clear removes every chunk, so the batch must drop and the cursor must hide.
 func _clear_drops() -> void:
 	var hover_cell := Vector3i(3, 0, 2)
 	step("Given a plate and a hover preview", func():
@@ -1205,8 +1138,6 @@ func _clear_drops() -> void:
 	)
 
 
-# A selection that excludes the brush cell leaves no candidate, so the preview is
-# empty and the cursor hides. A hover on a selected cell shows it again.
 func _empty_batch_hides() -> void:
 	step("Given a plate with a selection that excludes the brush cell", func():
 		_plate()
@@ -1232,9 +1163,6 @@ func _empty_batch_hides() -> void:
 	)
 
 
-# A live spray drag changes the request every frame. The coalescing cursor must
-# still install geometry before the release, and one motion must not freeze the
-# main thread on a large inline build.
 func _moving_preview() -> void:
 	step("Given a plate and a spray with eight spots", func():
 		_plate()
@@ -1264,8 +1192,6 @@ func _moving_preview() -> void:
 	)
 
 
-# A moving cursor must still offer the exact batch that the next press paints. A
-# bounded display latency never changes the offered sample.
 func _moving_click() -> void:
 	step("Given a plate and a spray with five spots", func():
 		_plate()
@@ -1290,8 +1216,6 @@ func _moving_click() -> void:
 	)
 
 
-# A coalescing cursor shows a bounded-latency snapshot. A frame clear must hide
-# it, and a late worker must not resurrect a stale mesh.
 func _coalesced_clear_hides() -> void:
 	var hover_cell := Vector3i(3, 0, 2)
 	step("Given a spray hover on a plate", func():
@@ -1313,9 +1237,6 @@ func _coalesced_clear_hides() -> void:
 	)
 
 
-# A coalescing cursor can show an older snapshot while a newer sample for the
-# same cell waits on the worker. The next press must paint the displayed
-# snapshot, so the click and the visible preview never disagree.
 func _display_parity() -> void:
 	step("Given a plate with a displayed spray preview", func():
 		_plate()
@@ -1331,9 +1252,6 @@ func _display_parity() -> void:
 		expect(cursor.installed_cells().size() == shown_batch.size(), "the installed surface holds A")
 	)
 	step("When the same cell rerolls and presses before the new sample installs", func():
-		# Keep the installed A and its captured frame, material, and context.
-		# Reset only the batch cell, so the hover samples a new batch for the
-		# same cell without clearing the cursor.
 		tool.seed_spray(SEED + 1)
 		tool._batch_center = VoxelPicking.NONE
 		_clear_preview_cache()
@@ -1354,8 +1272,6 @@ func _display_parity() -> void:
 	)
 
 
-# A lagging surface belongs to the cell that sampled it. A press on another cell
-# must paint its own current batch, never the installed surface of the old cell.
 func _ownership_gate() -> void:
 	step("Given a displayed preview A for one cell", func():
 		_plate()
@@ -1383,8 +1299,6 @@ func _ownership_gate() -> void:
 	)
 
 
-# A frame change replaces the document frame, so the displayed surface of the old
-# frame must not stay visible.
 func _display_clears() -> void:
 	step("Given a plate with a displayed spray preview", func():
 		_plate()
@@ -1403,8 +1317,6 @@ func _display_clears() -> void:
 	)
 
 
-# A selection change alters the allowed cells, so the displayed surface of the
-# old selection must not stay visible.
 func _selection_clears() -> void:
 	step("Given a plate with a displayed spray preview", func():
 		_plate()
@@ -1424,22 +1336,16 @@ func _selection_clears() -> void:
 		tool.update_visual(tool._last_pick)
 	)
 	step("Then the old selection's displayed surface is gone", func():
-		# The new sample may install at once from the mesh cache, so the surface is
-		# either empty or the new sample. It must never stay the old selection's A.
 		var keys: Array[Vector3i] = []
 		keys.assign(cursor.installed_cells().keys())
 		expect(not _same_cell_set(keys, shown_batch), "the old selection's installed surface is gone")
 	)
 
 
-# A color change alters the preview material. The old batch must not come back
-# with the old material while the new sample builds.
 func _material_change_clears() -> void:
 	step("Given a plate with a displayed spray preview from a worker sample", func():
 		_plate()
 		tool.seed_spray(SEED)
-		# A wide search and a large spot pass the inline limit, so the preview
-		# waits on a worker and a stale batch can come back.
 		_settings.spray_size = 33
 		_settings.spot_diameter = 9
 		_settings.speed = 8
@@ -1456,15 +1362,11 @@ func _material_change_clears() -> void:
 		State.current_color = Color.BLUE
 	)
 	step("Then the old material's surface is gone", func():
-		# The new sample waits on the worker. The old batch must not return with
-		# its old cells while the new sample builds.
 		expect(tool._hover_sample_job != null, "the new sample waits on the worker")
 		expect(cursor.installed_cells().is_empty(), "the old material's cells are not displayed")
 	)
 
 
-# A sample already on the worker must not install after the current material
-# changes. The queued sample installs the new color.
 func _material_install_gate() -> void:
 	var old_material := State.current_material
 	var stale_installed := false
@@ -1496,9 +1398,6 @@ func _material_install_gate() -> void:
 	)
 
 
-# The spray samples and expands its batch before the write. The write job must
-# not expand the same context again. These cases compare the already-expanded
-# write against the previous expansion path on the same cells and frame.
 func _write_parity() -> void:
 	var cases := [
 		{
@@ -1580,9 +1479,6 @@ func _write_parity() -> void:
 		)
 
 
-# The already-expanded fast path still applies the selection mask and the
-# existing-only filter. A cell outside the selection or a cell that the write
-# snapshot does not hold never writes.
 func _write_filters() -> void:
 	step("Given a plate with one selected cell and one unselected cell", func():
 		_plate()
@@ -1618,8 +1514,6 @@ func _write_filters() -> void:
 	)
 
 
-# The write must not draw a random number, because the sample already consumed
-# its stream. The whole spray stays one undo action with the full material.
 func _write_rng_undo() -> void:
 	var metal := VoxelFrame.material(Color.RED, Color(0.5, 0.25, 0.125), 1.0, 0.25)
 	step("Given a mirrored, selected, full-material spray with a displayed preview", func():
@@ -1656,8 +1550,6 @@ func _write_rng_undo() -> void:
 	)
 
 
-# Builds a small solid frame around one cell, so a spray sample has occupied
-# cells at every tested coordinate.
 func _build_parity_frame(center: Vector3i) -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
@@ -1667,8 +1559,6 @@ func _build_parity_frame(center: Vector3i) -> void:
 				frame.set_cell(center + Vector3i(x, y, z), VoxelFrame.material(Color.BLUE))
 
 
-# The cells of one half-space of the parity frame. It is asymmetric under the X
-# mirror, so the selection filter has a real effect.
 func _half_selection(center: Vector3i) -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	for x in range(center.x, center.x + 5):
@@ -1690,8 +1580,6 @@ func _same_chunk_set(first: Array[Vector3i], second: Array[Vector3i]) -> bool:
 	return true
 
 
-# Compares two frames by chunk content, not by chunk insertion order. The write
-# path and the expansion path can group the same cells in a different order.
 func _same_frame_content(first: VoxelFrame, second: VoxelFrame) -> bool:
 	if first.chunks.size() != second.chunks.size():
 		return false

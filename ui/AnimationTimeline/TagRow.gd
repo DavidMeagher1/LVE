@@ -1,9 +1,5 @@
 extends HBoxContainer
 
-## The animation tag row.
-##
-## It selects a tag and edits its name, loop mode, and repeats. It also adds
-## and removes tags.
 
 const LOOP_FORWARD_ICON := preload("res://icons/loop_forward.svg")
 const LOOP_REVERSE_ICON := preload("res://icons/loop_reverse.svg")
@@ -40,7 +36,6 @@ func _sync() -> void:
 	var has_tag := State.get_active_tag() != null
 	%TagActions.visible = has_tag
 	%LoopMenu.visible = has_tag
-	# A rename can name any tag, so every item text follows the document.
 	for index in State.document.tags.size():
 		%TagDropdown.set_item_text(index, State.document.tags[index].name)
 	var repeats_on := false

@@ -1,16 +1,9 @@
 extends RefCounted
 
-## The workspace JSON shapes.
-##
-## The editor stores the camera, lighting, view, and export settings on the
-## document. This class turns those dictionaries into the JSON shape that the
-## MCP workspace tools accept, and back.
 
 const MCPJson := preload("res://Globals/MCP/MCPJson.gd")
 
 
-## Coerces whole JSON numbers to ints for the fields that the document format
-## requires as integers. JSON has no integer type.
 static func coerce_whole_ints(data: Dictionary, keys: Array) -> void:
 	for key in keys:
 		if not data.has(key):
@@ -20,8 +13,6 @@ static func coerce_whole_ints(data: Dictionary, keys: Array) -> void:
 			data[key] = int(roundf(value))
 
 
-## Returns the workspace of one document in the JSON shape that the setter
-## accepts. The revision is the server's content revision.
 static func data(document: VoxelDocument, revision: int) -> Dictionary:
 	return {
 		"revision": revision,
@@ -118,7 +109,6 @@ static func lighting(value: Variant, exported: bool) -> Variant:
 				data[name] = source[key]
 	if exported:
 		return data
-	# The editor lighting stores each strength in the color alpha.
 	var light: Color = data.get("color", Color.WHITE)
 	light.a = float(data.get("energy", 1.0))
 	data["color"] = light

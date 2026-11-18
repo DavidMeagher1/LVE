@@ -1,11 +1,9 @@
 ﻿extends "res://tests/test.gd"
 
-## Checks that the editor workspace follows the document.
 
 var _menu: Node
 var _brush: BrushToolSettings
 var _paint: PaintToolSettings
-# The selection and transform settings have no class name.
 var _selection = null
 var _transform = null
 var _deform: DeformToolSettings
@@ -86,7 +84,6 @@ func _reset_workspace() -> void:
 	_paint.diameter = 1
 	_paint.shape = StampToolSettings.BrushShape.CUBE
 	_paint.pixel_perfect = false
-	# The selection and transform settings have no class name.
 	_selection.tool = 0
 	_selection.mode = 0
 	_selection.connected = true
@@ -505,8 +502,6 @@ func _play_cancel_run() -> void:
 		_play_events.clear()
 		if not State.is_playing_toggled.is_connected(_on_test_play_toggled):
 			State.is_playing_toggled.connect(_on_test_play_toggled)
-		# The restart changes the frame. The open edit cancels, and its restore
-		# emits cells_changed, which stops playback.
 		State.edit_context_changing.connect(func():
 			if tx != null:
 				State.cancel_edit(tx)

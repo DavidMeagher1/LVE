@@ -47,7 +47,6 @@ func _release_at(cell: Node, target: Node) -> void:
 	cell._gui_input(event)
 
 
-# _gui_input receives pointer positions local to the cell.
 func _local(cell: Node, point: Vector2) -> Vector2:
 	return cell.get_global_transform().affine_inverse() * point
 

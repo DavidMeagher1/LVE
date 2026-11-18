@@ -1,12 +1,6 @@
 extends ToolMenuButton
 
-## The paint tool menu button.
-##
-## It selects a paint tool and shows that tool's icon. The paint tool shortcuts
-## select a tool too.
 
-# The popup item id of each paint tool. The ids stay fixed, so a menu item and
-# its shortcut select the same tool even when the enum changes.
 const PAINTBRUSH_ID := 0
 const FILL_ID := 1
 const SPRAY_ID := 2
@@ -30,8 +24,6 @@ func _sync_icon(tool: int) -> void:
 		icon = get_popup().get_item_icon(item_index)
 
 
-# Select one tool by its popup item id. The icon comes from the matching item,
-# so the button shows the active tool.
 func _select_id(id: int) -> void:
 	var item_index := get_popup().get_item_index(id)
 	if item_index < 0:

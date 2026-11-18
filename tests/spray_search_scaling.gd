@@ -1,15 +1,5 @@
 extends "res://tests/test.gd"
 
-# The spray search scaling tests.
-#
-# The sampler must pick distinct occupied centers from the search sphere without
-# gathering the whole reach volume. These tests prove the candidate order and the
-# random draws match the frozen reference, count the work of the indexed path,
-# and time the old and the new kernel in one process. The rendered benchmark is
-# `tests/benchmarks/spray_search_scaling.gd`.
-#
-#   godot --path . res://tests/spray_search_scaling.tscn
-#   godot --path . res://tests/spray_search_scaling.tscn -- spray_scale_work
 
 const SpraySampler := preload("res://plugins/paint/SpraySampler.gd")
 const SpraySamplingJob := preload("res://plugins/paint/SpraySamplingJob.gd")
@@ -39,8 +29,6 @@ var _parity_order_failures := 0
 var _parity_rng_failures := 0
 
 
-# A job that stops after a fixed number of checkpoints. It proves that the new
-# candidate, footprint, and expansion phases stop inside their own loops.
 class CountingJob extends VoxelFrame.EditJob:
 	var calls := 0
 	var limit := 0
@@ -95,16 +83,11 @@ func after_test() -> void:
 	_reference = null
 
 
-# --- Fixtures ---------------------------------------------------------------
-
-# Starts a new document and returns its frame.
 func _new_frame() -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
 
 
-# Fills one world box through the chunk storage. A chunk that the box covers
-# whole uses one bulk grid fill, so a large fixture stays cheap.
 func _fill_box(min_cell: Vector3i, max_cell: Vector3i, cell_material: PackedFloat32Array) -> void:
 	var min_chunk := VoxelFrame.chunk_position(min_cell)
 	var max_chunk := VoxelFrame.chunk_position(max_cell)
@@ -172,8 +155,6 @@ func _use_fixture(name: String) -> void:
 		_use_sparse()
 
 
-# One voxel in the center of each chunk of a box. The hollow fixture exposes the
-# per-chunk row and snapshot cost that a dense block hides.
 func _use_hollow(chunks_x: int, chunks_y: int, chunks_z: int) -> void:
 	_new_frame()
 	var cells := {}
@@ -185,7 +166,6 @@ func _use_hollow(chunks_x: int, chunks_y: int, chunks_z: int) -> void:
 	State.document._bounds_dirty = true
 
 
-# Samples one cell through the production hover path without a ray.
 func _hover_cell(cell: Vector3i) -> void:
 	var pick := PickResult.new()
 	pick.target = cell
@@ -193,7 +173,6 @@ func _hover_cell(cell: Vector3i) -> void:
 	tool.update_visual(pick)
 
 
-# Waits until the hover sample and its worker retire.
 func _settle_tool() -> void:
 	for i in 600:
 		if tool.is_sample_settled():
@@ -204,8 +183,6 @@ func _settle_tool() -> void:
 func _fixture_center(_name: String) -> Vector3i:
 	return Vector3i.ZERO
 
-
-# --- Sampling helpers -------------------------------------------------------
 
 func _identity() -> VoxelFrame.EditContext:
 	return VoxelFrame.EditContext.new()
@@ -250,8 +227,6 @@ func _same_set(first: Array[Vector3i], second: Array[Vector3i]) -> bool:
 			return false
 	return true
 
-
-# --- Tests ------------------------------------------------------------------
 
 func _span_parity() -> void:
 	_span_failures = 0

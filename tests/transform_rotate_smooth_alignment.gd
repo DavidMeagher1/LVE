@@ -2,14 +2,6 @@ extends "res://tests/test.gd"
 
 var viewport: SubViewport
 
-# A solid, non-square, single-layer block. Non-square matters: a square selection would hide this
-# bug entirely, since the correction this test checks for is exactly zero for a square (rotating a
-# square around its own center already agrees with the exact min-corner-fixed convention at every
-# 90 degree multiple). Solid matters too: RotSprite's own continuous point-rotation-and-floor
-# sampling has the same grid-parity boundary sensitivity that the exact algorithm was built to
-# avoid, and it can only surface at a true, exact cardinal angle. Real drags never land there
-# (dispatch always hands an exact cardinal to the exact algorithm instead), so this test checks
-# just short of the boundary, where a real free-rotation drag actually hands off to it.
 const SHAPE: Array = [
 	Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(2, 0, 0),
 	Vector3i(0, 1, 0), Vector3i(1, 1, 0), Vector3i(2, 1, 0),

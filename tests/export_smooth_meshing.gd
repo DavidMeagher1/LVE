@@ -47,7 +47,6 @@ func _run() -> void:
 			return
 		expect(imported_arrays[Mesh.ARRAY_INDEX].size() == 36, "the imported smooth cube contains twelve triangles")
 		expect(imported_arrays[Mesh.ARRAY_VERTEX].size() == 8, "the imported smooth cube shares eight corners across all chunks")
-		# The ArrayMesh/glTF round trip quantizes normals.
 		_expect_normals(imported_arrays, 0.001)
 	)
 	step("Then moving the cube inside one chunk leaves the export geometry unchanged", func():
@@ -149,7 +148,6 @@ func _expect_normals(arrays: Array, normal_tolerance := 0.0001) -> void:
 	expect(matches, "every retained corner keeps the normal of its voxel corner")
 
 
-# A smooth normal averages the occupied cells that meet at one voxel corner.
 func _corner_normal(world_position: Vector3) -> Vector3:
 	var base := Vector3i(world_position.floor())
 	var normal := Vector3.ZERO

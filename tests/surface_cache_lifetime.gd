@@ -30,7 +30,6 @@ func _run() -> void:
 		expect(not scene_renderer._chunk_instances.has(enclosed_chunk), "the enclosed chunk needs no mesh node")
 	)
 	step("Given more empty history results than the cache can retain", func():
-		# Seed completed empty results without generating thousands of redundant meshes.
 		for history_index in range(VoxelRenderer.SURFACE_CACHE_LIMIT_ENTRIES + 1):
 			VoxelRenderer._cache_surface(_history_key(history_index), null, 0, null)
 	)
@@ -85,7 +84,6 @@ func _settle() -> void:
 		await get_tree().process_frame
 
 
-# A distinct cache key per seeded history entry.
 func _history_key(index: int) -> PackedInt64Array:
 	return PackedInt64Array([index + 1, 1])
 

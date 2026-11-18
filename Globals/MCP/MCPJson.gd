@@ -1,9 +1,5 @@
 extends RefCounted
 
-## The MCP JSON and argument helpers.
-##
-## These functions turn between the compact JSON forms and the editor's value
-## types. They do not read or change the editor state.
 
 static func parse_color(value: Variant) -> Variant:
 	if value is String:
@@ -25,8 +21,6 @@ static func parse_color(value: Variant) -> Variant:
 	return null
 
 
-## Parses a three-number vector. Returns [code]null[/code] for a non-finite or
-## malformed value.
 static func parse_vector(value: Variant) -> Variant:
 	if not (value is Array):
 		return null
@@ -58,7 +52,6 @@ static func parse_cell(value: Variant) -> Variant:
 	return Vector3i(x, y, z)
 
 
-## Returns [code]true[/code] when one cell coordinate is inside the storage limit.
 static func cell_in_range(x: int, y: int, z: int) -> bool:
 	var limit := VoxelFrame.MAX_CHUNK_COORDINATE * VoxelFrame.CHUNK_SIZE
 	return (

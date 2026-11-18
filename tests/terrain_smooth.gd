@@ -1,10 +1,5 @@
 extends "res://tests/test.gd"
 
-# The Smooth tests drive the pure 3D occupancy rounding module. They build
-# occupancy sets and candidate cell lists, then check the rounding rule. They
-# never touch the tool, the settings, or the editor state. The harness still
-# loads the main scene, because the State autoload registers every plugin at
-# startup.
 
 const SmoothOperation := preload("res://plugins/Terrain/SmoothOperation.gd")
 
@@ -46,7 +41,6 @@ func _ready() -> void:
 	test("a weighted two-dab split matches one dab", _weighted_split_identical, "weighted_split_identical")
 
 
-# Resets the fixtures. Each test builds its own set in a step.
 func before_test() -> void:
 	_occupied = {}
 	_cells = []
@@ -55,9 +49,6 @@ func before_test() -> void:
 	_weights = {}
 
 
-# --- Helpers ----------------------------------------------------------------
-
-# Fills the inclusive box from lo to hi into _occupied.
 func _fill(lo: Vector3i, hi: Vector3i) -> void:
 	for x in range(lo.x, hi.x + 1):
 		for y in range(lo.y, hi.y + 1):
@@ -65,7 +56,6 @@ func _fill(lo: Vector3i, hi: Vector3i) -> void:
 				_occupied[Vector3i(x, y, z)] = true
 
 
-# Returns every cell of the inclusive box.
 func _box(lo: Vector3i, hi: Vector3i) -> Array:
 	var cells := []
 	for x in range(lo.x, hi.x + 1):
@@ -83,7 +73,6 @@ func _has_add(cell: Vector3i) -> bool:
 	return (_result["add"] as Array).has(cell)
 
 
-# The occupied height of one column, from the base cell upward.
 func _height(occupied: Dictionary, base: Vector3i) -> int:
 	var cell := base
 	var count := 0
@@ -93,9 +82,6 @@ func _height(occupied: Dictionary, base: Vector3i) -> int:
 	return count
 
 
-# Builds a one-cell plate with an identical spike at each side. The left spike
-# keeps full weight and the right spike keeps a quarter weight. Only the spike
-# cells are candidates, like the tool patch that follows the surface.
 func _two_weighted_spikes() -> void:
 	_occupied = {}
 	for x in range(-8, 9):
@@ -112,8 +98,6 @@ func _two_weighted_spikes() -> void:
 	for cell: Vector3i in _cells:
 		_weights[cell] = 1.0 if cell.x < 0 else 0.25
 
-
-# --- Shape rules ------------------------------------------------------------
 
 func _flat_face_unchanged() -> void:
 	step("Given a half-space with a flat top face", func():
@@ -386,8 +370,6 @@ func _fraction_deterministic() -> void:
 	)
 
 
-# --- Strength and passes ----------------------------------------------------
-
 func _strength_scales_rate() -> void:
 	step("Given a convex corner", func():
 		_occupied = {}
@@ -479,8 +461,6 @@ func _kernel_offsets_shape() -> void:
 		expect((_result["two"] as Array).size() == 125, "radius two holds 125 offsets")
 	)
 
-
-# --- Weighted passes --------------------------------------------------------
 
 func _weighted_credit_remainder() -> void:
 	step("Given one candidate with a quarter weight", func():

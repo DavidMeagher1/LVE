@@ -1,29 +1,15 @@
 extends VoxelTool
 
-## The symmetry tool.
-##
-## It shows the mirror planes and toggles them. The X, Y, and Z keys toggle one
-## axis. The origin handle is a view-plane square. A drag moves the symmetry
-## origin. Escape restores the origin. It changes no cells.
 
-## The handle width in screen pixels.
 const HANDLE_SIZE_PX := 24.0
-## The handle scale while the pointer rests on it.
 const HANDLE_HOVER_SCALE := 1.25
-## The handle scale while a drag is open.
 const HANDLE_DRAG_SCALE := 1.15
-## The ghost square scale against the handle.
 const HANDLE_GHOST_SCALE := 0.8
-## The pointer distance that counts as a handle hover.
 const HANDLE_HOVER_RADIUS_PX := 17.0
-## The half width of the handle square in handle units.
 const HANDLE_HALF := 0.5
-## The half length of the center cross arms in handle units.
 const HANDLE_CROSS_ARM := 0.22
 const VoxelLineMesh := preload("res://Globals/Rendering/VoxelLineMesh.gd")
 
-## Whether the tool is active. A false value stops a drag and rebuilds the
-## planes.
 var active := false:
 	set(value):
 		if value == active:
@@ -76,7 +62,6 @@ func _on_cells_changed(_frame: int, _cells: Array[Vector3i]) -> void:
 	_rebuild()
 
 
-## Builds the handle square, the ghost square, and the drag line.
 func _setup_handle() -> void:
 	_origin_mesh = VoxelLineMesh.build(_origin_outline())
 	$Origin.mesh = _origin_mesh
@@ -88,8 +73,6 @@ func _setup_handle() -> void:
 	_sync_cursor()
 
 
-## Adds one opaque border child to every plane. The border uses the plane color,
-## so an edge-on plane still shows a line.
 func _setup_plane_borders() -> void:
 	for axis in 3:
 		var plane: MeshInstance3D = get_node(["XPlane", "YPlane", "ZPlane"][axis])
@@ -112,8 +95,6 @@ func _setup_plane_borders() -> void:
 func _rebuild() -> void:
 	visible = active or State.symmetry_axes != 0
 	$Origin.visible = active
-	# A hidden tool draws nothing, so it must not rebuild its three meshes on
-	# every cell change.
 	if not visible:
 		_hide_drag_visuals()
 		_push_far_bounds(AABB())
@@ -154,7 +135,6 @@ func _rebuild() -> void:
 	_push_far_bounds(AABB(lo, hi - lo))
 
 
-# Registers the plane extents with the camera, so the far plane cannot cut them.
 func _push_far_bounds(box: AABB) -> void:
 	var viewport := get_viewport()
 	if viewport == null:
@@ -184,8 +164,6 @@ func _accepts(event: InputEvent) -> bool:
 	return active and super._accepts(event)
 
 
-## Handles one input event. The X, Y, and Z keys toggle one mirror axis. A drag
-## moves the symmetry origin. Escape restores the origin.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	if not active:
 		return false
@@ -238,15 +216,12 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	return false
 
 
-## Returns the handle scale for the current hover and drag state.
 func _handle_scale() -> float:
 	if _dragging:
 		return HANDLE_DRAG_SCALE
 	return HANDLE_HOVER_SCALE if _hovered else 1.0
 
 
-## Sets the pointer hover state. The handle reports a hover within a fixed screen
-## radius, so the square stays easy to grab at every zoom.
 func _update_hover(pos: Vector2) -> void:
 	if _dragging:
 		return
@@ -264,7 +239,6 @@ func _set_hovered(value: bool) -> void:
 	_sync_cursor()
 
 
-## Poses the handle in the camera plane at a constant screen size.
 func _pose_origin_handle(camera: Camera3D) -> void:
 	var behind := camera.is_position_behind(global_position)
 	$Origin.visible = active and not behind
@@ -278,7 +252,6 @@ func _pose_origin_handle(camera: Camera3D) -> void:
 	$Origin.global_transform = Transform3D(basis.scaled(Vector3.ONE * scale), global_position)
 
 
-## Poses the ghost square at the press-time origin.
 func _pose_ghost(camera: Camera3D) -> void:
 	var pixel_size := _screen_pixel_size(camera)
 	if pixel_size <= 0.0:
@@ -288,7 +261,6 @@ func _pose_ghost(camera: Camera3D) -> void:
 	$OriginGhost.global_transform = Transform3D(basis.scaled(Vector3.ONE * scale), _start_origin)
 
 
-## Shows the start square and the move line while the origin moved.
 func _update_transient_visuals(camera: Camera3D) -> void:
 	var moved := _dragging and _start_origin.distance_squared_to(global_position) > 0.0
 	$OriginGhost.visible = moved
@@ -299,7 +271,6 @@ func _update_transient_visuals(camera: Camera3D) -> void:
 	$DragLine.mesh = VoxelLineMesh.build(PackedVector3Array([to_local(_start_origin), Vector3.ZERO]))
 
 
-## Hides the ghost square and the move line.
 func _hide_drag_visuals() -> void:
 	$OriginGhost.visible = false
 	$DragLine.visible = false
@@ -323,7 +294,6 @@ func _cancel_drag(restore: bool) -> void:
 	_sync_cursor()
 
 
-## Returns the square outline and the center cross in the local view plane.
 func _origin_outline() -> PackedVector3Array:
 	var vertices := PackedVector3Array()
 	var corners := [
@@ -342,7 +312,6 @@ func _origin_outline() -> PackedVector3Array:
 	return vertices
 
 
-## Returns the white line material that the other voxel gizmos use.
 func _line_material(alpha: float) -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED

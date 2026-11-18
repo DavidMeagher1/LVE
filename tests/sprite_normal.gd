@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# Sprite normal export: the encoded bytes, view orientation, the export option,
-# and the preview light. The preview light needs a visible window.
 
 var exporter: Node
 var prefix := ""

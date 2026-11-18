@@ -1,45 +1,21 @@
 extends MeshInstance3D
 
-## The pending primitive wire and its face handles.
-##
-## The wire follows the pending shape: a box outline, an ellipsoid's three great
-## circles, or a cone's end circles and sides. The tool hit-tests the face and
-## corner handles in screen space and drags one bound. A handle is drawn only
-## near the pointer, so the shape stays readable. Three dashed rings turn the
-## shape around its local axes; a ring is drawn only when the view is near its
-## axis.
 
 const VoxelLineMesh := preload("res://Globals/Rendering/VoxelLineMesh.gd")
 const PrimitiveField := preload("res://Globals/State/Tools/PrimitiveField.gd")
-## The fallback face cross half extent in world units. The gizmo overrides it
-## with the current camera scale, so a cross keeps one screen size at any zoom.
 const HANDLE_HALF := 0.35
-## The face cross half extent in screen pixels.
 const HANDLE_PIXELS := 12.0
-## The corner cross half extent in screen pixels.
 const CORNER_PIXELS := 10.0
-## The radius of a rotate ring in screen pixels. A larger shape pushes the ring
-## out, so the ring never sits inside the shape.
 const RING_RADIUS_PX := 84.0
-## The gap between the shape and a rotate ring in screen pixels.
 const RING_MARGIN_PX := 18.0
-## The smallest dot between the view and a ring axis that draws the ring. A
-## ring that is nearly edge-on cannot be dragged, so it is not drawn.
 const RING_VIEW_DOT := 0.45
-## The dash and gap span in screen pixels for an idle ring.
 const RING_DASH_SPAN_PX := 20.0
-## The fewest and most dashes in one idle ring.
 const RING_DASH_MIN := 16
 const RING_DASH_MAX := 48
-## The segments in one solid rotate ring.
 const RING_SEGMENTS := 64
-## The segments in one shape wire circle.
 const SHAPE_SEGMENTS := 32
-## The side lines on a cone wire.
 const CONE_SIDES := 8
-## The segments in one rounded cone cap arc.
 const CONE_CAP_SEGMENTS := 4
-## The dash and gap span in screen pixels for the blend halo.
 const BLEND_DASH_SPAN_PX := 14.0
 
 var _box := AABB()
@@ -97,12 +73,6 @@ func _ready() -> void:
 	set_process(false)
 
 
-## Shows the pending shape. [param rotation] turns the shape around [param
-## pivot], which defaults to the box center. [param primitive] is the request
-## dictionary that the wire draws; an empty dictionary draws the box bounds.
-## [param show_handles] draws the rings and answers the handles. [param blend] is
-## the smooth blend reach in cells, drawn as a dashed outer wire. A live drag
-## uses the shape alone.
 func show_box(box: AABB, rotation := Quaternion.IDENTITY, pivot := Vector3.INF, primitive := {}, show_handles := true, blend := 0.0) -> void:
 	_box = box
 	_local_center = box.get_center()
@@ -120,7 +90,6 @@ func show_box(box: AABB, rotation := Quaternion.IDENTITY, pivot := Vector3.INF, 
 	set_process(true)
 
 
-## Hides the shape, its handles, and its rings.
 func hide_box() -> void:
 	_has_box = false
 	visible = false
@@ -133,7 +102,6 @@ func hide_box() -> void:
 		_hot.visible = false
 
 
-## Highlights one handle, or clears it with an empty dictionary.
 func set_hot_handle(hit: Dictionary) -> void:
 	if _hot_handle.get("kind", -1) == hit.get("kind", -1) \
 			and _hot_handle.get("axis", -1) == hit.get("axis", -1) \
@@ -144,7 +112,6 @@ func set_hot_handle(hit: Dictionary) -> void:
 	_rebuild_hot()
 
 
-## Highlights one rotate ring, or hides the highlight with -1.
 func set_ring_highlight(axis: int) -> void:
 	if axis == _hot_ring:
 		return
@@ -153,7 +120,6 @@ func set_ring_highlight(axis: int) -> void:
 	_rebuild_hot()
 
 
-## Shows or hides the rotate rings. A body or handle drag hides them.
 func set_rings_visible(value: bool) -> void:
 	if value == _rings_shown:
 		return
@@ -174,9 +140,6 @@ func _process(_delta: float) -> void:
 		_rebuild_rings()
 
 
-## Updates the screen-space sizes from the current camera scale. Returns true
-## when a size changed, so the wire and the handles rebuild at their new world
-## size.
 func _update_scale() -> bool:
 	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
 	if camera == null:
@@ -209,7 +172,6 @@ func _update_scale() -> bool:
 	return true
 
 
-## Returns the bit mask of rings that the view is close enough to see face-on.
 func _visible_ring_mask() -> int:
 	if not _has_box or not _show_handles or _ring_radius <= 0.0:
 		return 0
@@ -226,8 +188,6 @@ func _visible_ring_mask() -> int:
 	return mask
 
 
-## Returns the rotate rings that the view shows. Each ring carries its plane
-## normal and the two in-plane axes, so a drag can measure an angle around it.
 func rotation_rings() -> Array:
 	var result: Array = []
 	if not _has_box or _ring_radius <= 0.0:
@@ -255,13 +215,10 @@ func rotation_rings() -> Array:
 	return result
 
 
-## Returns the world position of one face handle.
 func handle_position(axis: int, side: int) -> Vector3:
 	return _to_world(_face_center(axis, side))
 
 
-## Returns the six face handles and the eight corner handles. A face handle
-## carries its world-facing axis direction, so a drag follows the rotated box.
 func handles() -> Array:
 	var result: Array = []
 	if not _has_box:
@@ -304,10 +261,6 @@ func _append_line(vertices: PackedVector3Array, a: Vector3, b: Vector3) -> void:
 	vertices.append(_to_world(b))
 
 
-## Builds the wire of the pending shape. A box or an empty primitive draws the
-## box bounds. An ellipsoid draws its three great circles. A cone draws its end
-## circles and side lines. A nonzero blend adds a dashed outer wire at the blend
-## reach.
 func _rebuild_shape() -> void:
 	var vertices := PackedVector3Array()
 	match int(_primitive.get("kind", -1)):
@@ -380,9 +333,6 @@ func _append_cone(vertices: PackedVector3Array) -> void:
 	_append_cone_at(vertices, a, b, r1, r2, roundness, false)
 
 
-## Draws a cone from its two end spheres. [param roundness] moves the side lines
-## from the flat cone to the tangent of the two spheres and adds the rounded end
-## caps. A zero roundness is the flat cone.
 func _append_cone_at(vertices: PackedVector3Array, a: Vector3, b: Vector3, r1: float, r2: float, roundness: float, dashed: bool) -> void:
 	var axis_vector := b - a
 	if axis_vector.length_squared() <= 0.000001:
@@ -427,7 +377,6 @@ func _append_cone_at(vertices: PackedVector3Array, a: Vector3, b: Vector3, r1: f
 				_append_cone_cap(vertices, b, axis, radial, r2, angle, 0.0, roundness)
 
 
-## Draws one meridian of a rounded cone cap from the contact normal to the pole.
 func _append_cone_cap(vertices: PackedVector3Array, center: Vector3, axis: Vector3, radial: Vector3, radius: float, start_angle: float, end_angle: float, roundness: float) -> void:
 	var span := lerpf(start_angle, end_angle, roundness)
 	if absf(span - start_angle) < 0.0001:
@@ -452,8 +401,6 @@ func _append_sphere_at(vertices: PackedVector3Array, center: Vector3, radius: fl
 		_append_ellipse_at(vertices, center, u, v, radius, radius, dashed)
 
 
-## Appends one circle or ellipse. A dashed ellipse is split into short dashes so
-## the blend wire stays lighter than the shape wire.
 func _append_ellipse_at(vertices: PackedVector3Array, center: Vector3, u: Vector3, v: Vector3, radius_u: float, radius_v: float, dashed: bool) -> void:
 	if dashed:
 		var radius := maxf(radius_u, radius_v)
@@ -471,7 +418,6 @@ func _append_ellipse_at(vertices: PackedVector3Array, center: Vector3, u: Vector
 		vertices.append(center + u * (cos(end_angle) * radius_u) + v * (sin(end_angle) * radius_v))
 
 
-## Appends one dashed straight segment with a fixed screen dash length.
 func _append_dashed_segment(vertices: PackedVector3Array, a: Vector3, b: Vector3) -> void:
 	var length := a.distance_to(b)
 	if length <= 0.0:
@@ -486,8 +432,6 @@ func _append_dashed_segment(vertices: PackedVector3Array, a: Vector3, b: Vector3
 		vertices.append(end)
 
 
-## Draws the reach of the smooth blend as a dashed outer wire. The smooth union
-## can reach this far into the existing cells.
 func _append_blend(vertices: PackedVector3Array) -> void:
 	match int(_primitive.get("kind", -1)):
 		PrimitiveField.KIND_ELLIPSOID:

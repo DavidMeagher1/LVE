@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# Editor chrome: the status bar dimensions, the frame thumbnail, the tool menu
-# button, the startup document, the history buttons, and the camera menu. Each
-# case drives one shared editor control, so one process covers them.
 
 var status: EditorStatusBar
 var thumbnail_renders := 0
@@ -45,8 +42,6 @@ func _ready() -> void:
 	test("a busy MCP port keeps the server off", _mcp_bind_failure_run, "mcp_bind_failure")
 
 
-# Each case starts from a clean document and history. The cases share one
-# process, so no case may inherit another case's document or undo stack.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -99,7 +94,6 @@ func after_test() -> void:
 		brush_button.get_popup().hide()
 	if is_instance_valid(camera_menu_btn) and camera_menu_btn.get_popup().visible:
 		camera_menu_btn.get_popup().hide()
-	# The environment row case leaves the viewport unshaded and orthographic.
 	var scene := viewport_scene()
 	if scene != null:
 		scene.get_node("%Shaded").button_pressed = true

@@ -1,29 +1,14 @@
 ﻿extends VoxelTool
 
-## One primitive tool.
-##
-## A drag builds a pending primitive on the pick plane. The third axis starts at
-## the pressed cell and grows toward the camera. Release keeps the primitive
-## pending and shows six face handles. Drag a handle to change the bounds. Drag
-## outside the handles to add another primitive to the same pending request.
-## Enter or the option bar commits all pending primitives in one undo action.
-## Escape or the option bar cancels them.
 
 const PrimitiveField := preload("res://Globals/State/Tools/PrimitiveField.gd")
 const PrimitiveJob := preload("res://Globals/State/Tools/PrimitiveJob.gd")
 const HANDLE_RADIUS_PX := 13.0
-## The rotate ring grab distance in screen pixels.
 const RING_GRAB_PX := 9.0
-## The rotate snap in degrees.
 const ROTATE_SNAP_DEGREES := 2.0
-## The preview work below which the result runs inline. A larger preview uses a
-## worker job.
 const INLINE_PREVIEW_CELLS := 512
-## The quiet frames before a drag preview starts. A drag cancels the running
-## job at once, and the newest request waits this long after the last motion.
 const PREVIEW_SETTLE_FRAMES := 2
 
-## The primitive kind that this tool builds. The three tool scenes set it.
 @export var shape := PrimitiveField.KIND_BOX
 
 var _settings := preload("./PrimitiveSettings.tres")
@@ -63,13 +48,9 @@ var _preview_operation_id := 0
 var _preview_generation := 0
 var _preview_start_frame := -1
 var _preview_settle_frame := -1
-## True while a commit runs. The commit emits a cell change, and that change
-## must not cancel a new pending shape that the user started meanwhile.
 var _committing := false
 var _preview_renderer: VoxelRenderer = null
 var _installed_preview_frame: VoxelFrame = null
-## The world position of the pending box center. A face edit on a rotated shape
-## keeps the shape pivot here, so the opposite face does not move.
 var _pending_center := Vector3.ZERO
 var _pending_rotation := Quaternion.IDENTITY
 var _rotating := false
@@ -163,7 +144,6 @@ func _notification(what: int) -> void:
 	_clear_preview_frame()
 
 
-## Handles one input event.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	if event is InputEventKey:
 		var key := event as InputEventKey
@@ -197,8 +177,6 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 						_begin_ring_drag(ring, ray[0], ray[1])
 					else:
 						_begin_move(ray[0], ray[1])
-				# A pending primitive must be committed or cancelled before a
-				# new drag can start. A press outside the handles moves it.
 				return true
 			if not _start_new_drag(ray[0], ray[1], mb):
 				return false
@@ -283,7 +261,6 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	return false
 
 
-## Updates the idle cursor. A pending shape owns the cursor.
 func update_visual(pick: PickResult) -> void:
 	_last_pick = pick
 	if not _primitives.is_empty() or _dragging_new or _dragging_handle or _moving:
@@ -298,7 +275,6 @@ func update_visual(pick: PickResult) -> void:
 	visible = true
 
 
-## Commits every pending primitive as one undo action.
 func commit_pending() -> void:
 	if _dragging_new:
 		_finish_new_drag()
@@ -310,8 +286,6 @@ func commit_pending() -> void:
 	var plugin := get_node_or_null("/root/PrimitivePlugin")
 	if plugin == null or not plugin.has_method("build_shape"):
 		return
-	# The request keeps the settings from the click. A running edit or job does
-	# not drop the commit: wait for it, then build.
 	while true:
 		while State.active_edit() != null or State.edit_busy():
 			await get_tree().process_frame
@@ -327,8 +301,6 @@ func commit_pending() -> void:
 		await get_tree().process_frame
 
 
-
-## Discards every pending primitive.
 func cancel_pending() -> void:
 	_cancel_preview_job()
 	_primitives.clear()
@@ -357,7 +329,6 @@ func cancel_pending() -> void:
 		$Gizmo.hide_box()
 
 
-## Commits a pending primitive on a tool or shape switch.
 func finish_on_switch() -> void:
 	commit_pending()
 
@@ -398,28 +369,19 @@ func _finish_new_drag() -> void:
 
 
 func _refresh_preview(cancel_running := false, settle := false) -> void:
-	# The handles follow the shape immediately. The result frame follows when the
-	# worker finishes.
 	_refresh_gizmo()
 	visible = _dragging_new or not _primitives.is_empty()
 	var request := _build_request(true)
 	var work := PrimitiveField.estimated_cells(request)
-	# A drag waits for the pointer to settle before it starts a worker job. An
-	# inline preview and a discrete change start at once.
 	_preview_settle_frame = Engine.get_process_frames() + PREVIEW_SETTLE_FRAMES if settle and work > INLINE_PREVIEW_CELLS else -1
 	_preview_request = request
 	_preview_frame = State.get_current_voxel_frame()
 	if _preview_job != null:
-		# A settings, context, or drag change must not wait behind a stale
-		# result. The runner starts the newest request after the cancelled job
-		# joins.
 		if cancel_running:
 			_preview_job.cancel()
 		return
 	if _preview_settle_frame >= 0 and Engine.get_process_frames() < _preview_settle_frame:
 		return
-	# A fast mouse sends several events in one frame. One preview per frame
-	# keeps the newest request without copying the frame for every event.
 	var frame_id := Engine.get_process_frames()
 	if frame_id == _preview_start_frame:
 		return
@@ -451,8 +413,6 @@ func _run_preview() -> void:
 		var job := PrimitiveJob.new()
 		job.request = request
 		job.edit_context = State.drawing_context()
-		# A preview job can outlive the next edit. A frozen copy keeps the worker
-		# from writing the live frame.
 		job.edited_frame = frame.copy_frame()
 		_preview_job = job
 		var generation := _preview_generation
@@ -513,8 +473,6 @@ func _refresh_gizmo() -> void:
 		if _plane == null:
 			$Gizmo.hide_box()
 			return
-		# The wire follows the draft at once. The result frame follows when the
-		# worker finishes, so a slow preview does not hide the shape bounds.
 		var draft := _draft_box()
 		var draft_primitive := _primitive_at(draft, _draft_axis, draft.get_center(), Quaternion.IDENTITY)
 		var draft_blend := 0.0
@@ -537,7 +495,6 @@ func _refresh_gizmo() -> void:
 	$Gizmo.set_rings_visible(not (_dragging_handle or _moving))
 
 
-## Returns the handle that the current drag holds, or an empty dictionary.
 func _dragged_handle() -> Dictionary:
 	if not _dragging_handle:
 		return {}
@@ -563,8 +520,6 @@ func _build_request(include_draft: bool) -> Dictionary:
 		"material": State.current_material.duplicate(),
 		"label": "Build Shape",
 	}
-	# The setting is a fraction of the largest blend that the shape allows. The
-	# job takes cells, so an MCP request and a tool request share one unit.
 	request["smooth"] = float(_settings.smooth) * PrimitiveField.smallest_extent(request) * 0.5
 	return request
 
@@ -573,8 +528,6 @@ func _build_primitive(box: AABB, axis := -1) -> Dictionary:
 	return _primitive_at(box, axis if axis >= 0 else _active_axis, _pending_center, _pending_rotation)
 
 
-## Builds a primitive at an explicit world center and rotation. The draft uses it
-## with the box center and no rotation, before a pending shape exists.
 func _primitive_at(box: AABB, axis: int, center: Vector3, rotation: Quaternion) -> Dictionary:
 	var half := Vector3(absf(box.size.x), absf(box.size.y), absf(box.size.z)) * 0.5
 	match shape:
@@ -625,9 +578,6 @@ func _draft_box() -> AABB:
 		high[second_axis] = center_second + half
 	var depth := minf(high[first_axis] - low[first_axis], high[second_axis] - low[second_axis])
 	depth = maxf(depth, 1.0)
-	# Start at the near face of the pressed cell, not at its center. A four-cell
-	# drag then covers four cell centers, and the first layer is the pressed
-	# cell rather than the cell in front of it.
 	var depth_start := level - 0.5 * _depth_side
 	var depth_end := depth_start + depth * _depth_side
 	low[plane_axis] = minf(depth_start, depth_end)
@@ -650,15 +600,11 @@ func _cone_primitive(box: AABB, axis: int, center: Vector3, rotation: Quaternion
 	var b := local_center
 	a[axis] = box.position[axis] + radius * _settings.roundness * direction
 	b[axis] = box.end[axis] - narrow * _settings.roundness * direction
-	# A zero top radius is a point. Put that point on the center of the last
-	# cell on the end side, or the cell grid can miss the tip and leave a hole.
 	if narrow <= 0.0:
 		if direction > 0.0:
 			b[axis] = floorf(box.end[axis])
 		else:
 			b[axis] = ceilf(box.end[axis])
-	# A cone has no local frame of its own, so the rotation turns its two ends
-	# around the shape center. The field then keeps the plain cone math.
 	a = center + rotation * (a - local_center)
 	b = center + rotation * (b - local_center)
 	return {
@@ -682,8 +628,6 @@ func _handle_at(pos: Vector2) -> Dictionary:
 	var best_distance := HANDLE_RADIUS_PX
 	for value in $Gizmo.handles():
 		var hit: Dictionary = value
-		# A face handle that points at the camera cannot change its own axis.
-		# Skip it, so a click at the shape center can still move the shape.
 		if int(hit.get("kind", 0)) == 0:
 			var direction: Vector3 = hit.get("axis_direction", Vector3.ZERO)
 			if absf(forward.dot(direction)) > 0.9:
@@ -699,7 +643,6 @@ func _handle_at(pos: Vector2) -> Dictionary:
 	return best
 
 
-## Returns the nearest rotate ring under the pointer, or an empty dictionary.
 func _ring_at(pos: Vector2) -> Dictionary:
 	if not has_node("Gizmo"):
 		return {}
@@ -707,8 +650,6 @@ func _ring_at(pos: Vector2) -> Dictionary:
 	if camera == null:
 		return {}
 	if _inside_shape(pos, camera):
-		# A press inside the shape moves it. Rings answer only outside the
-		# silhouette, so the body drag keeps its area.
 		return {}
 	var best := {}
 	var best_distance := RING_GRAB_PX
@@ -733,8 +674,6 @@ func _ring_at(pos: Vector2) -> Dictionary:
 	return best
 
 
-## Returns true when the pointer is inside the screen extent of the pending
-## shape. That area belongs to the body drag.
 func _inside_shape(pos: Vector2, camera: Camera3D) -> bool:
 	var local_center := _pending_box.get_center()
 	if camera.is_position_behind(_pending_center):
@@ -762,7 +701,6 @@ func _segment_distance(point: Vector2, start: Vector2, end: Vector2) -> float:
 	return point.distance_to(start + line * amount)
 
 
-## Starts a ring drag. [param ring] comes from [method _ring_at].
 func _begin_ring_drag(ring: Dictionary, origin: Vector3, direction: Vector3) -> void:
 	var normal: Vector3 = ring["normal"]
 	if absf(direction.dot(normal)) < 0.15:
@@ -789,7 +727,6 @@ func _begin_ring_drag(ring: Dictionary, origin: Vector3, direction: Vector3) -> 
 	$Gizmo.set_ring_highlight(_rotate_axis)
 
 
-## Turns the pending shape by the angle of the pointer around the grabbed ring.
 func _update_ring(origin: Vector3, direction: Vector3) -> void:
 	if not _rotating or _rotate_axis < 0:
 		return
@@ -889,9 +826,6 @@ func _update_handle(origin: Vector3, dir: Vector3) -> void:
 	var value := snappedf(_handle_local(point)[_handle_axis], 0.5)
 	var low := _pending_box.position
 	var high := _pending_box.end
-	# Let a handle cross the opposite bound. The box size can become negative,
-	# which flips a cone end. A box or an ellipsoid is symmetric, so it uses the
-	# absolute extent.
 	if _handle_side < 0:
 		low[_handle_axis] = value
 	else:
@@ -918,17 +852,11 @@ func _update_corner(point: Vector3) -> void:
 	_refresh_preview(true, true)
 
 
-## Keeps the world pivot where it was at the grab. A local box center that moves
-## then shifts the world center by the rotated amount, so the opposite face
-## stays still.
 func _sync_center_from_handle() -> void:
 	var shift := _pending_box.get_center() - _handle_start_box.get_center()
 	_pending_center = _handle_start_center + _handle_rotation * shift
 
 
-## Returns a world point in the box frame of the current handle drag. The frame
-## turns around the world pivot, so a rotated face still moves along its own
-## axis.
 func _handle_local(point: Vector3) -> Vector3:
 	return _handle_start_box.get_center() + _handle_rotation.inverse() * (point - _handle_start_center)
 
@@ -982,7 +910,6 @@ func _on_history_changed() -> void:
 
 
 func _on_settings_changed() -> void:
-	# Every setting can change the shape, including the rotation of an ellipsoid.
 	if _active_index >= 0 and _active_index < _primitives.size():
 		_primitives[_active_index] = _build_primitive(_pending_box, _active_axis)
 	if not _primitives.is_empty() or _dragging_new:
@@ -1002,4 +929,3 @@ func _on_material_changed() -> void:
 func _on_context_aid_changed() -> void:
 	if not _primitives.is_empty() or _dragging_new:
 		_refresh_preview(true)
-

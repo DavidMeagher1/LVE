@@ -1,35 +1,15 @@
 extends "./DeformTool.gd"
 
-## The grab deform tool.
-##
-## A press captures the occupied cells of a ball around the picked cell, for every
-## active symmetry mask, with the falloff weight of each cell. A drag moves every
-## source by its mirrored offset scaled by that weight. The drag recomputes from
-## one baseline snapshot, so the newest pointer position always wins and a return
-## to the origin restores the model exactly.
-##
-## The scene has the shared `Footprint` ring only. Grab draws no bone.
 
 const VoxelFalloff := preload("res://Globals/State/Tools/VoxelFalloff.gd")
 const DeformLimb := preload("./DeformLimb.gd")
 
-## The largest drag distance in voxels.
 const GRAB_MAX_DISTANCE := 48.0
 
 
-## One cancellable grab drag.
-##
-## The job starts from the baseline frame snapshot and moves every captured
-## source by its own scaled offset. It keeps the unrelated geometry and the full
-## materials. The selection limits the capture, not the write, so a moved cell
-## may land outside it. [method DeformJob.compute_changes] is the worker body.
 class GrabJob extends DeformJob:
-	## The planned moves. Each entry holds the source cell, the full material,
-	## the scaled cell offset, and the weight.
 	var moves: Array = []
-	## The captured source cells, keyed by cell position.
 	var sources := {}
-	## The estimated drag work.
 	var work := 0
 
 	func estimated_work() -> int:
@@ -46,9 +26,6 @@ class GrabJob extends DeformJob:
 			if destination == source or not allows(destination) or _blocked(destination):
 				continue
 			planned.append(move)
-		# A higher weight moves first. A tie breaks by the canonical world cell,
-		# so two equal weights never depend on the sort order. The first writer of
-		# an overlapping destination then wins the same way on every run.
 		planned.sort_custom(func(a, b):
 			var weight_a := float(a["weight"])
 			var weight_b := float(b["weight"])
@@ -81,8 +58,6 @@ class GrabJob extends DeformJob:
 				return {}
 		for cell in writes:
 			changes[cell] = writes[cell]
-		# The selection follows the cells that now hold a moved voxel. A source that
-		# the drag could not move stays selected where it is.
 		for cell in writes:
 			destination_selection[cell] = true
 		for move in moves:
@@ -120,7 +95,6 @@ func _capture_gesture(pick: PickResult) -> bool:
 			if not _allows(cell):
 				continue
 			var weight := VoxelFalloff.weight_at(Vector3(offset).length(), float(_stroke_size), _stroke_falloff)
-			# A zero weight cannot move, so the source never joins the drag.
 			if weight <= 0.0:
 				continue
 			_source_cells[cell] = true
@@ -170,8 +144,6 @@ func _make_job(target: Vector3i) -> DeformJob:
 	return job
 
 
-# Clamps the drag to the maximum distance. The clamped cell is the accepted
-# target, so the visible result always matches the next drag position.
 func _clamp_delta(delta: Vector3) -> Vector3i:
 	if delta.length() <= GRAB_MAX_DISTANCE:
 		return Vector3i(delta)
@@ -180,8 +152,6 @@ func _clamp_delta(delta: Vector3) -> Vector3i:
 
 
 func _allows(cell: Vector3i) -> bool:
-	# The capture reads the frozen context, which holds the selection. The write
-	# of the job reads the same context without the selection.
 	return _stroke_context == null or _stroke_context.allows(cell)
 
 
@@ -189,7 +159,6 @@ func _ball_offsets(size: int) -> Array[Vector3i]:
 	if _ball_cache.has(size):
 		return _ball_cache[size]
 	var offsets: Array[Vector3i] = []
-	# The ball reaches the brush radius in every direction.
 	var ball_reach := float(size) * 0.5
 	var reach_squared := ball_reach * ball_reach
 	var reach := ceili(ball_reach)

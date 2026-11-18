@@ -1,11 +1,6 @@
 extends VoxelPlugin
 
-## The symmetry plugin.
-##
-## It adds the symmetry tool and its option bar. The symmetry tool toggles the
-## mirror axes and moves the symmetry origin.
 
-## The stable id of the symmetry toolbar. The persisted active tool uses it.
 const TOOL_ID := "symmetry"
 
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
@@ -26,7 +21,6 @@ func _notification(what: int) -> void:
 				node.free()
 
 
-## Activates the symmetry tool and shows its option bar.
 func activate_tool() -> void:
 	if not _toolbar.button_pressed:
 		_toolbar.button_pressed = true
@@ -35,9 +29,6 @@ func activate_tool() -> void:
 	add_option_bar_item(_options)
 
 
-## Deactivates the symmetry tool and hides its option bar.
 func _end_deactivation() -> void:
 	_tool.active = false
 	remove_option_bar_item(_options)
-
-

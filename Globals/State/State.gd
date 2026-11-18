@@ -1,140 +1,69 @@
 extends Node
 
-## The application singleton for editor state.
-##
-## State owns the current document, the current frame, the selection, the undo
-## history, and the one open edit. It delegates the operation list to
-## [OperationRegistry] and the user settings to [SettingsStore]. It is
-## registered as the `State` autoload.
-##
-## Use the signals to observe changes. Start model changes through the edit and
-## history methods, so an undo restores them.
 
-## Emitted when the document is replaced.
 signal document_changed()
-## Emitted before the active document is replaced. Observers save their view
-## state for the document that is still active.
 signal document_deactivating()
-## Emitted when cells in a frame change. [param frame] is the frame index.
-## [param affected] lists the changed cells.
 signal cells_changed(frame: int, affected: Array[Vector3i])
-## Emitted when a document is saved to a path. The unsaved mark is already clear.
 signal document_saved(document: VoxelDocument)
-## Emitted before a document is encoded for a save or an autosave copy. Observers
-## capture the active editor workspace into the active document.
 signal workspace_capture_requested()
-## Emitted when chunks in a frame need a surface rebuild. [param frame] is the
-## frame index. [param affected] lists one cell per changed chunk.
 signal chunks_changed(frame: int, affected: Array[Vector3i])
-## Emitted when the frame list or a tag range changes.
 signal frames_changed()
-## Emitted when a frame property changes.
 signal frame_changed()
-## Emitted when playback starts or stops. [param toggled_on] is the new state.
 signal is_playing_toggled(toggled_on:bool)
-## Emitted when the current color changes.
 signal color_changed(color: Color)
-## Emitted when the current material changes.
 signal material_changed()
-## Emitted when the document palette changes.
 signal palette_changed()
-## Emitted when the default palette changes.
 signal default_palette_changed()
-## Emitted when the cell selection changes.
 signal selection_changed()
-## Emitted when the floor axis or the floor index changes.
 signal floor_plane_changed()
-## Emitted when the slice option changes.
 signal slice_changed()
-## Emitted when the centered document size changes.
 signal size_changed()
-## Emitted when the symmetry axes or the symmetry origin change.
 signal symmetry_changed()
-## Emitted when a tag property changes.
 signal tag_changed()
-## Emitted when an operation starts, updates, or finishes.
 signal activity_changed()
-## Emitted before the edit context changes. An open edit or drag must cancel its
-## work on this signal.
 signal edit_context_changing()
-## Emitted when a model setting changes.
 signal model_settings_changed()
-## Emitted after an undo or redo, and after each history commit.
 signal history_changed()
-## Emitted when an owned edit opens or closes. A history change is refused while
-## an edit is open, so observers use this signal to refresh the history controls.
 signal edit_state_changed()
-## Emitted when a tab is added or removed.
 signal tabs_changed()
-## Emitted when the active tab changes.
 signal active_tab_changed()
 
-## The tracked operation list. See [OperationRegistry].
 const OperationRegistry := preload("res://Globals/State/OperationRegistry.gd")
-## The user settings file. See [SettingsStore].
 const SettingsStore := preload("res://Globals/State/SettingsStore.gd")
-## The open documents and the playback state. See [DocumentSession].
 const DocumentSession := preload("res://Globals/State/DocumentSession.gd")
-## The cell selection of the active document. See [SelectionState].
 const SelectionState := preload("res://Globals/State/SelectionState.gd")
-## The current material and the document palette. See [MaterialState].
 const MaterialState := preload("res://Globals/State/MaterialState.gd")
-## The one open edit. See [EditSession].
 const EditSession := preload("res://Globals/State/EditSession.gd")
-## The floor, the slice, and the symmetry. See [EditingAids].
 const EditingAids := preload("res://Globals/State/EditingAids.gd")
-## The tracked operation type. It belongs to [OperationRegistry].
 const Operation := OperationRegistry.Operation
-## The image file extensions that the importer supports. It belongs to
-## [SettingsStore].
 const IMAGE_EXTENSIONS := SettingsStore.IMAGE_EXTENSIONS
 
-## The main-thread work slice in microseconds for one pumped frame.
 const WORK_SLICE_US := 3000
-## The user path of the saved default palette. It belongs to [MaterialState].
 const DEFAULT_PALETTE_PATH := MaterialState.DEFAULT_PALETTE_PATH
-## The default symmetry origin, at the corner between eight cells. It belongs to
-## [EditingAids].
 const DEFAULT_SYMMETRY_ORIGIN := EditingAids.DEFAULT_SYMMETRY_ORIGIN
-## The largest slice layer count on each side. It belongs to [EditingAids].
 const MAX_SLICE_LAYERS := EditingAids.MAX_SLICE_LAYERS
 
-## The tracked operations for the status display and the edit lock.
 var operations := OperationRegistry.new()
-## The user settings file and the remembered session.
 var settings := SettingsStore.new()
-## The settings file. Tests set a temporary path.
 var settings_path: String:
 	get:
 		return settings.settings_path
 	set(value):
 		settings.settings_path = value
-# The host of the editor plugins. It is created on first use.
 var _plugin_host: PluginHost
 
 var _erase_job: EraseJob
 var _erase_operation_id := 0
 var _erase_jobs: Array[EraseJob] = []
 
-## One erase edit job that clears every selected cell.
-##
-## The job shares one transparent material across the selection. State runs it
-## on the worker pool when the selection is large.
 class EraseJob extends VoxelFrame.EditJob:
-	## The edited frame copy. The result replaces the live frame.
 	var edited_frame: VoxelFrame
-	## The selected cells as a dictionary keyed by cell position.
 	var selection_mask := {}
-	## The chunk locations that the erase changed.
 	var changed_chunks: Array[Vector3i] = []
 
-	## Runs the erase on the calling thread. It checks the cancel flag at each
-	## checkpoint.
 	func run() -> void:
 		stage("Preparing erase", selection_mask.size())
 		var changes := {}
-		# One material serves every cell. The write path only reads it, and the old
-		# loop allocated a nine-float copy for each selected cell.
 		var erased_material := VoxelFrame.material(Color.TRANSPARENT)
 		var completed := 0
 		for cell_position in selection_mask:
@@ -143,86 +72,67 @@ class EraseJob extends VoxelFrame.EditJob:
 			if completed % 4096 == 0 and not checkpoint(completed):
 				return
 		stage("Erasing selection", changes.size())
-		# The declared material lets a full-chunk batch skip the uniformity walk.
 		changed_chunks = edited_frame.set_cells(changes, self, erased_material)
 
 
-## The open documents and the playback state.
 var session := DocumentSession.new()
-## The cell selection of the active document.
 var selection_state := SelectionState.new()
-## The current material and the document palette.
-var material := MaterialState.new()
-## The one open edit and its history steps.
+var material_editing := MaterialState.new()
 var edits := EditSession.new()
-## The floor, the slice, and the symmetry aids.
 var aids := EditingAids.new()
-## The animation playback state.
 var playback: AnimationPlayback:
 	get:
 		return session.playback
-## The open documents, one per tab.
 var tabs: Array[VoxelDocument]:
 	get:
 		return session.tabs
-## The index of the active tab.
 var active_tab: int:
 	get:
 		return session.active_tab
 	set(value):
 		session.active_tab = value
-## The document of the active tab. A write replaces that tab's document.
 var document: VoxelDocument:
 	get:
 		return session.document
 	set(value):
 		set_document(value)
 
-## The index of the current frame.
 var current_frame: int:
 	get:
 		return playback.current_frame
 	set(value):
 		playback.current_frame = value
 
-## Whether animation playback runs.
 var is_playing: bool:
 	get:
 		return playback.is_playing
 	set(value):
 		playback.is_playing = value
 
-## The index of the active tag, or -1 when no tag is active.
 var active_tag: int:
 	get:
 		return playback.active_tag
 	set(value):
 		playback.active_tag = value
 
-## The world axis of the floor plane. Axis 0 is X, axis 1 is Y, and axis 2 is Z.
 var floor_axis: Vector3.Axis:
 	get:
 		return aids.floor_axis
 	set(value):
 		aids.floor_axis = value
 
-## The cell index of the floor plane along [member floor_axis].
 var floor_index: int:
 	get:
 		return aids.floor_index
 	set(value):
 		aids.floor_index = value
 
-## Whether the slice limits every edit. It is a view of [member slice_layers],
-## so 0 layers means every layer is writable.
 var slice_enabled: bool:
 	get:
 		return aids.slice_enabled
 	set(value):
 		aids.slice_enabled = value
 
-## The number of writable and visible layers on each side of the floor plane. 0
-## shows every layer. 1 keeps one layer on each side of the plane.
 var slice_layers: int:
 	get:
 		return aids.slice_layers
@@ -230,34 +140,26 @@ var slice_layers: int:
 		aids.slice_layers = value
 
 
-## Returns the first layer of the slice.
 func slice_first() -> int:
 	return aids.slice_first()
 
 
-## Returns the last layer of the slice.
 func slice_last() -> int:
 	return aids.slice_last()
 
 
-## Returns the number of layers in the slice. The floor plane splits the slab
-## evenly, so the floor layer is the first layer above it.
 func slice_count() -> int:
 	return aids.slice_count()
 
 
-## Returns the world level of the slice plane.
 func slice_level() -> float:
 	return aids.slice_level()
 
 
-## Returns [code]true[/code] when the document limits at least one axis.
 func has_size() -> bool:
 	return document.has_size()
 
 
-## Sets the centered document size and records one history action. Zero on an
-## axis leaves that axis infinite.
 func set_size(value: Vector3i, record_history := true) -> void:
 	if edit_busy():
 		return
@@ -274,9 +176,6 @@ func set_size(value: Vector3i, record_history := true) -> void:
 	_commit_history(false)
 
 
-## Applies the smooth normals option and the document size. A live preview
-## passes [param record_history] as [code]false[/code] and commits once with
-## [method commit_document_properties].
 func set_document_properties(smooth_normals: bool, size: Vector3i, record_history := true) -> void:
 	if edit_busy():
 		return
@@ -293,8 +192,6 @@ func set_document_properties(smooth_normals: bool, size: Vector3i, record_histor
 	_apply_document_properties(smooth_normals, size)
 
 
-## Records one history action for the difference from [param before_smooth]
-## and [param before_size] to the current document settings.
 func commit_document_properties(before_smooth: bool, before_size: Vector3i) -> void:
 	var after_smooth := document.smooth_normals
 	var after_size := document.size
@@ -306,8 +203,6 @@ func commit_document_properties(before_smooth: bool, before_size: Vector3i) -> v
 	_commit_history(false)
 
 
-## Records one history action for the normals mode, the size, and the AO
-## strength. Use it when one dialog edits both settings.
 func commit_document_settings(before_smooth: bool, before_size: Vector3i, before_ao: float) -> void:
 	var after_smooth := document.smooth_normals
 	var after_size := document.size
@@ -349,54 +244,44 @@ static func _clamp_size(value: Vector3i) -> Vector3i:
 		clampi(value.z, 0, VoxelDocument.MAX_DOCUMENT_SIZE),
 	)
 
-## The symmetry axes as a bit mask. Bit 0 is X, bit 1 is Y, and bit 2 is Z.
 var symmetry_axes: int:
 	get:
 		return aids.symmetry_axes
 	set(value):
 		aids.symmetry_axes = value
 
-## The symmetry origin in cell units. It snaps to half units.
 var symmetry_origin: Vector3:
 	get:
 		return aids.symmetry_origin
 	set(value):
 		aids.symmetry_origin = value
 
-## The palette that the New Document action applies.
 var default_palette: Array[PackedFloat32Array]:
 	get:
-		return material.default_palette
+		return material_editing.default_palette
 	set(value):
-		material.default_palette = value
-## The current material as nine floats. A read returns a copy. A write records a
-## history action.
+		material_editing.default_palette = value
 var current_material: PackedFloat32Array:
 	get:
-		return material.current_material
+		return material_editing.current_material
 	set(value):
-		material.current_material = value
-## The palette index that matches the current material, or -1 when none matches.
+		material_editing.current_material = value
 var current_palette_index: int:
 	get:
-		return material.current_palette_index
+		return material_editing.current_palette_index
 	set(value):
-		material.current_palette_index = value
-## The color of the current material. A write keeps the other material values.
+		material_editing.current_palette_index = value
 var current_color: Color:
 	get:
-		return material.current_color
+		return material_editing.current_color
 	set(value):
-		material.current_color = value
-## The cell selection of the active document.
+		material_editing.current_color = value
 var selection: VoxelSelection:
 	get:
 		return selection_state.selection
-## The undo and redo history of the active document.
 var undo_redo: UndoRedo:
 	get:
 		return session.document.edit_history
-# The handle of the running erase selection coroutine.
 var _erase_edit: VoxelEditTransaction
 
 
@@ -419,7 +304,6 @@ func _init() -> void:
 	session.tabs_changed.connect(tabs_changed.emit)
 	session.active_tab_changed.connect(active_tab_changed.emit)
 	session.session_remember_requested.connect(_remember_app_session)
-	# Emit after the document signal, so the listeners see the replacement first.
 	session.document_changed.connect(_emit_document_view_signals)
 	session.playback.frame_changing.connect(edit_context_changing.emit)
 	selection_state.session = session
@@ -429,16 +313,16 @@ func _init() -> void:
 	aids.floor_plane_changed.connect(floor_plane_changed.emit)
 	aids.slice_changed.connect(slice_changed.emit)
 	aids.symmetry_changed.connect(symmetry_changed.emit)
-	material.session = session
-	material.settings = settings
-	material.operations = operations
-	material.commit_history = _commit_history
-	material.history_apply = _apply_history_material
-	material.history_restore_palette = _restore_history_palette
-	material.color_changed.connect(color_changed.emit)
-	material.material_changed.connect(material_changed.emit)
-	material.palette_changed.connect(palette_changed.emit)
-	material.default_palette_changed.connect(default_palette_changed.emit)
+	material_editing.session = session
+	material_editing.settings = settings
+	material_editing.operations = operations
+	material_editing.commit_history = _commit_history
+	material_editing.history_apply = _apply_history_material
+	material_editing.history_restore_palette = _restore_history_palette
+	material_editing.color_changed.connect(color_changed.emit)
+	material_editing.material_changed.connect(material_changed.emit)
+	material_editing.palette_changed.connect(palette_changed.emit)
+	material_editing.default_palette_changed.connect(default_palette_changed.emit)
 	edits.session = session
 	edits.selection_state = selection_state
 	edits.aids = aids
@@ -452,8 +336,8 @@ func _ready() -> void:
 	settings.tree = get_tree()
 	migrate_settings()
 	load_default_palette()
-	document.palette = material.copy_default_palette()
-	material.select_palette_entry(0)
+	document.palette = material_editing.copy_default_palette()
+	material_editing.select_palette_entry(0)
 	edit_context_changing.connect(_interrupt_erase)
 	cells_changed.connect(func(_frame, _affected): stop())
 	chunks_changed.connect(func(_frame, _affected): stop())
@@ -465,27 +349,19 @@ func _ready() -> void:
 	palette_changed.connect(_mark_dirty)
 
 
-## Sets the main-scene nodes that the editor plugins read. Main calls this before
-## it resets the plugins.
 func set_context(value: EditorContext) -> void:
 	_get_plugin_host().context = value
 
 
-## Returns the main-scene nodes that the editor plugins read.
 var context: EditorContext:
 	get:
 		return _get_plugin_host().context
 
 
-## Removes every editor plugin. A test scene calls this before it replaces the
-## editor, so a plugin cannot outlive the controls it reads.
 func clear_plugins() -> void:
 	_get_plugin_host().clear_plugins()
 
 
-## Rebuilds the editor plugins under the current main scene. Main calls this
-## when it becomes ready. A test scene calls it once per scene so the plugins
-## bind to that scene's Main node instead of a previous scene.
 func reset_plugins() -> void:
 	_get_plugin_host().reset_plugins()
 
@@ -498,104 +374,75 @@ func _get_plugin_host() -> PluginHost:
 	return _plugin_host
 
 
-## Returns a new empty document with the default palette. Use it for New.
 func new_document() -> VoxelDocument:
 	return session.new_document()
 
 
-## Replaces the active tab's document. A value that is not a [VoxelDocument]
-## creates a new empty document.
 func set_document(value: VoxelDocument) -> void:
 	session.set_document(value)
 
 
-## Adds one document as a tab and returns its index. A document that is already
-## open returns its index.
 func add_tab(value: VoxelDocument) -> int:
 	return session.add_tab(value)
 
 
-## Adds one document and makes it the active tab.
 func open_tab(value: VoxelDocument) -> int:
 	return session.open_tab(value)
 
 
-## Captures the active editor workspace into [param document] before it is
-## encoded. Only the active document has live editor state. An inactive document
-## keeps the state that its deactivation captured.
 func capture_workspace(document: VoxelDocument) -> void:
 	session.capture_workspace(document)
 
 
-## Records a saved document path in its tab and the session. It clears the
-## unsaved mark and refreshes the tab strip.
 func record_saved(document: VoxelDocument, path: String) -> void:
 	session.record_saved(document, path)
 
 
-## Records an opened document path in its tab and the session.
 func record_opened(document: VoxelDocument, path: String) -> void:
 	session.record_opened(document, path)
 
 
-## Replaces every tab with [param documents] and activates [param index]. It
-## restores a session in one step, without an empty startup tab.
 func set_tabs(documents: Array[VoxelDocument], index: int = 0) -> void:
 	session.set_tabs(documents, index)
 
 
-## Makes one tab active. Returns [code]false[/code] while an edit is open.
 func activate_tab(index: int) -> bool:
 	return session.activate_tab(index)
 
 
-## Removes one tab. Returns [code]false[/code] while an edit is open.
 func close_tab(index: int) -> bool:
 	return session.close_tab(index)
 
 
-## Returns true while an adoption replaces the active document. Adoption emits
-## the content signals too, so a listener must not treat them as edits.
 func is_adopting() -> bool:
 	return session.is_adopting()
 
 
-# Returns the palette copy for a new document. The session creates documents on
-# its own, so it asks State for the current default.
 func _new_document_palette() -> Array[PackedFloat32Array]:
-	return material.copy_default_palette()
+	return material_editing.copy_default_palette()
 
 
-# Returns true while an open edit or a foreground operation blocks a tab switch.
 func _is_tab_switch_blocked() -> bool:
 	return edit_busy() or edits.active_edit() != null
 
 
-# Runs after the deactivation signal and before the active document changes.
 func _before_document_replaced() -> void:
-	material.reset_edit()
+	material_editing.reset_edit()
 	edit_context_changing.emit()
 	operations.clear()
-	# The owners cancel or finish their own edit on the signal above. An owner that
-	# is not connected leaves its transaction open, so close it here. The captured
-	# frame belongs to the previous document and must not touch the replacement.
 	edits._abandon_active_edit()
 
 
-# Runs after the active document changes and before the tag and playback setup.
 func _after_document_installed() -> void:
-	material.apply_current_material()
+	material_editing.apply_current_material()
 
 
-# Runs after the adopted document signals. The listeners must use the new
-# document, not the captured frame that the abandon released.
 func _after_document_adopted() -> void:
 	selection_state.notify_changed()
 	history_changed.emit()
 	edit_state_changed.emit()
 
 
-# Emits the State view signals that follow document_changed during an adoption.
 func _emit_document_view_signals() -> void:
 	size_changed.emit()
 	palette_changed.emit()
@@ -606,7 +453,7 @@ func _emit_cells_changed(frame_index: int, affected: Array[Vector3i]) -> void:
 
 
 func _on_document_created() -> void:
-	material.select_palette_entry(0)
+	material_editing.select_palette_entry(0)
 
 
 func _remember_app_session() -> void:
@@ -614,8 +461,6 @@ func _remember_app_session() -> void:
 		remember_session()
 
 
-# Marks the active document dirty after an edit. Adoption emits some of the same
-# signals, so it is guarded.
 func _mark_dirty() -> void:
 	if session.is_adopting() or session.tabs.is_empty() or session.document.edit_dirty:
 		return
@@ -623,8 +468,6 @@ func _mark_dirty() -> void:
 	tabs_changed.emit()
 
 
-## Marks the active document dirty. A caller uses it when it installs content
-## that no history action produced, such as an imported image.
 func mark_dirty() -> void:
 	_mark_dirty()
 
@@ -634,26 +477,18 @@ func _commit_history(execute: bool = true) -> void:
 	history_changed.emit()
 
 
-# Applies one material value for a history step. The history binds State, not the
-# model, so the document action cannot hold the model.
 func _apply_history_material(values: PackedFloat32Array) -> void:
-	material.apply_history_material(values)
+	material_editing.apply_history_material(values)
 
 
-# Restores one palette snapshot for a history step.
 func _restore_history_palette(snapshot: Dictionary) -> void:
-	material.restore_history_palette(snapshot)
+	material_editing.restore_history_palette(snapshot)
 
 
-# Restores one chunk snapshot for a history step.
 func _restore_history_chunks(edited_frame: VoxelFrame, chunk_snapshot: Dictionary, selection_snapshot: Dictionary, selection_snapshot_masks: Dictionary = {}) -> void:
 	edits.restore_history_chunks(edited_frame, chunk_snapshot, selection_snapshot, selection_snapshot_masks)
 
 
-## Undoes the last history action. Returns [code]true[/code] when an action was
-## undone. It returns [code]false[/code] while an edit is open: the edit captured
-## a start snapshot that a history change would invalidate, so the edit must close
-## first.
 func undo() -> bool:
 	if edits.active_edit() != null:
 		return false
@@ -663,9 +498,6 @@ func undo() -> bool:
 	return undone
 
 
-## Redoes the last undone action. Returns [code]true[/code] when an action was
-## redone. It returns [code]false[/code] while an edit is open, for the same
-## reason as [method undo].
 func redo() -> bool:
 	if edits.active_edit() != null:
 		return false
@@ -675,17 +507,13 @@ func redo() -> bool:
 	return redone
 
 
-## Adds one plugin under the scene root.
 func add_plugin(plugin: VoxelPlugin) -> void:
 	_get_plugin_host().add_plugin(plugin)
-	
-## Removes one plugin and frees it.
+
 func remove_plugin(plugin: VoxelPlugin) -> void:
 	_get_plugin_host().remove_plugin(plugin)
 
 
-## Paints one cell with the current edit context. It expands the cell through
-## symmetry and maps it through the selection and the slice.
 func paint(position: Vector3i, cell_material: PackedFloat32Array) -> void:
 	if symmetry_axes == 0 and not slice_enabled and not document.has_size() and edits.active_edit() == null:
 		document.paint(current_frame, position, cell_material)
@@ -696,163 +524,106 @@ func paint(position: Vector3i, cell_material: PackedFloat32Array) -> void:
 	document._bounds_dirty = true
 
 
-## Returns the edit context for the current drawing. An open edit supplies its
-## frozen context, so a later change cannot alter the open stroke.
 func drawing_context() -> VoxelFrame.EditContext:
 	return aids.drawing_context(edits.frozen_context())
 
 
-## Returns the transform that mirrors a point for one symmetry mask.
 func symmetry_transform(mask: int, origin: Vector3) -> Transform3D:
 	return aids.symmetry_transform(mask, origin)
 
 
-## Returns an edit context that carries the symmetry and the slice, but not the
-## selection filter.
 func selection_context() -> VoxelFrame.EditContext:
 	return selection_state.selection_context(drawing_context())
 
 
-## Returns the region after the symmetry expansion. The selection filter is not
-## applied.
 func selection_region(region: VoxelSelection) -> VoxelSelection:
 	return selection_state.selection_region(region, selection_context(), get_current_voxel_frame())
 
 
-## Starts one tracked operation and returns its id. [param label] is the artist
-## action. A [param total] below one means an unknown total. A [param
-## cancel_callback] makes the operation cancellable.
 func begin_operation(label: String, total: int = -1, foreground: bool = false, operation_owner: Node = null, cancel_callback: Callable = Callable()) -> int:
 	return operations.begin_operation(label, total, foreground, operation_owner, cancel_callback)
 
 
-## Requests the cancellation of one operation. Returns [code]true[/code] when
-## the request was accepted. A second request returns [code]false[/code]. The
-## owner finishes the operation.
 func cancel_operation(operation_id: int) -> bool:
 	return operations.cancel_operation(operation_id)
 
 
-## Cancels the cancellable foreground operation that the status bar shows.
-## Returns [code]true[/code] when the request was accepted or already pending.
 func cancel_activity() -> bool:
 	return operations.cancel_activity()
 
 
-## Updates the measured progress of one operation. [param completed] and [param
-## total] drive the percentage. [param phase] and [param detail] are diagnostic
-## only.
 func update_operation(operation_id: int, completed: int, total: int = -1, phase: String = "", detail: String = "") -> void:
 	operations.update_operation(operation_id, completed, total, phase, detail)
 
 
-## Finishes one operation and removes it from the list. Does nothing when the id
-## is unknown.
 func finish_operation(operation_id: int) -> void:
 	operations.finish_operation(operation_id)
 
 
-## Runs one edit job on the worker pool and pumps its progress. The worker is
-## always joined before this returns. [param on_frame] runs once per pumped
-## frame before the progress update.
 func run_edit_job(job: VoxelFrame.EditJob, operation_id: int, task_name: String, on_frame: Callable = Callable()) -> void:
 	await operations.run_edit_job(job, operation_id, task_name, on_frame)
 
 
-## Returns [code]true[/code] when the operation id is tracked.
 func has_operation(operation_id: int) -> bool:
 	return operations.has_operation(operation_id)
 
 
-## Returns the operation for the status display. A foreground operation wins. A
-## background operation is the fallback.
 func get_activity() -> Operation:
 	return operations.get_activity()
 
 
-## Returns the elapsed time of the current activity in milliseconds. Returns
-## zero when no operation runs.
 func activity_elapsed_ms() -> int:
 	return operations.activity_elapsed_ms()
 
 
-## Returns [code]true[/code] when a foreground operation blocks an edit. An
-## operation that [param requester] owns does not block it.
 func edit_busy(requester: Node = null) -> bool:
 	return operations.edit_busy(requester)
 
 
-# Begin one owned edit on the current frame or one named frame. The transaction
-# captures the frame, the selection, and the frozen edit context. Returns null
-# when an edit is already active or the frame is missing, so a caller must check
-# before it mutates the model. The caller holds the returned handle for the edit.
-## Begins one owned edit on the current frame, or on [param frame_index] when it
-## is not negative. Returns null while another edit is active or the frame is
-## missing. The caller must check the result before it mutates the model.
 func begin_edit(frame_index: int = -1) -> VoxelEditTransaction:
 	return edits.begin_edit(frame_index)
 
 
-## Returns the open edit, or null when no edit is active.
 func active_edit() -> VoxelEditTransaction:
 	return edits.active_edit()
 
 
-## Closes one owned edit and records its change as one history action. A stale
-## handle that no longer owns the active edit does nothing. The default action
-## is [code]Stroke[/code].
 func finish_edit(tx: VoxelEditTransaction, action: String = "Stroke") -> void:
 	edits.finish_edit(tx, action)
 
 
-## Closes one owned edit and returns its change without a history action. The
-## caller commits one or more changes later with [method commit_changes]. Returns
-## null when the handle is stale or the edit changed nothing.
 func finish_edit_collect(tx: VoxelEditTransaction) -> VoxelEditTransaction.Change:
 	return edits.finish_edit_collect(tx)
 
 
-## Records one history action from changes that the caller already applied.
-## The do methods run in change order and the undo methods run in reverse order,
-## so repeated edits to one frame restore the earliest snapshot last.
 func commit_changes(changes: Array, action: String = "Write Cells") -> void:
 	edits.commit_changes(changes, action)
 
 
-## Restores changes that the caller applied but did not commit. It records no
-## history action.
 func cancel_changes(changes: Array) -> void:
 	edits.cancel_changes(changes)
 
 
-## Rolls one owned edit back to its start snapshots. A stale handle does
-## nothing.
 func cancel_edit(tx: VoxelEditTransaction) -> void:
 	edits.cancel_edit(tx)
 
 
-## Returns [code]true[/code] when the current frame holds the cell.
 func has_cell(position: Vector3i) -> bool:
 	return document.has_cell(current_frame, position)
 
-## Starts playback of the active tag.
 func play():
 	is_playing = true
 
-## Selects one tag and starts playback.
 func play_tag(i: int) -> void:
 	active_tag = i
 	is_playing = true
 
-## Stops playback.
 func stop():
 	is_playing = false
 
-## Selects one tag without playback.
 func select_tag(i: int) -> void:
 	active_tag = i
 
-## Clears the active tag.
 func deselect_tag() -> void:
 	active_tag = -1
 
@@ -861,159 +632,118 @@ func _process(delta: float) -> void:
 	operations.update()
 	session.update(delta)
 
-## Sets the RGB and alpha of the current material and records a history action.
 func set_color(color: Color) -> void:
-	material.set_color(color)
+	material_editing.set_color(color)
 
 
-## Sets the current material and records a history action. An invalid material
-## is ignored.
 func set_material(value: PackedFloat32Array) -> void:
-	material.set_material(value)
+	material_editing.set_material(value)
 
 
-## Selects a palette entry as the current material. An out-of-range index is
-## ignored.
 func select_palette_entry(index: int) -> void:
-	material.select_palette_entry(index)
+	material_editing.select_palette_entry(index)
 
 
-## Applies a saved workspace material without a history action. An invalid
-## material is ignored.
 func apply_workspace_material(value: PackedFloat32Array) -> void:
-	material.apply_workspace_material(value)
+	material_editing.apply_workspace_material(value)
 
 
-## Adds the current material to the palette. An existing equal entry is selected
-## instead.
 func add_material() -> void:
-	material.add_material()
+	material_editing.add_material()
 
 
-## Returns the color of one palette entry.
 func get_color(index: int) -> Color:
 	return document.get_color(index)
 
 
-## Returns the color of one cell in the current frame.
 func get_color_at(position: Vector3i) -> Color:
 	return document.get_color_at(current_frame, position)
 
 
-## Removes the selected palette entry.
 func remove_palette_entry() -> void:
-	material.remove_palette_entry()
+	material_editing.remove_palette_entry()
 
 
-## Returns a copy of the document palette.
 func get_palette() -> Array[PackedFloat32Array]:
-	return material.get_palette()
+	return material_editing.get_palette()
 
 
-## Replaces the document palette and records a history action. An invalid
-## palette is ignored. The default action name is [code]Replace Palette[/code].
 func set_palette(materials: Array[PackedFloat32Array], action_name: String = "Replace Palette") -> void:
-	material.set_palette(materials, action_name)
+	material_editing.set_palette(materials, action_name)
 
 
-## Moves one palette entry to a new index and records a history action.
 func move_palette_entry(from_index: int, to_index: int) -> void:
-	material.move_palette_entry(from_index, to_index)
+	material_editing.move_palette_entry(from_index, to_index)
 
 
-## Applies one material edit. A control gesture records one history step for all
-## its changes.
 func edit_material(value: PackedFloat32Array) -> void:
-	material.edit_material(value)
+	material_editing.edit_material(value)
 
 
-## Starts one material edit gesture. The gesture records one history action.
 func begin_material_edit() -> void:
-	material.begin_material_edit()
+	material_editing.begin_material_edit()
 
 
-## Ends the material edit gesture and records its history action.
 func end_material_edit() -> void:
-	material.end_material_edit()
+	material_editing.end_material_edit()
 
 
-## Cancels the material edit gesture and restores the start material.
 func cancel_material_edit() -> void:
-	material.cancel_material_edit()
+	material_editing.cancel_material_edit()
 
 
-## Returns the built-in default palette.
 func get_builtin_palette() -> Array[PackedFloat32Array]:
-	return material.get_builtin_palette()
+	return material_editing.get_builtin_palette()
 
 
-## Loads the default palette from a config file. A missing or invalid file keeps
-## the built-in palette. The default path is [constant DEFAULT_PALETTE_PATH].
 func load_default_palette(path: String = DEFAULT_PALETTE_PATH) -> void:
-	material.load_default_palette(path)
+	material_editing.load_default_palette(path)
 
 
-## Saves the current palette as the default. Returns the error code.
 func save_default_palette(path: String = DEFAULT_PALETTE_PATH) -> Error:
-	return material.save_default_palette(path)
+	return material_editing.save_default_palette(path)
 
 
-## Deletes the saved default palette and restores the built-in palette. Returns
-## the error code.
 func reset_default_palette(path: String = DEFAULT_PALETTE_PATH) -> Error:
-	return material.reset_default_palette(path)
+	return material_editing.reset_default_palette(path)
 
 
-## Moves every missing key from the legacy files into the target file. The
-## target wins on a conflict. It removes only the legacy files that it read.
 func migrate_settings(target_path: String = "", legacy_paths: PackedStringArray = PackedStringArray()) -> Error:
 	return settings.migrate_settings(target_path, legacy_paths)
 
 
-## Stores the last document path in the settings file.
 func remember_document(path: String, config_path: String = "") -> void:
 	settings.remember_document(path, config_path)
 
 
-## Removes the last document path from the settings file.
 func forget_document(config_path: String = "") -> void:
 	settings.forget_document(config_path)
 
 
-## Returns the stored last document path, or an empty string.
 func last_document_path(config_path: String = "") -> String:
 	return settings.last_document_path(config_path)
 
 
-## Returns the saved tab paths, or an empty array.
 func last_tabs(config_path: String = "") -> PackedStringArray:
 	return settings.last_tabs(config_path)
 
 
-## Returns the saved active tab index, or zero.
 func last_tab_index(config_path: String = "") -> int:
 	return settings.last_tab_index(config_path)
 
 
-## Writes the open documents that have a path, and the active index. A tab that
-## was never saved has no path, so a restart cannot reopen it.
 func remember_session(config_path: String = "") -> void:
 	settings.remember_session(tabs, active_tab, config_path)
 
 
-## Returns [code]true[/code] when the current scene is the application Main
-## scene. A test scene has no current scene, so a null match is not enough.
 func is_app_session() -> bool:
 	return settings.is_app_session()
 
 
-## Returns the file dialog filter for the supported image formats.
 func get_image_file_filter() -> String:
 	return settings.get_image_file_filter()
 
 
-## Loads an image file into [param image]. It handles DDS and KTX buffers and
-## decompresses the result.
 func load_image(path: String, image: Image) -> Error:
 	var extension := path.get_extension().to_lower()
 	var error: Error = OK
@@ -1032,21 +762,16 @@ func load_image(path: String, image: Image) -> Error:
 		return image.decompress()
 	return OK
 
-## Returns [code]true[/code] when the cell is editable. An empty selection
-## allows every cell.
 func can_edit(cell: Vector3i) -> bool:
 	if selection.is_empty():
 		return true
 	return selection.contains(cell)
 
 
-## Clears the cell selection.
 func clear_selection() -> void:
 	selection_state.clear_selection()
 
 
-## Erases every selected cell as one history action. A selection above 4096
-## cells runs on the worker pool.
 func erase_selection() -> void:
 	if selection.is_empty() or edit_busy():
 		return
@@ -1058,12 +783,8 @@ func erase_selection() -> void:
 	var job := EraseJob.new()
 	job.edited_frame = VoxelFrame.job_frame(edited_frame)
 	job.selection_mask = selection.capture()
-	# The erase is an edit, so the slice limits it. The document size does not:
-	# a selected voxel outside the size can still be deleted.
 	job.edit_context = _erase_edit.edit_context.duplicate()
 	job.edit_context.bounded_axes = 0
-	# The job writes exactly the selected cells, so filtering them again by the
-	# same selection would copy the whole dictionary for no change.
 	job.edit_context.selection = {}
 	_erase_job = job
 	var operation_id := begin_operation("Erasing selection", selection.count(), true, self, _interrupt_erase)
@@ -1071,7 +792,6 @@ func erase_selection() -> void:
 	if selection.count() <= 4096:
 		job.run()
 	else:
-		# Register the worker before the first await, so teardown can join it.
 		_erase_jobs.append(job)
 		await run_edit_job(job, operation_id, "Erase selection")
 		_erase_jobs.erase(job)
@@ -1080,12 +800,8 @@ func erase_selection() -> void:
 	if document != edited_document or get_current_voxel_frame() != edited_frame:
 		_interrupt_erase()
 		return
-	# Publish only the chunks the erase wrote. The erase edit owns the frame,
-	# so an unchanged chunk stays as it is.
 	edited_frame.apply_published(job.changed_chunks, job.edited_frame)
 	document._bounds_dirty = true
-	# Clear the handle, the job, and the operation before the history signals, so a
-	# handler that opens a new erase keeps its own.
 	var erase_tx := _erase_edit
 	_erase_edit = null
 	_erase_job = null
@@ -1101,22 +817,17 @@ func _interrupt_erase() -> void:
 		return
 	_erase_job.cancel()
 	_erase_job = null
-	# Clear the handle and capture the operation before the cancel signals, so a
-	# handler that opens a new erase keeps it, and this cleanup finishes only the
-	# captured operation.
-	var tx := _erase_edit
+	var erase_edit := _erase_edit
 	_erase_edit = null
 	var operation_id := _erase_operation_id
 	_erase_operation_id = 0
-	cancel_edit(tx)
+	cancel_edit(erase_edit)
 	finish_operation(operation_id)
 
 
 func _input(event: InputEvent) -> void:
 	if not event.is_action_pressed("ui_cancel"):
 		return
-	# A cancellable operation owns Esc while it runs, so the key still cancels a job
-	# whose tool a switch detached. Without one, the tools keep their own Esc.
 	if cancel_activity():
 		get_viewport().set_input_as_handled()
 
@@ -1132,24 +843,18 @@ func _notification(what: int) -> void:
 		undo_redo.free()
 
 
-## Moves to the next frame, wrapping at the end.
 func next_frame() -> void:
 	var n := document.frames.size()
 	current_frame = (current_frame + 1) % n
 
 
-## Moves to the previous frame, wrapping at the start.
 func prev_frame() -> void:
-	# GDScript `%` keeps the sign of the dividend, so a plain modulo would stay
-	# at frame zero instead of wrapping to the last frame.
 	current_frame = posmod(current_frame - 1, document.frames.size())
 
-## Returns the frame count.
 func get_frame_count() -> int:
 	return document.frames.size()
 
 
-## Sets the smooth normals model option and records a history action.
 func set_smooth_normals(value: bool) -> void:
 	if edit_busy() or value == document.smooth_normals:
 		return
@@ -1165,8 +870,6 @@ func _apply_smooth_normals(value: bool) -> void:
 	model_settings_changed.emit()
 
 
-## Sets the document ambient occlusion strength. A live preview passes
-## [code]false[/code] for [param record_history].
 func set_ao_strength(value: float, record_history := true) -> void:
 	value = clampf(value, 0.0, 1.0)
 	if edit_busy() or is_equal_approx(value, document.ao_strength):
@@ -1179,8 +882,6 @@ func set_ao_strength(value: float, record_history := true) -> void:
 	_apply_ao_strength(value)
 
 
-## Records one history action for the difference from [param before] to the
-## current document AO strength.
 func commit_ao_strength(before: float) -> void:
 	var after := document.ao_strength
 	if is_equal_approx(before, after):
@@ -1196,22 +897,17 @@ func _apply_ao_strength(value: float) -> void:
 	model_settings_changed.emit()
 
 
-## Returns one frame by index, or null when the index is out of range.
 func get_voxel_frame(frame:int) -> VoxelFrame:
 	if frame < 0 or frame >= document.frames.size():
 		return null
 	return document.frames[frame]
 
-## Returns the current frame, or null when the index is out of range.
 func get_current_voxel_frame() -> VoxelFrame:
 	if current_frame < 0 or current_frame >= document.frames.size():
 		return null
 	return document.frames[current_frame]
 
 
-## Adds empty frames and records one history action. [param index] inserts the
-## first frame at that index, or appends when negative. The last added frame
-## becomes current.
 func add_frames(count: int, index := -1) -> void:
 	var size := document.frames.size()
 	var amount := clampi(count, 1, 256)
@@ -1227,12 +923,10 @@ func add_frames(count: int, index := -1) -> void:
 	_record_frame_action("Add Frame" if amount == 1 else "Add Frames", before, _frame_snapshot())
 
 
-## Adds one empty frame at the end and records a history action.
 func add_frame() -> void:
 	add_frames(1)
 
 
-## Duplicates the current frame and records a history action.
 func duplicate_frame() -> void:
 	edit_context_changing.emit()
 	is_playing = false
@@ -1242,14 +936,10 @@ func duplicate_frame() -> void:
 	_record_frame_action("Duplicate Frame", before, _frame_snapshot())
 
 
-## Deletes the current frame. The last remaining frame is kept.
 func delete_frame() -> void:
 	remove_frames([current_frame])
 
 
-## Removes frames and records one history action. The last remaining frame is
-## kept, so a list that would remove every frame removes nothing. The current
-## frame stays current. When it is removed, the next remaining frame is current.
 func remove_frames(indices: Array) -> void:
 	var size := document.frames.size()
 	var unique := {}
@@ -1261,7 +951,6 @@ func remove_frames(indices: Array) -> void:
 	var descending: Array = unique.keys()
 	if descending.is_empty() or descending.size() >= size:
 		return
-	# Remove from the end, so the lower indices stay valid.
 	descending.sort()
 	descending.reverse()
 	edit_context_changing.emit()
@@ -1277,9 +966,6 @@ func remove_frames(indices: Array) -> void:
 	_record_frame_action("Delete Frame" if descending.size() == 1 else "Delete Frames", before, _frame_snapshot())
 
 
-## Moves a block of frames and records one history action. [param from] is the
-## first frame, [param count] is the block size, and [param to] is the index the
-## first frame lands on. Tag ranges stay at their indices.
 func move_frames(from: int, count: int, to: int) -> void:
 	var size := document.frames.size()
 	if count < 1 or from < 0 or from + count > size:
@@ -1290,7 +976,6 @@ func move_frames(from: int, count: int, to: int) -> void:
 	edit_context_changing.emit()
 	var before := _frame_snapshot()
 	_move_block(from, count, target)
-	# The current frame follows its frame object to the new index.
 	var current := current_frame
 	if current >= from and current < from + count:
 		current += target - from
@@ -1303,12 +988,10 @@ func move_frames(from: int, count: int, to: int) -> void:
 	_record_frame_action("Move Frame" if count == 1 else "Move Frames", before, _frame_snapshot())
 
 
-## Moves one frame to a new index and records a history action.
 func move_frame(from: int, to: int) -> void:
 	move_frames(from, 1, to)
 
 
-## Reorders the frame array. [param to] uses the list without the block.
 func _move_block(from: int, count: int, to: int) -> void:
 	var frames := document.frames
 	var block := frames.slice(from, from + count)
@@ -1340,8 +1023,6 @@ func _record_frame_action(action_name: String, before: Dictionary, after: Dictio
 
 func _restore_frame_layout(frames: Array[VoxelFrame], ranges: Array[Vector2i], current: int) -> void:
 	edit_context_changing.emit()
-	# UndoRedo binds this array, and Godot arrays pass by reference. The document
-	# mutates its frame list in place, so it must not hold the recorded state.
 	document.frames = frames.duplicate()
 	_set_tag_ranges(ranges)
 	document._bounds_dirty = true
@@ -1363,16 +1044,12 @@ func _set_tag_ranges(ranges: Array[Vector2i]) -> void:
 		tag.to = ranges[i].y
 
 
-## Sets a frame duration in milliseconds and records a history action.
 func set_frame_delay(index: int, ms: int) -> void:
 	set_frame_delays([index], ms)
 
 
-## Sets the delay of several frames and records one history action. An absent or
-## unchanged value records nothing.
 func set_frame_delays(indices: Array, ms: int) -> void:
 	var size := document.frames.size()
-	# Maps each changed frame index to its previous delay.
 	var previous := {}
 	for value in indices:
 		if not (value is int or value is float):
@@ -1394,7 +1071,6 @@ func set_frame_delays(indices: Array, ms: int) -> void:
 	_apply_frame_delays(next)
 
 
-## Applies a map of frame index to delay and notifies once.
 func _apply_frame_delays(delays: Dictionary) -> void:
 	for index in delays:
 		if index >= 0 and index < document.frames.size():
@@ -1403,9 +1079,6 @@ func _apply_frame_delays(delays: Dictionary) -> void:
 	frame_changed.emit()
 
 
-## Adds an animation tag and records a history action. A negative [param to]
-## means the last frame. The frame range is inclusive. [param mode] and
-## [param repeats] set the loop in the same action.
 func add_tag(tag_name: String, from: int = 0, to: int = -1, mode := AnimationTag.LoopMode.FORWARD, repeats := 0) -> void:
 	var end := to
 	if to < 0:
@@ -1437,16 +1110,12 @@ func _apply_tag_removed(index: int, active: int) -> void:
 	frames_changed.emit()
 
 
-## Returns the active tag, or null when no tag is active.
 func get_active_tag() -> AnimationTag:
 	return document.get_tag(active_tag)
-	
-## Returns one tag by index, or null when the index is out of range.
+
 func get_tag(i: int) -> AnimationTag:
 	return document.get_tag(i)
 
-## Removes the active tag. The last remaining tag is kept. An empty tag
-## selection is refused: there is no tag to remove.
 func remove_tag() -> void:
 	if document.tags.size() <= 1 or active_tag < 0 or active_tag >= document.tags.size():
 		return
@@ -1459,8 +1128,6 @@ func remove_tag() -> void:
 	_commit_history(false)
 	_apply_tag_removed(index, new_active)
 
-## Sets the active tag frame range. [param from] and [param to] are inclusive.
-## Set [param record_history] to record one history action.
 func set_tag_range(from: int, to: int, record_history: bool = true) -> void:
 	var tag := get_active_tag()
 	if tag == null:
@@ -1477,7 +1144,6 @@ func set_tag_range(from: int, to: int, record_history: bool = true) -> void:
 		commit_tag_range(index, previous_range)
 
 
-## Records one history action for a tag range change.
 func commit_tag_range(index: int, previous_range: Vector2i) -> void:
 	var tag := document.get_tag(index)
 	if tag == null or previous_range == Vector2i(tag.from, tag.to):
@@ -1500,8 +1166,6 @@ func _apply_tag_range(index: int, from: int, to: int) -> void:
 	tag_changed.emit()
 
 
-## Sets the loop mode and, when [param set_repeats] is true, the repeat count of
-## one tag. Both changes form one history action.
 func set_tag_loop(index: int, mode: int, repeats: int, set_repeats: bool) -> void:
 	var tag := document.get_tag(index)
 	if tag == null:
@@ -1524,8 +1188,6 @@ func set_tag_loop(index: int, mode: int, repeats: int, set_repeats: bool) -> voi
 		_apply_tag_repeats(index, repeats)
 
 
-## Sets a tag loop mode and records a history action. See
-## [enum AnimationTag.LoopMode] for the values.
 func set_tag_loop_mode(index: int, mode: int) -> void:
 	var tag := document.get_tag(index)
 	if tag == null or tag.loop_mode == mode:
@@ -1547,8 +1209,6 @@ func _apply_tag_loop_mode(index: int, mode: int) -> void:
 	tag_changed.emit()
 
 
-## Sets a tag repeat count and records a history action. Zero means continuous
-## playback.
 func set_tag_repeats(index: int, value: int) -> void:
 	var tag := document.get_tag(index)
 	if tag == null or tag.repeats == value:
@@ -1570,15 +1230,11 @@ func _apply_tag_repeats(index: int, value: int) -> void:
 	tag_changed.emit()
 
 
-# A new loop mode or repeat count applies to a fresh pass count. Without this,
-# passes counted during an infinite play stop a newly finite tag on its next
-# boundary instead of after the requested number of passes.
 func _reset_playback_passes() -> void:
 	if is_playing:
 		playback.reset_passes()
 
 
-## Sets a tag name and records a history action.
 func set_tag_name(index: int, tag_name: String) -> void:
 	var tag := document.get_tag(index)
 	if tag == null or tag.name == tag_name:
@@ -1599,8 +1255,6 @@ func _apply_tag_name(index: int, tag_name: String) -> void:
 	tag_changed.emit()
 
 
-## Moves to the first frame of the active tag. It moves to frame zero when no
-## tag is active.
 func to_start() -> void:
 	var tag := get_active_tag()
 	if tag:
@@ -1608,8 +1262,6 @@ func to_start() -> void:
 	else:
 		current_frame = 0
 
-## Moves to the last frame of the active tag. It moves to the last frame when
-## no tag is active.
 func to_end() -> void:
 	var tag = get_active_tag()
 	if tag:

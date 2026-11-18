@@ -1,16 +1,5 @@
 extends "res://tests/test.gd"
 
-# A large terrain dab must build its footprint on the worker pool, so the frame
-# that accepted it keeps processing input and the camera. A small dab must stay
-# inline, so an ordinary press still edits in its input event.
-#
-# The checks compare the worker footprint against a direct main-thread map of
-# the same explicit inputs, so the offload changes no voxel of the original
-# profile. The pure map the worker builds reads only plain inputs, so the test
-# can reproduce it from the locked plane and center the press published.
-#
-# The test drives the real tool through the editor viewport. It does not change
-# the placement policy, the falloff, or the credits.
 
 const TerrainPreviewScript := preload("res://plugins/Terrain/TerrainPreview.gd")
 const TERRAIN := preload("res://plugins/Terrain/TerrainTool.gd")
@@ -85,9 +74,6 @@ func after_test() -> void:
 	_tool = null
 
 
-# --- Fixtures -----------------------------------------------------------------
-
-# A wide flat plate on the floor plane. The maximum radius disc fits inside it.
 func _plate() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -103,8 +89,6 @@ func _plate() -> void:
 	camera_rig().is_orthogonal = true
 
 
-# Builds a one-cell-step ramp. A Flatten press on the slope cuts the high side
-# and fills the low side, so the accepted dab changes the geometry.
 func _ramp() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -122,7 +106,6 @@ func _ramp() -> void:
 	camera_rig().is_orthogonal = true
 
 
-# A plate with a raised rough block, so Smooth has a convex edge to round.
 func _rough_block() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -144,8 +127,6 @@ func _rough_block() -> void:
 	camera_rig().set_view("top")
 	camera_rig().is_orthogonal = true
 
-
-# --- Camera and input ---------------------------------------------------------
 
 func _view(box: AABB) -> void:
 	camera_rig().set_view("top")
@@ -187,9 +168,6 @@ func _wait_idle() -> void:
 		await get_tree().process_frame
 
 
-# Waits until the footprint worker and the accepted dab retire. A held stroke
-# keeps `_edit` open, so a caller that checks the samples before it releases
-# waits here instead of in [method _wait_idle].
 func _wait_worker() -> void:
 	for _index in 1200:
 		if not _tool._busy() and not _tool._has_pending():
@@ -197,8 +175,6 @@ func _wait_worker() -> void:
 			return
 		await get_tree().process_frame
 
-
-# --- Cases --------------------------------------------------------------------
 
 func _small_inline() -> void:
 	step("Given a flat plate and a small Build brush", func():
@@ -265,9 +241,6 @@ func _frames_advance() -> void:
 		await get_tree().process_frame
 		frames += 1
 		if frames == 1:
-			# The rotate input calls the rig orbit. The user may rotate the view
-			# while the footprint worker is pending, so the orbit must run, the
-			# frame loop must keep advancing, and the accepted dab must survive.
 			camera_rig().orbit(Vector2(40.0, 20.0))
 	var camera_after := camera_rig().global_transform
 	_button(false, _screen(Vector3.ZERO))
@@ -314,8 +287,6 @@ func _footprint_parity() -> void:
 				mismatched += 1
 		expect(mismatched == 0, "every worker anchor keeps its exact weight and point")
 	)
-	# The press stays held, so release it only after the anchors were checked. A
-	# release clears the samples.
 	_button(false, _screen(Vector3.ZERO))
 	await _wait_idle()
 
@@ -389,9 +360,6 @@ func _cancel_pending() -> void:
 	)
 
 
-# A batched prep job must produce the same frame and the same carried influence
-# as one single-center job per center. The test builds both paths from the same
-# plate and plane, so only the batching differs.
 func _batch_parity() -> void:
 	step("Given a flat plate and three crossed centers on one plane", func():
 		_batch_source = VoxelFrame.new()
@@ -452,10 +420,6 @@ func _prep_job(frame: VoxelFrame, terrain_frame: TerrainFrame, centers: Array) -
 	return job
 
 
-# A hover job reads the surface disc and the map disc from its frame snapshot. The
-# subset snapshot must hold every chunk those reads touch, or the surface read or the map
-# changes. This case compares the full frame with the subset at radii 4, 16, and
-# 32, on a flat cell and on a tall column.
 func _hover_subset() -> void:
 	step("Given a wide plate with a tall column", func():
 		_subset_full = VoxelFrame.new()

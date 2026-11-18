@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# Sprite export: centering, projection sizing, downscale sampling, sheet
-# contents and cancellation, and shadows. The five cases share the export
-# plugin, so one process covers them.
 
 var exporter: Node
 var settings: Node
@@ -48,8 +45,6 @@ func _ready() -> void:
 	test("sprite sheets preserve shadows in orthographic and perspective views", _shadows_run, "sprite_sheet_shadows")
 
 
-# Each case starts from a clean document. The cases share one process, so no
-# case may inherit another case's document, export settings, or signals.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -63,8 +58,6 @@ func before_test() -> void:
 
 
 func after_test() -> void:
-	# A case that fails before its own disconnects must not leave a handler
-	# bound to the shared process frame or activity signal.
 	if get_tree().process_frame.is_connected(_capture_pose):
 		get_tree().process_frame.disconnect(_capture_pose)
 	if State.activity_changed.is_connected(_change_center_after_start):

@@ -1,10 +1,5 @@
 extends "res://tests/test.gd"
 
-# Exact surface-key regression and A/B. The packed key must equal the legacy
-# String key for every state, and it must cost less. The legacy key lives in a
-# test-only reference, so the production code has one key path.
-#
-#   godot --path . res://tests/surface_key.tscn
 
 const REFERENCE := preload("res://tests/surface_key_reference.gd")
 const RENDERER_SCENE := preload("res://ui/Viewport/VoxelRenderer.tscn")
@@ -188,8 +183,6 @@ func _run() -> void:
 	)
 
 
-# The packed array must behave as an exact content key. A packed array passes by
-# reference, so only a duplicate may change after a dictionary holds the key.
 func _expect_packed_behavior() -> void:
 	var a := PackedInt64Array([1, 2, 3])
 	var b := PackedInt64Array([1, 2, 3])
@@ -225,7 +218,6 @@ func _key(active_frame: VoxelFrame, chunk_location: Vector3i, smooth_normals: bo
 	return VoxelRenderer._signature(active_frame, chunk_location, smooth_normals)
 
 
-# The center chunk plus one face neighbor on each of two axes.
 func _neighbor_frame() -> VoxelFrame:
 	var built := VoxelFrame.new()
 	built.set_cell(Vector3i(0, 0, 0), VoxelFrame.material(Color.RED))
@@ -253,8 +245,6 @@ func _settle_views() -> void:
 				await get_tree().process_frame
 
 
-# Hit and evict packed keys in the shared cache. The cache is saved and restored,
-# so the check does not disturb the views.
 func _measure_cache_eviction() -> void:
 	var saved_cache := VoxelRenderer._surface_cache.duplicate()
 	var saved_order: Array[PackedInt64Array] = VoxelRenderer._surface_use_order.duplicate()
@@ -273,9 +263,6 @@ func _measure_cache_eviction() -> void:
 	VoxelRenderer._surface_cache_bytes = saved_bytes
 
 
-# A warmed alternating A/B on one frame. Each implementation keeps its own
-# accumulator, so neither can influence the other. Timings are printed, not
-# asserted.
 func _benchmark() -> void:
 	bench_frame = VoxelFrame.new()
 	var material := VoxelFrame.material(Color.RED)

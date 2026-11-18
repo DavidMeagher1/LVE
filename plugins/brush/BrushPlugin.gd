@@ -1,11 +1,6 @@
 extends VoxelPlugin
 
-## The brush plugin.
-##
-## It owns the brush tool and the line tool. It adds their toolbar and option
-## bar, and it switches the active tool when the brush mode changes.
 
-## The stable id of the brush toolbar. The persisted active tool uses it.
 const TOOL_ID := "brush"
 
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
@@ -34,22 +29,14 @@ func _notification(what: int) -> void:
 				node.free()
 
 
-## Activates the brush tool and shows its option bar.
 func activate_tool() -> void:
-	# The tool bar shares one button group. Pressing the button unpresses the
-	# previous tool, so that plugin deactivates itself through its own toggle.
 	if not _toolbar.button_pressed:
 		_toolbar.button_pressed = true
 		return
 	add_editor_node(_tool)
 	add_option_bar_item(_options)
 
-## Deactivates the brush tool and hides its option bar. It ends an open stroke
-## like a release.
 func _end_deactivation() -> void:
-	# A switch ends the stroke like a release: the queued centers are stamped and
-	# the stroke commits as one history action. Escape and a context change keep
-	# their rollback.
 	_tool.finish_on_switch()
 	remove_editor_node(_tool)
 	remove_option_bar_item(_options)
@@ -60,8 +47,6 @@ func _on_settings_changed() -> void:
 	_active_mode = _settings.mode
 	var next_tool: Node3D = _line_tool if _settings.mode == _settings.BrushMode.LINE else _brush_tool
 	if next_tool == _tool:
-		# The same instance keeps the tool. A mode change still ends the stroke with
-		# the mode and material it captured at its start.
 		if mode_changed:
 			_tool.finish_on_switch()
 		return
@@ -70,4 +55,3 @@ func _on_settings_changed() -> void:
 	_tool = next_tool
 	if _toolbar.button_pressed:
 		add_editor_node(_tool)
-

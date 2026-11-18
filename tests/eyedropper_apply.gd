@@ -17,8 +17,6 @@ var cells_emits := 0
 var chunks_emits := 0
 
 
-# A local writer that changes one cell and reports the change. It does not
-# override the base pick, so the test covers the base notification.
 class WriterTool extends VoxelTool:
 	func apply(target: Vector3i, _hit: Vector3i) -> bool:
 		var edited_frame := State.get_current_voxel_frame()

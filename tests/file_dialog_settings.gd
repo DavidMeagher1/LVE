@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-## Checks that the open and save dialog restore their favorite folders and the
-## last used folder.
 
 const MENU_SCENE := preload("res://ui/MenuBar/MenuBar.tscn")
 const SETTINGS_PATH := "user://file_dialog_test.cfg"

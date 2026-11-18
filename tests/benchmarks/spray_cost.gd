@@ -1,13 +1,5 @@
 extends "res://tests/test.gd"
 
-# An opt-in cost benchmark for the spray kernel.
-#
-# The root suite autodiscovers `tests/*.tscn`, so this heavy A/B lives in the
-# benchmarks folder instead. It compares the indexed sampler with the frozen
-# reference on a 64-cube dense block, a 128-square plate, and a sparse plane.
-# Every timed call includes the solid preview payload build.
-#
-#   godot --headless --path . res://tests/benchmarks/spray_cost.tscn
 
 const SpraySampler := preload("res://plugins/paint/SpraySampler.gd")
 const REFERENCE := preload("res://tests/spray_reference_size.gd")
@@ -48,8 +40,6 @@ func _cost() -> void:
 	step("Given dense, plate, and sparse fixtures at every width", func():
 		for fixture in ["dense", "plate", "sparse"]:
 			for width in WIDTHS:
-				# A fresh frame per width gives fresh chunks, so the cold row
-				# pays the row build while the process stays warm.
 				var center := _rebuild_fixture(fixture)
 				var cache := SpraySampler.ShapeCache.new()
 				var live_report := {}
@@ -83,12 +73,6 @@ func _cost() -> void:
 				])
 	)
 	step("Then the indexed sample costs less at every constant-output width", func():
-		# Widths 9, 17, 33, and 64 keep the dense and plate output at eight spots,
-		# so those rows compare equal output. The sparse plane offers fewer spots
-		# at a narrow width, but the frozen gather still walks the whole reach
-		# volume, so the indexed path must cost less there too. Width 1 offers one
-		# spot and is excluded. The eight spot chunks can spread across widths, so
-		# no fixed gain factor is asserted.
 		for row in rows:
 			if int(row["width"]) >= 9:
 				expect(int(row["live"]) < int(row["reference"]), "the indexed %s sample costs less at width %d" % [row["fixture"], int(row["width"])])

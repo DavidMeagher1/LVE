@@ -1,12 +1,5 @@
 extends "res://tests/test.gd"
 
-# Direct checks of the captured stroke inputs and of the footprint depth policy.
-#
-# The tests drive the real tool through the editor viewport. They compare the
-# exact cells of the inline and worker dab paths, and they prove that an executed
-# dab resolves the same tall support. They also prove that a later settings
-# change cannot alter an open stroke and that a cancelled drain cannot consume a
-# repress.
 
 const ProbeScript := preload("./terrain_stroke_input_probe.gd")
 const TerrainPreviewScript := preload("res://plugins/Terrain/TerrainPreview.gd")
@@ -23,7 +16,6 @@ func _ready() -> void:
 	test("a cancelled drain cannot consume a repress", _cancel_repress, "cancel_repress")
 	test("an inline and a worker dab apply the same cells at one depth", _inline_worker_parity, "inline_worker_parity")
 	test("a tall Build support matches its hover", _tall_build_parity, "tall_build_parity")
-	## test("a tall Flatten support matches its hover", _tall_flatten_parity, "tall_flatten_parity")
 
 
 func before_test() -> void:
@@ -71,9 +63,6 @@ func after_test() -> void:
 	_tool = null
 
 
-# --- Fixtures and input -------------------------------------------------------
-
-# A wide flat plate on the floor plane.
 func _plate() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -89,9 +78,6 @@ func _plate() -> void:
 	camera_rig().is_orthogonal = true
 
 
-# A flat floor with one tall column inside a small footprint. The column is two
-# cells from the brush center, so a radius-four disc reaches it. The top sits
-# above the old per-radius depth and inside the bounded Build depth.
 func _tower() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -150,8 +136,6 @@ func _wait_idle() -> void:
 		await get_tree().process_frame
 
 
-# --- Cases --------------------------------------------------------------------
-
 func _captured_inputs() -> void:
 	step("Given a Build press with a selected center column", func():
 		_plate()
@@ -183,7 +167,7 @@ func _captured_inputs() -> void:
 		_settings.strength = 4.0
 		_settings.falloff = 0.0
 		var live_before := State.current_material
-		State.material._current_material[0] = 0.75
+		State.material_editing._current_material[0] = 0.75
 		expect(State.current_material != live_before, "the live material array changed in place")
 		State.clear_selection()
 	)
@@ -275,8 +259,6 @@ func _inline_worker_parity() -> void:
 		expect(VoxelEditTransaction._chunks_equal(inline_capture, worker_capture), "the inline and worker dabs apply the same cells")
 		expect(depth == 16, "the Build policy scales with the diameter for small values")
 		expect(tool_depth == depth, "the tool uses the Build depth")
-		# The worker map reaches the tall support bound, so a column above the
-		# small footprint depth still resolves.
 		expect(prep_depth == _tool._height_depth(), "the preparation worker maps the tall support bound")
 	)
 
@@ -300,12 +282,8 @@ func _tall_build_parity() -> void:
 		expect(not _tool._busy(), "the small press ran inline")
 		_button(false, _screen(Vector3(2, 30, 0)))
 	)
-	# The release starts the drain. A new document mid-drain would leave the
-	# stroke open, so the next case waits for the idle tool.
 	await _wait_idle()
 	step("Then the executed dab grows the tall support", func():
-		# The column at x = 2 already stands thirty cells high. The press puts the
-		# brush on its top, so one dab adds exactly one layer there.
 		expect(_frame.has(Vector3i(2, 31, 0)), "the execution adds one layer above the tall support")
 		expect(not _frame.has(Vector3i(2, 32, 0)), "one dab adds one layer only")
 		expect(_frame.has(Vector3i(2, 15, 0)), "the support below the added layer stays")

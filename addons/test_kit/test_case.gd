@@ -1,32 +1,17 @@
 class_name TestKitCase
 extends Node
 
-# The shared test class. A test scene puts a script that extends this class on
-# its root node. The class owns the test lifecycle, assertions, timeouts, and
-# the report. It knows nothing about a project's main scene or autoloads.
-#
-# A project can extend this class once and inherit that adapter in every test
-# scene. The adapter is the place for the project fixture and common setup.
 
 signal finished(result: Dictionary)
 
 const CORE_PATH := "res://addons/test_kit/test_case.gd"
 const ARTIFACT_ROOT := "res://.tests"
 const SCENE_SUFFIX := ".test.tscn"
-# A test registration must stay on one line for case-name discovery. The first
-# string is the description, the method is the callable, and the optional third
-# string is the case name. A trailing config dictionary is allowed.
 const CASE_CALL := "^[ \\t]*test\\(\\s*\"(?:[^\"\\\\]|\\\\.)*\"\\s*,\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(?:,\\s*\"((?:[^\"\\\\]|\\\\.)*)\")?\\s*(?:,\\s*\\{.*\\})?\\s*\\)"
 
 var timeout := 10.0
-# Frames to wait before each case. A project with a deferred fixture can raise
-# this. A pure logic suite can lower it.
 var settle_frames := 1
-# Standalone scene runs quit with their own exit code. The runner sets this to
-# false, awaits `finished`, and frees the scene itself.
 var quit_on_finish := true
-# The runner sets one of these before adding the scene. An empty request runs
-# every registered case.
 var requested_cases := PackedStringArray()
 var run_all_cases := false
 
@@ -60,9 +45,6 @@ func _arm_deadman() -> void:
 		_run_tests.call_deferred()
 
 
-# The selection plan and its total timeout. The per-test watchdog covers one
-# case. The deadman covers the whole selected run, including the time between
-# cases and a hang in the report path.
 func selected_budget() -> Dictionary:
 	var requested: Array = _requested_cases()
 	var choice := select_cases(requested, _tests)
@@ -132,9 +114,6 @@ func _fail_hard(msg: String) -> void:
 	})
 
 
-# Register one test. A file can register several tests. Each test runs in turn
-# with its own report section, timeout, and pass or fail result. `config` can
-# hold `timeout` and `allow_no_checks`.
 func test(description: String, c: Callable, test_name := "", config := {}) -> void:
 	var name := test_name
 	if name.is_empty():
@@ -160,8 +139,6 @@ func _method_name(c: Callable) -> String:
 	return method.trim_prefix("_")
 
 
-# Select tests by name. An empty request selects every test. Unknown names are
-# reported, so a bad selection never runs silently.
 static func select_cases(requested: Array, tests: Array) -> Dictionary:
 	if requested.is_empty():
 		return {"selected": tests.duplicate(), "unknown": []}
@@ -205,8 +182,6 @@ func _run_tests() -> void:
 			await get_tree().process_frame
 			if _finished:
 				return
-		# The watchdog covers the project hooks and the test body. A fixture
-		# that hangs in setup or cleanup then fails with the test name.
 		var watchdog := _start_test_watchdog(entry)
 		await reset_environment()
 		await before_test()
@@ -221,8 +196,6 @@ func _run_tests() -> void:
 			return
 		watchdog.stop()
 		watchdog.queue_free()
-		# A test body that returns early, or that errors before its first check,
-		# otherwise reports success with nothing proved.
 		if _checks.is_empty() and not bool(entry["empty_ok"]):
 			_fail_hard("test %s recorded no checks" % str(entry["name"]))
 			return
@@ -230,8 +203,6 @@ func _run_tests() -> void:
 	_finish_all()
 
 
-# Start one test. The test owns its checks and steps, so its report section is
-# independent of the other tests in the file.
 func _begin_test(entry: Dictionary) -> void:
 	_checks = []
 	_steps = []
@@ -249,16 +220,10 @@ func _begin_test(entry: Dictionary) -> void:
 	print(_desc)
 
 
-# Called before every case. The project adapter resets shared state here. The
-# suite's `before_test()` runs after it, so a suite hook never needs `super`.
 func reset_environment() -> void:
 	pass
 
 
-# Project hooks. A suite overrides these for its own setup and cleanup. A
-# project adapter can override them for project-wide defaults. A suite that
-# extends such an adapter calls `super.before_test()` first and
-# `super.after_test()` last.
 func before_test() -> void:
 	pass
 
@@ -267,9 +232,6 @@ func after_test() -> void:
 	pass
 
 
-# Called by the runner after the result is emitted and before the scene is
-# freed. A project adapter uses it to release nodes that outlive the scene,
-# such as root-level plugins.
 func before_scene_free() -> void:
 	pass
 
@@ -306,7 +268,6 @@ func _finish_all() -> void:
 	_finish(result)
 
 
-# Emit the result for the runner, then quit only for a standalone scene run.
 func _finish(result: Dictionary) -> void:
 	finished.emit(result)
 	if quit_on_finish:
@@ -369,13 +330,9 @@ func _count_all_checks() -> int:
 	return n
 
 
-# The test scene path. A scene instantiated by the runner has `scene_file_path`
-# set. A standalone scene run has it set too. The current scene is only a
-# fallback for a test node that lives below the scene root.
 func _scene_path() -> String:
 	if not scene_file_path.is_empty():
 		return scene_file_path
-	# A test script on a child node uses the scene root as its owner.
 	if owner != null and not owner.scene_file_path.is_empty():
 		return owner.scene_file_path
 	var parent := get_parent()
@@ -480,8 +437,6 @@ func _caller_loc(caller: Dictionary) -> String:
 	return "%s:%d" % [caller["source"], caller["line"]]
 
 
-# The shared class and the suite's direct base are framework frames. Skip them
-# so a failure points at the test, not at the harness or the project adapter.
 func _framework_scripts() -> PackedStringArray:
 	var out := PackedStringArray([CORE_PATH])
 	var base: Script = get_script().get_base_script()
@@ -518,8 +473,6 @@ func _write_file(path: String, text: String) -> void:
 		f.close()
 
 
-# A scene path without `res://`, without the `.test.tscn` suffix, and without a
-# leading `tests/`. This key names the scene in the runner and in `.tests`.
 static func scene_key(scene_path: String) -> String:
 	var rel := scene_path.trim_prefix("res://").trim_suffix(SCENE_SUFFIX)
 	if rel.begins_with("tests/"):
@@ -531,9 +484,6 @@ static func artifact_dir(scene_path: String) -> String:
 	return ARTIFACT_ROOT + "/" + scene_key(scene_path)
 
 
-# The case names a test scene registers. The root script may be external or
-# inline. If it cannot be read, the scene still runs; it is only selectable by
-# scene name.
 static func scan_cases(scene_path: String) -> Array[String]:
 	return scan_cases_text(script_source_for_scene(scene_path))
 
@@ -556,8 +506,6 @@ static func scan_cases_text(text: String) -> Array[String]:
 	return names
 
 
-# Read the script on the test scene's root node. An external script is read from
-# disk. An inline GDScript is unescaped from the scene's sub-resource.
 static func script_source_for_scene(scene_path: String) -> String:
 	var text := FileAccess.get_file_as_string(scene_path)
 	if text.is_empty():
@@ -642,10 +590,6 @@ static func _quoted_id(line: String, func_name: String) -> String:
 	return line.substr(start, end - start)
 
 
-# Map requested names to the scenes and case names to run. A scene name selects
-# every case of that scene, so it dominates that scene's case names in any
-# order. A case name selects the scenes that register it. Unknown names are
-# reported instead of silently running nothing.
 static func build_entries(requested_names: Array, scenes: Dictionary) -> Dictionary:
 	var order: Array[String] = []
 	var by_scene := {}

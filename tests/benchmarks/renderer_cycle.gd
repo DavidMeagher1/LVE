@@ -1,25 +1,9 @@
 extends "res://tests/test.gd"
 
-# An optional benchmark for the single-chunk surface cycle. Run it directly. It
-# is outside automatic suite discovery, because its acceptance is a throughput
-# target that depends on the hardware and the machine load.
-#
-#   godot --path . --screen 0 res://tests/benchmarks/renderer_cycle.tscn
-#
-# The benchmark keeps one chunk dirty on every frame and records, through a phase
-# probe, when each build's worker finished, when its result was cached, and when
-# the view installed it. The strict criterion is the same one the spray drag uses:
-# a visible surface installs at least every fourth changed motion.
-#
-# The functional contract that must hold on any machine lives in
-# `tests/renderer_progress.tscn`.
 
 const PHASE_PROBE := preload("res://tests/renderer_phase_probe.gd")
-## The block edge of the single-chunk fixture.
 const BLOCK := 16
-## The number of frames that each change one cell of the chunk.
 const EDITS := 24
-## The frames that the benchmark observes after the last change.
 const SETTLE_FRAMES := 40
 
 var renderer: VoxelRenderer
@@ -96,8 +80,6 @@ func _cycle() -> void:
 	)
 
 
-# Replaces one view's script with the phase probe. The instances the replaced
-# script made go first, or the fresh script would add a second visible set.
 func _attach_phase_probe(view: VoxelRenderer):
 	for child in view.get_children():
 		if child is MeshInstance3D:
@@ -122,8 +104,6 @@ func _cycle_summary() -> Dictionary:
 	var duplicates := 0
 	for key in probe.launched_keys:
 		duplicates += int(probe.launched_keys[key]) - 1
-	# One entry per launched build: the launch frame, the frame the result became
-	# available in the shared cache, and the frame it installed.
 	var phases := PackedStringArray()
 	for index in mini(6, launches.size()):
 		var available = probe.available_frames.get(keys[index], -1)
@@ -155,8 +135,6 @@ func _cycle_summary() -> Dictionary:
 	}
 
 
-# One dense chunk whose top face holds sixteen materials, so a surface change
-# changes real geometry and a chunk build costs more than one frame.
 func _fixture() -> void:
 	State.document = VoxelDocument.new()
 	State.undo_redo.clear_history()
@@ -172,7 +150,6 @@ func _fixture() -> void:
 	frame.set_cells(cells)
 
 
-# One top-face cell takes a new material, so the chunk stays dirty every frame.
 func _edit_surface(index: int) -> void:
 	var cell := Vector3i(index % BLOCK, BLOCK - 1, (index / BLOCK) % BLOCK)
 	frame.set_cell(cell, VoxelFrame.material(Color.from_hsv(float(index % 12) / 12.0, 1.0, 0.5 + 0.03 * (index % 12))))

@@ -1,14 +1,5 @@
 extends "res://tests/test.gd"
 
-# Differential and performance test for the shared region search.
-#
-# `tests/region_search_reference.gd` freezes the search the fill job ran before
-# the shared helper replaced it. Every shape is searched by both implementations
-# and compared as the match dictionary, its size, and its insertion order. The
-# A/B alternates the two in one process and reports medians with their sample
-# counts.
-#
-#   godot --path . res://tests/region_search_parity.tscn
 
 const REFERENCE := preload("res://tests/region_search_reference.gd")
 const CANCEL_JOB := preload("res://tests/region_search_cancel_job.gd")
@@ -112,10 +103,9 @@ func _run() -> void:
 
 func _expect_frozen_reference() -> void:
 	var source := FileAccess.get_file_as_string("res://tests/region_search_reference.gd")
-	# The frozen search must not call the shared helper.
 	for forbidden in ["VoxelRegionSearch", "Globals/State/VoxelRegionSearch"]:
 		expect(not source.contains(forbidden), "the frozen reference never names %s" % forbidden)
-	for helper in ["VoxelFrame.matches", "Chunk.matches", "world_cells", "VoxelFrame.DIRECTIONS", "chunk_position"]:
+	for helper in ["frame.matches", "chunk.matches", "world_cells", "VoxelFrame.DIRECTIONS", "job.checkpoint"]:
 		expect(source.contains(helper), "the frozen reference declares the helper %s it reuses" % helper)
 	var built := VoxelFrame.new()
 	built.set_cell(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -153,8 +143,6 @@ func _expect_no_mismatches(label: String) -> void:
 	expect(_compared > 0, "%s compare at least one shape" % label)
 
 
-# The shared search tests the seed. The frozen search did not, because the job
-# validated the seed first. The difference is deliberate and stated here.
 func _expect_seed_contract() -> void:
 	var built := VoxelFrame.new()
 	built.set_cell(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -170,13 +158,11 @@ func _expect_seed_contract() -> void:
 	var mismatched := {}
 	VoxelRegionSearch.find(mismatched, built, Vector3i.ZERO, VoxelFrame.material(Color.BLUE), true, true)
 	expect(mismatched.is_empty(), "the shared search adds nothing for a seed of another material")
-	# A mask never gates the seed, because the caller rejects a seed it cannot edit.
 	var mask := {Vector3i(4, 0, 0): true}
 	var masked := {}
 	VoxelRegionSearch.find(masked, built, Vector3i.ZERO, target, true, true, mask)
 	expect(masked.has(Vector3i.ZERO), "the seed joins the result even when the mask excludes it")
 	expect(not masked.has(Vector3i(4, 0, 0)), "the mask keeps the other region out")
-	# A disconnected search ignores the seed, so an empty seed still scans the frame.
 	var disconnected := {}
 	VoxelRegionSearch.find(disconnected, built, empty_seed, target, false, true)
 	expect(disconnected.size() == 2, "the disconnected search ignores the seed and finds both red voxels")
@@ -185,9 +171,6 @@ func _expect_seed_contract() -> void:
 	expect(reference_disconnected == disconnected, "the frozen search ignores the seed in the same way")
 
 
-# The consumer cursor owns the pending batch keys and their position. It must
-# hand out bounded slices, load the next batch only when the current keys are
-# spent, and report done only when the queue is drained and every key is applied.
 func _expect_batch_cursor() -> void:
 	var queue := VoxelRegionSearch.BatchQueue.new()
 	var cursor := VoxelRegionSearch.BatchCursor.new(queue)
@@ -212,19 +195,13 @@ func _expect_batch_cursor() -> void:
 	cursor.cursor = end
 	expect(cursor.is_done(), "the drained queue with every key applied reports done")
 	expect(cursor.next_end(2) == -1, "no slice waits on a drained queue")
-	# A drained cursor is not proof that the producer finished. The caller pairs
-	# `is_done` with its worker task check, so an empty queue alone stays "done".
 	expect(cursor.is_done(), "an empty queue reports done without a producer state")
-	# Dropping the last owner releases the queue, so an abandoned operation does
-	# not retain the bounded batches.
 	var weak: WeakRef = weakref(queue)
 	cursor = null
 	queue = null
 	expect(weak.get_ref() == null, "dropping the cursor releases its queue")
 
 
-# The fill needs a change map, not a match set. Writing the replacement material
-# during the search avoids a second pass over every match.
 func _expect_conversion_cost() -> void:
 	var cells := _block_cells(Vector3i.ZERO, Vector3i(31, 15, 15))
 	var built := _frame_of(cells)
@@ -248,8 +225,6 @@ func _expect_conversion_cost() -> void:
 	expect(direct_us < convert_us, "writing the value during the search beats a separate conversion pass")
 
 
-# The per-chunk checkpoint bounds a sparse disconnected scan. Measure what a real
-# job adds, so the bound is not assumed free.
 func _expect_checkpoint_cost() -> void:
 	var sparse := _frame_of(_scattered_cells(80, CHUNK))
 	var sparse_target := sparse.get_material(Vector3i.ZERO)
@@ -360,7 +335,6 @@ func _expect_cancellation() -> void:
 	mid_job.run()
 	expect(mid_job.checks == 2, "the mid-work job stopped at the second checkpoint")
 	expect(mid_job.matching_cells.is_empty(), "the mid-work job reports no matches")
-	# A later job with no cancellation completes, so the snapshot stays usable.
 	var done_job: Variant = CANCEL_JOB.new()
 	done_job.cancel_after = 1000
 	done_job.source_frame = source
@@ -371,9 +345,6 @@ func _expect_cancellation() -> void:
 	done_job.apply_changes = false
 	done_job.run()
 	expect(done_job.matching_cells.size() == cells.size(), "the uncancelled job matches every connected cell")
-	# The disconnected scan bounds its wait at each chunk. A frame of one-cell chunks
-	# proves the bound: without it the scan would run every chunk before the first
-	# occupied-cell checkpoint.
 	var sparse_cells := _scattered_cells(80, CHUNK)
 	expect(sparse_cells.size() == 125, "the sparse fixture holds one cell per chunk")
 	var sparse := _frame_of(sparse_cells)
@@ -402,7 +373,6 @@ func _expect_cancellation() -> void:
 	expect(sparse_mid.checks == 11, "the disconnected scan stopped at a chunk boundary")
 	expect(sparse_mid.matching_cells.is_empty(), "the disconnected mid-scan job discards its partial result")
 	expect(sparse.storage_data() == sparse_before, "the cancelled scan leaves the snapshot bytes unchanged")
-	# A cancelled fill publishes no chunk and leaves its own copy unchanged.
 	var publish_job: Variant = CANCEL_JOB.new()
 	publish_job.cancel_after = 10
 	publish_job.source_frame = sparse.copy_frame()
@@ -509,7 +479,6 @@ func _expect_modes_and_symmetry() -> void:
 	job.mode = 2
 	job.run()
 	expect(job.result.size() == 1 and job.result.has(Vector3i(0, 4, 0)), "subtract mode removes only the matching voxels")
-	# Symmetry expands the match set before the mode merge.
 	var context := VoxelFrame.EditContext.new()
 	context.axes = 1
 	context.origin_twice = Vector3i(-1, 0, 0)
@@ -608,10 +577,8 @@ func _random_cases() -> Array:
 func _special_cases() -> Array:
 	var out := []
 	var material := VoxelFrame.material(Color.RED)
-	# Two cells that touch at one corner only. A face walk cannot reach the second.
 	out.append({"label": "corner contact", "cells": {Vector3i.ZERO: material, Vector3i(1, 1, 0): material}, "seed": Vector3i.ZERO, "connected": true})
 	out.append({"label": "edge contact", "cells": {Vector3i.ZERO: material, Vector3i(1, 1, 1): material}, "seed": Vector3i.ZERO, "connected": true})
-	# A mask that cuts a dense block in half.
 	var barrier_cells := _block_cells(Vector3i.ZERO, Vector3i(7, 7, 7))
 	var barrier_mask := {}
 	for cell_position: Vector3i in barrier_cells:
@@ -619,14 +586,11 @@ func _special_cases() -> Array:
 			barrier_mask[cell_position] = true
 	out.append({"label": "barrier mask", "cells": barrier_cells, "seed": Vector3i.ZERO, "connected": true, "mask": barrier_mask})
 	out.append({"label": "barrier mask", "cells": barrier_cells, "seed": Vector3i(7, 0, 0), "connected": true, "mask": barrier_mask})
-	# A negative chunk and a chunk boundary.
 	out.append({"label": "negative chunk", "cells": _block_cells(Vector3i(-16, -16, -16), Vector3i(-9, -9, -9)), "seed": Vector3i(-16, -16, -16), "connected": true})
 	out.append({"label": "chunk boundary", "cells": _block_cells(Vector3i(14, 14, 14), Vector3i(17, 17, 17)), "seed": Vector3i(14, 14, 14), "connected": true})
 	out.append({"label": "chunk boundary", "cells": _block_cells(Vector3i(14, 14, 14), Vector3i(17, 17, 17)), "seed": Vector3i(14, 14, 14), "connected": false})
-	# A tiny island inside a large frame.
 	out.append({"label": "tiny island", "cells": _huge_with_island(), "seed": Vector3i(40, 0, 0), "connected": true})
 	out.append({"label": "tiny island", "cells": _huge_with_island(), "seed": Vector3i(40, 0, 0), "connected": false})
-	# A hole and a cavity.
 	out.append({"label": "cavity", "cells": _shell_cells(Vector3i.ZERO, Vector3i(7, 7, 7)), "seed": Vector3i.ZERO, "connected": true})
 	out.append({"label": "cavity", "cells": _shell_cells(Vector3i.ZERO, Vector3i(7, 7, 7)), "seed": Vector3i.ZERO, "connected": false})
 	return out
@@ -699,8 +663,6 @@ func _huge_with_island() -> Dictionary:
 	return cells
 
 
-# A red core inside a blue block. The blue cells at the interface are reached from
-# several red neighbors, which is the shape a failed-neighbor mask would help.
 func _core_in_other_material() -> Dictionary:
 	var cells := {}
 	var outer := VoxelFrame.material(Color.BLUE)

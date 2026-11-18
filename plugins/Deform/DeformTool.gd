@@ -1,53 +1,21 @@
 extends VoxelTool
 
-## Shared base for the deform tools: Grab and Pose.
-##
-## Both tools capture one baseline snapshot at the press and recompute their
-## result from that baseline for every accepted pointer position. The newest
-## position wins, so a drag never accumulates rounding error. A large drag runs
-## on the worker pool and only the newest position waits for the running job. A
-## release commits the whole gesture as one history action. Escape, an edit
-## context change, and a history change roll it back.
-##
-## The cursor is one white circle in the view plane. It shows the reach of the
-## tool and predicts no voxel. A tool that also draws a bone poses it from the
-## press onward, like Blender's Pose brush.
 
 const BrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
 const VoxelLineMesh := preload("res://Globals/Rendering/VoxelLineMesh.gd")
 
-## The estimated work above which a drag runs on the worker pool.
 const INLINE_EDIT_LIMIT := 4096
 
 
-## One cancellable deform drag.
-##
-## The job starts from the baseline snapshot and writes its whole result into one
-## frame copy. A subclass supplies the changes in
-## [method compute_changes]. [method VoxelFrame.EditJob.run] is the worker body.
-##
-## The job never sets [member VoxelFrame.EditJob.edit_context]: a write filter
-## would apply the symmetry and the selection a second time. The changes already
-## respect both.
 class DeformJob extends VoxelFrame.EditJob:
-	## The stroke id that the job belongs to.
 	var stroke_id := 0
-	## The operation id that the job belongs to.
 	var operation_id := 0
-	## The frame copy that the drag writes. It starts as the baseline copy.
 	var edited_frame: VoxelFrame
-	## The frozen edit context that limits the slice and the document size.
 	var context: VoxelFrame.EditContext
-	## The moved set at its destinations, keyed by cell. The tool restores the
-	## selection from it, so the selection follows a moved cell.
 	var destination_selection := {}
-	## The cells that the drag emptied. A selected cell that leaves the world also
-	## leaves the selection.
 	var removed_cells := {}
-	## The chunk locations that the drag changed.
 	var changed_chunks: Array[Vector3i] = []
 
-	## Writes the drag result. This is the worker body.
 	func run() -> void:
 		var changes := compute_changes()
 		if changes.is_empty() or not checkpoint(0):
@@ -55,16 +23,12 @@ class DeformJob extends VoxelFrame.EditJob:
 		stage("Applying deform", changes.size())
 		changed_chunks = apply_cells(edited_frame, changes)
 
-	## Returns the cells to write, keyed by cell. A subclass overrides it.
 	func compute_changes() -> Dictionary:
 		return {}
 
-	## Returns the estimated work of the drag, for the worker decision.
 	func estimated_work() -> int:
 		return 0
 
-	## Returns [code]true[/code] when the frozen context allows a write to
-	## [param cell]. It covers the slice, the document size, and the selection.
 	func allows(cell: Vector3i) -> bool:
 		return context == null or context.allows(cell)
 
@@ -75,25 +39,17 @@ var _last_pick: PickResult
 var _footprint: MeshInstance3D
 var _footprint_meshes := {}
 
-# The stroke state.
 var _stroke_id := 0
 var _stroke_tx: VoxelEditTransaction
 var _stroke_size := 4
-# The entered face of the press, and the pointer point on it, for the pose joint
-# score. The face is a world axis, or -1.
 var _stroke_face := -1
 var _stroke_touch := Vector2.ZERO
-# The same two values of the last hover.
 var _hover_face := -1
 var _hover_touch := Vector2.ZERO
 var _stroke_falloff := 0.5
 var _stroke_context: VoxelFrame.EditContext
-## The same context without the selection. A moved cell may land outside the
-## selection, so only the slice, the size, and the symmetry limit the writes.
 var _write_context: VoxelFrame.EditContext
 var _stroke_selection := {}
-## Whether the selection follows the moved cells. A selection that opened the
-## stroke stays the moved set, like the transform tools.
 var _stroke_track_selection := false
 var _source_document: VoxelDocument
 var _source_frame: VoxelFrame
@@ -107,24 +63,17 @@ var _job: DeformJob
 var _operation_id := 0
 var _end_requested := false
 
-# The captured view basis of the press. A camera change during the drag must not
-# move the plane, and the screen angle of a pose keeps the basis the user saw.
 var _view_forward := Vector3.FORWARD
 var _view_right := Vector3.RIGHT
 var _view_up := Vector3.UP
 
 
-## Returns the history action name of one completed gesture.
 func _action_name() -> String:
 	return "Deform"
 
 
-## Returns the artist-facing operation label of one worker drag.
 func _operation_label() -> String:
 	return "Deforming voxels"
-
-
-# --- Lifecycle --------------------------------------------------------------
 
 
 func _enter_tree() -> void:
@@ -186,7 +135,6 @@ func _disconnect_state_subscriptions() -> void:
 
 
 func _on_settings_changed() -> void:
-	# The cursor follows the size. A drag keeps the size it captured at the press.
 	if _edit == null:
 		_update_visual(_last_pick)
 
@@ -198,11 +146,6 @@ func _on_document_changed() -> void:
 	_hide_footprint()
 
 
-# --- Input ------------------------------------------------------------------
-
-
-## Handles one input event. A press starts a gesture, a drag updates it, and a
-## release commits it. Escape rolls the open gesture back.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	if event.is_action_pressed("ui_cancel") and _edit != null:
 		_cancel_edit()
@@ -223,8 +166,6 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 				_drag_pointer(pos)
 			return true
 		if motion.button_mask == 0:
-			# A release outside the window sends no button event. A motion with
-			# no button ends the gesture the same way a release does.
 			if _edit != null:
 				_release()
 			_hover(pos)
@@ -265,18 +206,15 @@ func _press(pos: Vector2) -> void:
 	_pending_target = null
 	_end_requested = false
 	_published.clear()
-	# The plane faces the viewer and keeps the exact camera forward, so the drag
-	# maps onto it without a cardinal snap.
 	var plane := StrokePlane.new()
 	plane.axis = VoxelPicking.view_axis(_view_forward)
-	plane.idx = roundi(Vector3(pick.hit)[plane.axis])
+	plane.cell_index = roundi(Vector3(pick.hit)[plane.axis])
 	plane.point = Vector3(pick.hit)
 	plane.normal = _view_forward
 	_plane = plane
 	_stroke_active = true
 	_last_target = pick.hit
 	if not _capture_gesture(pick):
-		# Nothing can move, so the gesture never opens a history action.
 		_cancel_edit()
 		return
 	_last_pick = pick
@@ -310,7 +248,6 @@ func _release() -> void:
 	_settle_release()
 
 
-## Ends the gesture like a release when a tool or settings switch detaches it.
 func finish_on_switch() -> void:
 	if _edit == null:
 		return
@@ -327,22 +264,14 @@ func _settle_release() -> void:
 	_finish_stroke()
 
 
-# --- Gesture hooks ----------------------------------------------------------
-
-
-## Captures the gesture state of one press. Returns [code]false[/code] when the
-## pick has nothing to move, so the stroke is refused.
 func _capture_gesture(_pick: PickResult) -> bool:
 	return false
 
 
-## Returns the job of one drag target, or null when the target changes nothing.
 func _make_job(_target: Vector3i) -> DeformJob:
 	return null
 
 
-## Moves the selection with the drag. A selected cell that stays keeps its place,
-## a cell that the drag empties leaves, and every new cell joins.
 func _publish_selection(job: DeformJob) -> void:
 	if job.destination_selection.is_empty():
 		return
@@ -356,10 +285,6 @@ func _publish_selection(job: DeformJob) -> void:
 	State.selection_changed.emit()
 
 
-# --- Drag plumbing ----------------------------------------------------------
-
-
-## Returns the edit context that one drag job reads.
 func _context_for_job() -> VoxelFrame.EditContext:
 	return _write_context
 
@@ -399,19 +324,12 @@ func _finish_job(job: DeformJob) -> void:
 		_operation_id = 0
 	State.finish_operation(job.operation_id)
 	if job.stroke_id != _stroke_id:
-		# A newer stroke owns the tool. Run its queued target when one waits.
 		_replay_pending()
-		# The newer stroke may already be released while this older job ran. Its
-		# release arrived while no job tracked it, so it waits for this point.
 		_settle_release()
 		return
 	if not _job_is_current(job):
-		# The job was cancelled while the tool was detached. Its subscriptions
-		# must still be released, or a later document change calls the tool.
 		_release_subscriptions()
 		return
-	# The drag recomputes from the baseline, so a chunk that moved in an earlier
-	# update and not in this one must revert. Publish the union of both updates.
 	var locations: Array[Vector3i] = []
 	for location in _published:
 		locations.append(location)
@@ -455,9 +373,6 @@ func _publish_baseline() -> void:
 	State.document._bounds_dirty = true
 	if not locations.is_empty():
 		State.chunks_changed.emit(State.current_frame, locations)
-	# The frame is back at the press state, so the selection must be too. An
-	# earlier target published a moved set, and those destination cells no longer
-	# exist. Without this restore the next stroke searches an empty selection.
 	if _stroke_track_selection:
 		State.selection.restore(_stroke_selection)
 		State.selection_changed.emit()
@@ -469,9 +384,6 @@ func _job_is_current(job: DeformJob) -> bool:
 	if _edit == null or _edit != _stroke_tx:
 		return false
 	return State.document == _source_document and State.get_current_voxel_frame() == _source_frame
-
-
-# --- Commit and cancel ------------------------------------------------------
 
 
 func _finish_stroke() -> void:
@@ -520,11 +432,6 @@ func _on_history_changed() -> void:
 		_cancel_edit()
 
 
-# --- View plane -------------------------------------------------------------
-
-
-# Captures the view basis of the press. The plane and the screen angle keep it
-# for the whole gesture, so a camera move never changes an accepted drag.
 func _capture_view() -> void:
 	var camera := get_viewport().get_camera_3d() if is_inside_tree() else null
 	if camera == null:
@@ -538,8 +445,6 @@ func _capture_view() -> void:
 	_view_forward = -basis.z.normalized()
 
 
-# Intersects the captured view plane and returns the world point, or null when
-# the ray is parallel to the plane or points away from it.
 func _view_point(origin: Vector3, dir: Vector3) -> Variant:
 	if _plane == null:
 		return null
@@ -552,13 +457,8 @@ func _view_point(origin: Vector3, dir: Vector3) -> Variant:
 	return origin + dir * t
 
 
-## Returns the cell of one world point on the view plane. A view plane can be
-## oblique, so the drag keeps all three rounded components.
 func _view_cell(point: Vector3) -> Vector3i:
 	return Vector3i(roundi(point.x), roundi(point.y), roundi(point.z))
-
-
-# --- Hover cursor -----------------------------------------------------------
 
 
 func _hover(pos: Vector2) -> void:
@@ -572,7 +472,6 @@ func _hover(pos: Vector2) -> void:
 	_update_visual(pick)
 
 
-## Returns the world axis of the entered face normal of one pick, or -1.
 func _face_axis(pick: PickResult) -> int:
 	if pick == null:
 		return -1
@@ -582,8 +481,6 @@ func _face_axis(pick: PickResult) -> int:
 	return -1
 
 
-## Returns the pointer point on the entered face of one pick, in world space. A
-## zero vector means the ray misses the face plane.
 func _face_point(origin: Vector3, dir: Vector3, pick: PickResult) -> Vector3:
 	var axis := _face_axis(pick)
 	if axis < 0 or pick.hit == VoxelPicking.NONE or absf(dir[axis]) < 1e-8:
@@ -596,9 +493,6 @@ func _face_point(origin: Vector3, dir: Vector3, pick: PickResult) -> Vector3:
 	return origin + dir * t
 
 
-## Returns the pointer point on the entered face, in cells from the face center
-## on the two face tangents. Each axis clamps to half a cell, so a corner touch
-## reads as a diagonal and a centered touch reads as zero.
 func _face_touch(origin: Vector3, dir: Vector3, pick: PickResult) -> Vector2:
 	var axis := _face_axis(pick)
 	var point := _face_point(origin, dir, pick)
@@ -613,8 +507,6 @@ func _face_touch(origin: Vector3, dir: Vector3, pick: PickResult) -> Vector2:
 	)
 
 
-# Poses the cursor for the drag target. The circle follows the pointer, and the
-# entry face of the press keeps its normal.
 func _drag_visual(target: Vector3i) -> void:
 	if _last_pick == null:
 		return
@@ -636,7 +528,6 @@ func _update_visual(pick: PickResult) -> void:
 	_pose_bone(pick)
 
 
-## Poses the bone of the gesture. The base tool draws no bone.
 func _pose_bone(_pick: PickResult) -> void:
 	pass
 
@@ -648,7 +539,6 @@ func _setup_footprint() -> void:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color = Color.WHITE
-	# The cursor must stay readable inside geometry, so it skips the depth test.
 	material.no_depth_test = true
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_footprint.material_override = material
@@ -656,12 +546,6 @@ func _setup_footprint() -> void:
 	_footprint.visible = false
 
 
-## Shows the cursor circle of the tool, centered on the picked cell.
-##
-## The circle is the stepped voxel outline and lies in the view plane, so its
-## screen size is the reach of the tool and it stays a true circle from every
-## view. The mesh depends on the reach only, so a reach builds one mesh and every
-## cell reuses it.
 func _pose_footprint(pick: PickResult) -> void:
 	if _footprint == null or pick.hit == VoxelPicking.NONE:
 		return
@@ -676,14 +560,10 @@ func _pose_footprint(pick: PickResult) -> void:
 			up = camera.global_transform.basis.y.normalized()
 	var basis := Basis(right, up, right.cross(up))
 	_footprint.global_transform = Transform3D(basis, Vector3(pick.hit))
-	# The tool node carries the hide state. A hide sets it false, so a pose must
-	# set it true or an invisible parent keeps the cursor off screen forever.
 	visible = true
 	_footprint.visible = true
 
 
-## Returns the current camera forward. An open stroke keeps the press basis, so a
-## camera move cannot change an accepted drag.
 func _cursor_forward() -> Vector3:
 	if _edit != null:
 		return _view_forward
@@ -694,22 +574,14 @@ func _cursor_forward() -> Vector3:
 	return _view_forward
 
 
-## Returns the reach of the cursor circle, in cells: the brush radius. The circle
-## is the footprint of the brush, so a size of one is one cell.
 func _cursor_reach() -> float:
 	return float(clampi(_settings.size, 1, 32)) * 0.5
 
 
-# Returns the cursor mesh of one reach. The line is the stepped voxel circle, so
-# it reads like the brush footprint and not like a smooth drawn circle. The
-# vertices lie in the local XY plane, so the node transform carries the view
-# orientation.
 func _cursor_mesh(reach: float) -> ArrayMesh:
 	var mesh: ArrayMesh = _footprint_meshes.get(reach)
 	if mesh != null:
 		return mesh
-	# The helper centers an even size half a cell below zero, so an even outline
-	# needs that same half-cell shift back onto the picked cell.
 	var size := clampi(roundi(reach * 2.0), 1, 64)
 	var vertices := BrushSize.disk_outline(size)
 	if size % 2 == 0:

@@ -32,14 +32,12 @@ func _run() -> void:
 		tool._settings.mode = tool._settings.SelectMode.REPLACE
 		tool._commit(Vector3i.ZERO)
 		expect(State.edit_busy(), "the large wand reports foreground work")
-		# Replace starts from an empty selection while the captured snapshot keeps undo.
 		expect(not State.selection.contains(MARKER), "Replace removes the prior marker before adding streamed matches")
 	)
 	await _settle()
 	step("Then the connected selection is one complete undoable result", func():
 		expect(State.selection.count() == 5832, "the connected block contains all its voxels")
 		expect(not State.selection.contains(Vector3i(96, 0, 0)), "the disconnected red voxel stays unselected")
-		# A large wand selection publishes as it streams, so it sends more than one.
 		expect(notifications >= 1, "the wand publishes at least one selection notification")
 		expect(source.get_color(Vector3i.ZERO) == Color.RED and source.count() == 5834, "the wand preserves the source voxels")
 		var rebuilds := VoxelSelection._profile_rebuild_calls

@@ -1,14 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused checks for the dense spray footprint union at far world coordinates.
-#
-# The union groups its spans by world row and sorts them with the native compare.
-# A world coordinate must never be packed into a fixed-width field, so every
-# translation below must stay exact. This scene is split from `spray_worker`,
-# because the many large unions and the two full presses exceed the shared runner
-# deadline when the window is open.
-#
-#   godot --path . res://tests/spray_worker_far.tscn
 
 const SEED := 20261023
 const BLOCK := 8
@@ -93,8 +84,6 @@ func _release(pos: Vector2) -> void:
 	viewport.push_input(event)
 
 
-# Waits until the samples, the write jobs, and the cursor settle. A worker sample
-# installs from `_process`, so the check must let the frames run.
 func _settle() -> void:
 	for i in 600:
 		if tool.is_sample_settled() and tool._job == null and tool._pending_centers.is_empty():
@@ -103,10 +92,6 @@ func _settle() -> void:
 		await get_tree().process_frame
 
 
-# The dense footprint union groups its spans by world row and sorts them with the
-# native compare. A world coordinate must never be packed into a fixed-width
-# field, so every translation below must stay exact. The existing tests cover
-# centers near the origin only, which hides a window bug.
 func _worker_dense_far() -> void:
 	var half := 8
 	var base: Array[Vector3i] = []
@@ -172,10 +157,6 @@ func _worker_dense_far() -> void:
 		expect(_batch.size() == shell.size() and _same_cell_set(_batch, shell), "the live far sample holds the exposed shell (%d of %d cells)" % [_batch.size(), shell.size()])
 		expect(_batch.size() > 0 and _batch.size() < 4913, "the live far sample paints only the exposed shell")
 	)
-	# The application path: a real press through the viewport, with the camera
-	# centered on the far model. Before the coordinate fix this painted nothing,
-	# because the dense span union wrapped every world coordinate outside
-	# -64..191 into another row.
 	step("Given a dense block far from the origin, centered in the live viewport", func():
 		State.document = VoxelDocument.new()
 		frame = State.get_current_voxel_frame()
@@ -216,7 +197,6 @@ func _worker_dense_far() -> void:
 	)
 
 
-# The exposed cells of the far block: every voxel with an empty face neighbor.
 func _shell_cells() -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	for cell in frame.positions():

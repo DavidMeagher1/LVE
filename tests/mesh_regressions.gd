@@ -1,16 +1,5 @@
 extends "res://tests/test.gd"
 
-# The merged faces of the mesher, and the merge quality of a reported document,
-# in one process. The greedy mesh already merges each plane, so the cleanup can
-# only add polygons. A chunk that gains many triangles marks a merge failure.
-#
-# The reported case is a 5 by 5 slab with a diagonal gap of three cells. Its
-# outline pinches at two corners, so the region triangulator used to fall back
-# to one quad per cell for both the top and the bottom face.
-#
-# Each test keeps the steps and checks of its original scene. The user arguments
-# after `--` name the tests to run, so an old scene name still selects its own
-# test.
 
 const REGION := preload("res://Globals/Rendering/VoxelPlanarRegion.gd")
 const CASE := "res://tests/fixtures/FailedGreed.lve"
@@ -20,10 +9,6 @@ func _ready() -> void:
 	timeout = 60.0
 	test("the mesher merges flat faces and skips empty layers", _planar_merge, "planar_merge")
 	test("a document keeps its merged faces", _failed_greed, "failed_greed")
-
-
-# Both tests keep all of their state in local variables, so no setup hook is
-# needed to isolate them.
 
 
 func _planar_merge() -> void:
@@ -134,15 +119,12 @@ func _failed_greed() -> void:
 		print("MEASURE case: %d chunks gained triangles in the cleanup %s" % [
 			gained.size(), str(gained.slice(0, 8)),
 		])
-		# The diagonal gap used to make the outline pinch at two corners. The
-		# region then fell back to one quad per cell and reached 92 triangles.
 		expect(greedy_triangles == 64, "the merged source uses 64 triangles")
 		expect(merged_triangles == 72, "the cleanup adds only seam triangles")
 		expect(greedy_triangles > 0, "the document produces triangles")
 	)
 
 
-# A group of two or more 4-connected cells must merge into fewer polygons than cells.
 func _is_fallback(cells: Dictionary, output: Array) -> bool:
 	if cells.size() < 2 or output.size() != cells.size():
 		return false
@@ -187,8 +169,6 @@ func _chunk(occupied: Callable) -> VoxelFrame:
 	return frame
 
 
-# Returns the vertex count, the triangle count, and the build time in microseconds.
-# `cleanup` selects the planar cleanup build, which the greedy path leaves off.
 func _mesh(frame: VoxelFrame, chunk_location: Vector3i, cleanup: bool, smooth: bool) -> Array:
 	var job := VoxelMeshBuilder.new()
 	job.source_frame = frame

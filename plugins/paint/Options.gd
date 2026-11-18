@@ -1,12 +1,5 @@
 extends HBoxContainer
 
-## The paint option bar.
-##
-## It shows the options of the active paint tool. The brush section edits the
-## paintbrush diameter, the shape, and the pixel-perfect flag. It also edits the
-## dither density and offset. The fill section edits the connected option. The
-## spray section edits the spot diameter, the spray search size, and the speed.
-## The spot diameter and the search size are voxel widths, not radii.
 
 var _settings := preload("./PaintSettings.tres")
 

@@ -1,14 +1,7 @@
 extends VoxelPlugin
 
-## The stamp plugin.
-##
-## It owns the stamp tool, the source option bar, and the frame panel. A file
-## frame or the current selection becomes a stamp pattern. The frame panel stays
-## open while the tool stamps.
 
-## The stable id of the stamp toolbar. The persisted active tool uses it.
 const TOOL_ID := "stamp"
-## The largest stamp source that runs on the main thread.
 const INLINE_SOURCE_LIMIT := 4096
 const StampCopyJob := preload("res://plugins/brush/StampCopyJob.gd")
 
@@ -70,7 +63,6 @@ func _exit_tree() -> void:
 	_operation_id = 0
 
 
-## Activates the stamp tool and shows its option bar and frame panel.
 func activate_tool() -> void:
 	if not _toolbar.button_pressed:
 		_toolbar.button_pressed = true
@@ -81,7 +73,6 @@ func activate_tool() -> void:
 	_sync_options()
 
 
-## Deactivates the stamp tool. It ends an open stroke like a release.
 func _end_deactivation() -> void:
 	_tool.finish_on_switch()
 	remove_editor_node(_tool)
@@ -89,7 +80,6 @@ func _end_deactivation() -> void:
 	_unmount_frame_panel()
 
 
-## Loads one LVE file as the stamp source.
 func open_source_file(path: String) -> void:
 	if _shutting_down or _source_job:
 		return
@@ -118,7 +108,6 @@ func open_source_file(path: String) -> void:
 	_sync_options()
 
 
-## Uses the current voxel selection as the stamp source.
 func use_current_selection() -> void:
 	if _shutting_down or _source_job:
 		return
@@ -143,7 +132,6 @@ func _on_file_chosen(path: String) -> void:
 	open_source_file(path)
 
 
-## Clears the stamp source. It changes no cells and records no history.
 func clear_source() -> void:
 	if _source_job:
 		return
@@ -184,8 +172,6 @@ func _on_frame_selected(index: int) -> void:
 	_prepare_stamp(_file_document.frames[index], {}, label, index)
 
 
-# A file frame does not depend on the live document. A selection source does, so
-# its job cancels when the document or frame changes.
 func _prepare_stamp(source_frame: VoxelFrame, mask: Dictionary, label: String, frame_index: int, source_document: VoxelDocument = null, live_frame: VoxelFrame = null) -> void:
 	if _source_job:
 		return

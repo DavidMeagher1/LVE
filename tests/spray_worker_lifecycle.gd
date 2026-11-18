@@ -1,26 +1,11 @@
 extends "res://tests/test.gd"
 
-# Focused lifecycle checks for the spray worker pipeline.
-#
-# The checks cover the parts that a single sample cannot show: a cancel and an
-# immediate repress, the settings of one queued brush cell, the press that owns
-# its current cell while another hover waits, the cancel checkpoints of the dense
-# footprint union, and the random-state contract between the inline and worker
-# paths.
-#
-# The checks drive the real viewport input path, so the picked cell and the
-# painted cells go through the production event handling. The large sizes place
-# the occupied reach estimate above the inline limit, so the worker path is the
-# only path these checks exercise.
 
 const SEED := 20261023
 const BLOCK := 10
 
 const VoxelBrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
 
-# A job that stops after a fixed number of checkpoints. The sampler uses it to
-# prove that the dense union checks the cancel flag while it builds rows and while
-# it emits them.
 class CountingJob extends VoxelFrame.EditJob:
 	var limit := 1
 	var calls := 0
@@ -57,9 +42,6 @@ func _ready() -> void:
 	test("the worker draws the same state as the inline path", _lifecycle_rng_parity, "lifecycle_rng")
 
 
-# Each check starts from a fresh document, the default symmetry, and the default
-# spray options. A previous check may have switched the active tool, so the spray
-# can is selected again.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -88,8 +70,6 @@ func before_test() -> void:
 	tool._hover_installed_epoch = 0
 
 
-# A solid block around the origin, so the search sphere and the spot sphere are
-# fully occupied and the reach estimate passes the inline limit.
 func _block(half: int) -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
@@ -98,14 +78,9 @@ func _block(half: int) -> void:
 			for z in range(-half, half + 1):
 				frame.set_cell(Vector3i(x, y, z), VoxelFrame.material(Color.BLUE))
 	camera_rig().center_on(frame.get_bounds())
-	# A new document drops the preview surface of the previous fixture.
 	tool._clear_cursor_preview()
 
 
-# A wide slab whose top face sits on the chunk boundary at y=16. A width 17
-# search at the top face crosses two occupied chunk rows, so the work estimate
-# passes the inline limit, and the two press cells stay outside each other's
-# reach.
 func _press_slab() -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
@@ -170,8 +145,6 @@ func _key(code: Key) -> void:
 	get_tree().root.push_input(event)
 
 
-# Waits until the samples, the runner, the write jobs, and the cursor settle. A
-# worker sample installs from `_process`, so the check must let the frames run.
 func _settle() -> void:
 	for i in 600:
 		if tool.is_sample_settled() and not tool._intent_running and tool._job == null and tool._pending_centers.is_empty():
@@ -189,8 +162,6 @@ func _settle_cursor() -> void:
 		await get_tree().process_frame
 
 
-# The large sizes of the worker checks. The solid half-width block keeps the
-# occupied reach estimate well above the inline limit at search 33.
 func _use_large() -> void:
 	_block(8)
 	_settings.spot_diameter = 4
@@ -291,8 +262,6 @@ func _lifecycle_decrease_intent() -> void:
 		tool.clear_selection_cache()
 		_context = State.drawing_context()
 		_material = VoxelFrame.material(Color.WHITE)
-		# A busy runner makes `_accept_intent` only queue the cell, so the live
-		# settings can shrink before the job builds.
 		tool._intent_running = true
 		tool._accept_intent(Vector3i(8, 0, 0), frame, _context, _material, 5000)
 		expect(tool._pending_intents.size() == 1, "the large cell waits in the intent queue")
@@ -303,8 +272,6 @@ func _lifecycle_decrease_intent() -> void:
 		_settings.spot_diameter = 1
 		_settings.spray_size = 9
 		_settings.speed = 1
-		# The frozen reference uses the captured sizes while the live settings
-		# are already small.
 		tool.seed_spray(SEED)
 		_inline = tool._sample(Vector3i(8, 0, 0), frame, _context, null, _material, 4, 33, 1)
 		_inline_state = tool._rng.state
@@ -320,7 +287,6 @@ func _lifecycle_decrease_intent() -> void:
 		expect(tool.preview_cells() == _inline, "the queued job keeps the frozen inline cells")
 		expect(_inline.has(Vector3i(16, 0, 0)) and _inline.has(Vector3i(-17, 0, 0)), "the frozen output holds the base and the far mirror")
 		expect(tool._rng.state == _inline_state, "the queued job consumes the same draws")
-		# The small live box covers neither the base chunk nor the mirror chunk.
 		expect(tool.last_capture_chunks == 2, "the large ROI captured the base and the far mirror chunk")
 		expect(tool._selection_index == null, "a two-cell selection needs no mask cache")
 		if tool._edit != null:

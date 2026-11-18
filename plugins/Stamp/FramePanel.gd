@@ -1,14 +1,8 @@
 extends ScrollContainer
 
-## The stamp frame side panel.
-##
-## It shows one preview for each frame of the source file. The selected preview
-## becomes the stamp.
 
-## Emitted when the user selects a frame.
 signal frame_selected(index: int)
 
-## The preview edge length in pixels.
 const THUMBNAIL_SIZE := 64
 const PREVIEW_SCENE := preload("res://Globals/VoxelImageRenderer/RendererViewport.tscn")
 
@@ -53,7 +47,6 @@ func _exit_tree() -> void:
 		_preview_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 
-## Fills the panel with one preview button for each frame.
 func show_frames(frames: Array[VoxelFrame]) -> void:
 	_frames = frames
 	_preview_revision += 1
@@ -64,7 +57,6 @@ func show_frames(frames: Array[VoxelFrame]) -> void:
 	_start_previews()
 
 
-## Removes every frame and hides the panel.
 func clear() -> void:
 	_frames = []
 	_preview_revision += 1
@@ -102,7 +94,6 @@ func _clear_buttons() -> void:
 	_populating = false
 
 
-## Selects one frame without emitting another request.
 func select_frame(index: int) -> void:
 	if index < 0 or index >= _buttons.size():
 		return
@@ -111,7 +102,6 @@ func select_frame(index: int) -> void:
 	_populating = false
 
 
-## Clears the frame selection while the panel stays open.
 func clear_selection() -> void:
 	_populating = true
 	for button in _buttons:
@@ -120,7 +110,6 @@ func clear_selection() -> void:
 	_populating = false
 
 
-## Disables the previews while a stamp prepares.
 func set_busy(busy: bool) -> void:
 	for button in _buttons:
 		if is_instance_valid(button):

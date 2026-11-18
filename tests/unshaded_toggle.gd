@@ -53,7 +53,6 @@ func _settle() -> void:
 	await get_tree().process_frame
 
 
-# Returns true when every displayed chunk material uses the expected shading.
 func _all_materials(expected: int) -> bool:
 	var modes: Array[int] = []
 	for instance: MeshInstance3D in _renderer()._chunk_instances.values():

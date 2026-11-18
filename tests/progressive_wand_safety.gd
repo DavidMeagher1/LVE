@@ -1,19 +1,5 @@
 extends "res://tests/test.gd"
 
-# Progressive wand selection safety.
-#
-# The wand streams a growing selection. These tests prove that an intermediate
-# outline mesh installs while the search still runs, that a new snapshot does not
-# cancel the outline already building, that the final result is exact, that a
-# cancel or a clear cannot resurrect a stale outline, and that the tool lifecycle
-# (tool switch, status-bar cancel, Esc, free, reaper) leaves no worker behind.
-#
-#   godot --path . res://tests/progressive_wand_safety.tscn
-#   godot --path . res://tests/progressive_wand_safety.tscn -- replace_partial_excludes_prior
-#
-# The tests assert the installed mesh, not only the selection count. A pixel check
-# is not part of a headless run, so visibility is proven by the installed surface,
-# not by rendered pixels.
 
 const PREVIEW_SCRIPT := preload("res://Globals/Rendering/VoxelPreview.gd")
 const OUTLINE_REFERENCE := preload("res://tests/outline_reference.gd")
@@ -24,13 +10,8 @@ var _wand_settings := preload("res://plugins/selection/SelectionSettings.tres")
 const WAND_SIDE := 40
 const WAND_TOTAL := WAND_SIDE * WAND_SIDE * WAND_SIDE
 const MARKER := Vector3i(200, 200, 200)
-# A frame of many small chunks. The disconnected scan walks every chunk slot, so
-# the search lasts long enough for several outline publishes. Two isolated cells
-# per chunk keep the cell count above the wand's streaming limit.
 const GRID_AXIS := 14
 const GRID_PER_CHUNK := 2
-# An injected selection just above the wand's inline limit. A wand on the small
-# frame plus this selection estimates above 4096, so it takes the worker branch.
 const RESTART_SELECTION := 4096
 
 var frame: VoxelFrame
@@ -85,12 +66,8 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Leave no worker, preview, or open stroke behind, so a test can run alone or in
-# any order.
 func after_test() -> void:
 	if is_instance_valid(wand):
-		# The wand cancels only its own edit. A detached wand keeps its connection,
-		# so this reaches a streamed selection that outlived a tool switch.
 		wand._cancel_selection()
 	if is_instance_valid(standalone):
 		standalone.free()
@@ -125,8 +102,6 @@ func _wand_fixture() -> void:
 	selection_preview = plugin("SelectionPlugin")._selection
 
 
-# A large connected block. The wand streams it, so the search lasts several
-# frames and a partial outline can install before the final one.
 func _build_block(side: int) -> void:
 	frame = State.get_current_voxel_frame()
 	var cells := {}
@@ -139,10 +114,6 @@ func _build_block(side: int) -> void:
 	State.document._bounds_dirty = true
 
 
-# A frame of many small chunks with two isolated cells each. The disconnected
-# wand scan walks every slot of every chunk, so the search runs for a long time
-# and publishes several growing snapshots. The cell count stays above the wand's
-# streaming limit.
 func _build_grid() -> void:
 	frame = State.get_current_voxel_frame()
 	var cells := {}
@@ -167,8 +138,6 @@ func _box_selection(min_corner: Vector3i, max_corner: Vector3i) -> VoxelSelectio
 	return selection
 
 
-# The X mirror of every cell, built without the production edit context. It is the
-# expected result of an X-symmetric wand expansion.
 func _mirrored_x(selection: VoxelSelection) -> VoxelSelection:
 	var mirrored := VoxelSelection.new()
 	for cell_position in selection.all_cells():
@@ -177,8 +146,6 @@ func _mirrored_x(selection: VoxelSelection) -> VoxelSelection:
 	return mirrored
 
 
-# A canonical segment key: the two endpoints in lexicographic order. Comparing the
-# sorted key list proves the exact installed geometry, not only its vertex count.
 func _canonical_segments(vertices: PackedVector3Array) -> PackedStringArray:
 	var segments := PackedStringArray()
 	var index := 0
@@ -212,20 +179,16 @@ func _surface_vertices(mesh: Mesh) -> PackedVector3Array:
 	return mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 
 
-# The installed outline geometry, canonicalized. An empty or hidden mesh has none.
 func _installed_segments(mesh_instance: MeshInstance3D) -> PackedStringArray:
 	if mesh_instance == null or not mesh_instance.visible or mesh_instance.mesh == null:
 		return PackedStringArray()
 	return _canonical_segments(_surface_vertices(mesh_instance.mesh))
 
 
-# The expected outline geometry from the frozen reference. It calls no production
-# builder, so the comparison is independent of the live code.
 func _expected_segments(selection: VoxelSelection) -> PackedStringArray:
 	return _canonical_segments(OUTLINE_REFERENCE.outline_vertices(selection))
 
 
-# Wait for a standalone preview to install its final surface.
 func _settle_unit() -> void:
 	var guard := 0
 	while not unit_preview.is_settled():
@@ -235,8 +198,6 @@ func _settle_unit() -> void:
 			break
 
 
-# Wait until the selection preview has installed its final surface, so an
-# installed-outline check reads the settled mesh.
 func _settle_preview() -> void:
 	var guard := 0
 	while not selection_preview.is_settled():
@@ -254,8 +215,6 @@ func _installed_outline(mesh_instance: MeshInstance3D) -> int:
 	return mesh_instance.mesh.surface_get_array_len(0)
 
 
-# The vertices of a distinct, isolated cell set. Isolated cells make a dense
-# outline, so a large snapshot builds for many frames.
 func _scattered_selection(count: int, stride: int) -> VoxelSelection:
 	var selection := VoxelSelection.new()
 	var side := int(ceil(pow(float(count), 1.0 / 3.0))) + 1
@@ -283,9 +242,6 @@ func _replace_partial_excludes_prior() -> void:
 		expect(_grid_total > 4096, "the frame is large enough to stream")
 		State.selection.add(MARKER)
 		State.selection_changed.emit()
-		# The preview may request the marker outline after the signal. Let that
-		# request settle before the stream starts, so its mask lookup is not
-		# counted as a rebuild from the streamed finish.
 		await _settle_preview()
 		rebuilds = VoxelSelection._profile_rebuild_calls
 		expect(State.selection.count() == 1, "the prior marker is the whole selection")
@@ -321,15 +277,9 @@ func _replace_partial_excludes_prior() -> void:
 		expect(installed_while_running, "a partial outline mesh installed while the wand worker still ran")
 		expect(installs > 0, "at least one intermediate outline installed")
 		expect(first_partial > 0 and first_partial < final_length, "the first partial outline is smaller than the final outline")
-		# The stream applies every batch, so the finish must keep the live masks
-		# and publish through the progressive outline. The rebuild count is a
-		# profile. A preview request can race the batch order under load, so the
-		# final geometry and the strict-request check prove the stream stayed live.
 		var rebuild_delta := VoxelSelection._profile_rebuild_calls - rebuilds
 		print("MEASURE wand partial masks: rebuild_calls=%d" % rebuild_delta)
 		expect(not selection_preview._strict_alive, "no strict outline request follows the stream")
-		# The merge budget covers only the merge. The publication copy and the
-		# installed surface are outside it, so the longest frame is reported as is.
 		print("MEASURE wand partial: cells %d, first partial %d, final %d, frames_with_outline %d, longest_frame %d us" % [_grid_total, first_partial, final_length, installs, longest_frame_us])
 	)
 	step("Then the replace partial never held the prior marker", func():
@@ -554,15 +504,10 @@ func _idle_detached_wand_keeps_other_stroke() -> void:
 	)
 
 
-# A small inline wand commits and its history handler starts a large worker
-# selection on the same tool. The inline finalizer must consume only its own
-# handle, operation, and source, so the replacement keeps its worker and context.
 func _on_inline_history() -> void:
 	if _inline_started:
 		return
 	_inline_started = true
-	# Drop the inline cell and inject a region large enough for the worker branch.
-	# The replacement then adds the matched cell back and records its own action.
 	State.selection.erase(Vector3i.ZERO)
 	for index in RESTART_SELECTION:
 		State.selection.add(Vector3i(1000 + index, 0, 0))
@@ -673,7 +618,6 @@ func _free_tool_with_full_queue() -> void:
 		standalone._commit(Vector3i.ZERO)
 		expect(standalone._job != null, "the standalone wand streams")
 	)
-	# Let the producer fill its bounded queue.
 	await get_tree().process_frame
 	await get_tree().process_frame
 	step("When the tool is freed while its worker may block on a full queue", func():
@@ -749,8 +693,6 @@ func _clear_supersedes_stream() -> void:
 	)
 
 
-# The wand captures the symmetry context. Each streamed batch expands through it,
-# so the final selection is the exact mirrored set and one undo removes it.
 func _symmetry_stream_exact() -> void:
 	step("Given a large scattered frame and the X symmetry plane", func():
 		_wand_fixture()
@@ -770,8 +712,6 @@ func _symmetry_stream_exact() -> void:
 	step("Then the final selection is the exact mirrored set", func():
 		expect(State.selection.contains(Vector3i(2, 0, 0)), "the original voxel is selected")
 		expect(State.selection.contains(Vector3i(-2, 0, 0)), "the reflected voxel is selected")
-		# The grid holds 5488 cells. The X reflection maps every cell with x != 0 to
-		# a new cell and leaves the 196 cells with x == 0 in place.
 		expect(State.selection.count() == 10780, "the mirrored selection is exact")
 		expect(_installed_segments(selection_preview) == _expected_segments(_mirrored_x(_grid_selection)), "the mirrored outline is the exact geometry")
 		expect(State.undo_redo.has_undo(), "the symmetric wand records one undo action")
@@ -781,9 +721,6 @@ func _symmetry_stream_exact() -> void:
 	)
 
 
-# Defect 1. A strict request repeated after a stream must reinstall its own exact
-# geometry. The strict dedupe trusts the requested set only while the strict
-# request still owns the preview, so a stream result cannot stand in for it.
 func _strict_stream_strict_identity() -> void:
 	step("Given a preview that installed strict A", func():
 		unit_preview = PREVIEW_SCRIPT.new()
@@ -813,7 +750,6 @@ func _strict_stream_strict_identity() -> void:
 	)
 
 
-# Defect 2. A delayed strict request must not revive after a stream takes over.
 func _pending_strict_superseded_by_stream() -> void:
 	step("Given a delayed strict request larger than the debounce limit", func():
 		unit_preview = PREVIEW_SCRIPT.new()
@@ -835,7 +771,6 @@ func _pending_strict_superseded_by_stream() -> void:
 	)
 
 
-# Defect 3. A stream queued while a strict worker runs must not be lost.
 func _active_strict_superseded_by_stream() -> void:
 	step("Given a strict worker already running", func():
 		unit_preview = PREVIEW_SCRIPT.new()
@@ -858,13 +793,10 @@ func _active_strict_superseded_by_stream() -> void:
 	)
 
 
-# Defect 4. A completed stream outline shares the strict install budget. A spent
-# frame defers it, and the next frame installs it and charges the budget.
 func _install_budget_gate() -> void:
 	step("Given a completed stream outline and a spent frame budget", func():
 		unit_preview = PREVIEW_SCRIPT.new()
 		add_child(unit_preview)
-		# Drive the preview by hand, so the engine cannot reset the frame budget.
 		unit_preview.set_process(false)
 		_snapshot_b = _scattered_selection(3000, 4)
 		unit_preview.show_selection(_snapshot_b, true)
@@ -896,8 +828,6 @@ func _install_budget_gate() -> void:
 	)
 
 
-# Defect 1, user path. A cancel after a partial outline installed must restore the
-# exact prior outline, not leave the partial on screen.
 func _cancel_after_partial_restores_exact_mesh() -> void:
 	step("Given a prior selection with its exact outline installed", func():
 		_wand_fixture()

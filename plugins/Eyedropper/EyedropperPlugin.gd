@@ -1,10 +1,6 @@
 extends VoxelPlugin
 
-## The eyedropper plugin.
-##
-## It adds the eyedropper tool button and its tool.
 
-## The stable id of the eyedropper toolbar. The persisted active tool uses it.
 const TOOL_ID := "eyedropper"
 
 @onready var _toolbar := preload("./Toolbar.tscn").instantiate()
@@ -22,7 +18,6 @@ func _notification(what: int) -> void:
 				node.free()
 
 
-## Activates the eyedropper tool.
 func activate_tool() -> void:
 	if not _toolbar.button_pressed:
 		_toolbar.button_pressed = true
@@ -30,10 +25,6 @@ func activate_tool() -> void:
 	add_editor_node(_tool)
 
 
-## Deactivates the eyedropper tool. A press can still hold its edit when the
-## switch removes the node, so cancel the stroke first.
 func _end_deactivation() -> void:
 	_tool.cancel_stroke()
 	remove_editor_node(_tool)
-
-

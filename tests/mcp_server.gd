@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# The in-app MCP server. The tests drive the same JSON-RPC calls that the
-# bridge sends. One process covers the protocol, the real tool drivers, and the
-# loopback transport.
 
 const MCPServerScript := preload("res://Globals/MCP/MCPServer.gd")
 const MCPGuideScript := preload("res://Globals/MCP/MCPGuide.gd")
@@ -1592,8 +1589,6 @@ func _http_post(port: int, headers: String, body: String) -> String:
 
 
 func _screenshot() -> void:
-	# The screenshot default is a shared user:// file. The live editor uses the
-	# same path, so keep the test on its own file and restore the default.
 	var test_path := ProjectSettings.globalize_path("user://mcp_test_shot.png")
 	var default_path := ProjectSettings.globalize_path("user://mcp_screenshot.png")
 	var had_default := FileAccess.file_exists(default_path)
@@ -2411,5 +2406,3 @@ func _tool_index() -> void:
 		expect(str(init_result.get("instructions", "")).contains("get_state("), "initialize carries the tool index")
 		expect(str(init_result.get("instructions", "")).contains("lve://guide"), "initialize names the guide resource")
 	)
-
-

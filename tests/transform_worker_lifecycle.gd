@@ -1,10 +1,5 @@
 extends "res://tests/test.gd"
 
-# The transform tool prepares its source and its preview on the worker pool when
-# the work passes INLINE_EDIT_LIMIT. The shared helper `State.run_edit_job`
-# launches, pumps, and joins that worker. The 1000-voxel fixture in
-# transform_large_selection stays inline, so these tests use a larger block and
-# drive the worker branch.
 
 const INLINE_LIMIT := 4096
 const BLOCK_X := 32
@@ -27,7 +22,6 @@ var _material := PackedFloat32Array()
 var _baseline := {}
 
 
-# A short job that finishes after the helper pumps at least one frame.
 class ProbeJob extends VoxelFrame.EditJob:
 	var steps := 0
 
@@ -39,8 +33,6 @@ class ProbeJob extends VoxelFrame.EditJob:
 			OS.delay_msec(2)
 
 
-# A job that keeps running until its cancel flag is set, so the test can join it
-# from the main thread while the helper still awaits it.
 class BlockingJob extends VoxelFrame.EditJob:
 	func run() -> void:
 		stage("Blocking", 100)
@@ -84,7 +76,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Leave no worker or open stroke behind, so a test can run alone or in any order.
 func after_test() -> void:
 	_release_held_press()
 	_stop_pending_transform()
@@ -147,8 +138,6 @@ func _helper_external_join() -> void:
 	)
 
 
-# `wait_for_worker` owns the wait and the id retirement only. It never cancels,
-# so a completed job stays uncancelled for its caller's publication checkpoint.
 func _wait_for_worker_normal() -> void:
 	var job := ProbeJob.new()
 	step("Given a probe job launched on the worker", func():
@@ -391,8 +380,6 @@ func _worker_preview_replacement() -> void:
 	)
 
 
-# The tool deletion joins its own worker. An isolated tool instance keeps the
-# editor's shared transform tool out of the deletion.
 func _worker_deletion() -> void:
 	var tool: Node = MOVE_TOOL_SCENE.instantiate()
 	var running := BlockingJob.new()
@@ -414,8 +401,6 @@ func _worker_deletion() -> void:
 	)
 
 
-# Wait until the tool holds no grab, no preview, and no worker, and the operation
-# is finished. A bounded loop keeps a stalled worker from hanging the test.
 func _settle() -> void:
 	var tool := _tool()
 	for i in 900:
@@ -458,8 +443,6 @@ func _select_block() -> void:
 	State.selection_changed.emit()
 
 
-# Every occupied cell with its full nine-float material, so two frames compare by
-# content instead of by chunk id or table order.
 func _frame_cells(frame: VoxelFrame) -> Dictionary:
 	var cells := {}
 	for position in frame.positions():
@@ -531,9 +514,6 @@ func _tool() -> Node:
 	return tool
 
 
-# The transform tool owns its preparation and preview operations. Background
-# renderer operations ("Rendering") are separate work, so this counts
-# only the operations whose owner is the transform tool.
 func _transform_operation_count() -> int:
 	var tool := _tool()
 	if tool == null:
@@ -560,8 +540,6 @@ func _capture_originals_once() -> void:
 	_originals_captured = true
 
 
-# The transform settings live in a shared Resource. Reset the tool and the
-# toggles so a test never inherits the previous test's choice.
 func _reset_transform_settings() -> void:
 	var p := plugin("TransformPlugin")
 	if p == null:
@@ -583,8 +561,6 @@ func _release_held_press() -> void:
 	_mouse_button(_last_mouse_pos, false)
 
 
-# Cancel a transform that a test left mid-drag or pending. The tool clears its
-# grab and restores the source shape, so the next test starts clean.
 func _stop_pending_transform() -> void:
 	var tool := _tool()
 	if tool != null and (tool._dragging or tool._pending):
@@ -594,7 +570,6 @@ func _stop_pending_transform() -> void:
 func _restore_view_state() -> void:
 	var vp := editor_viewport()
 	if _originals_captured:
-		# Restore the size while stretch is off, then put the original stretch back.
 		var container := vp.get_parent()
 		container.stretch = false
 		vp.size = _original_size

@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-## Checks the release version logic, the release payload parser, and the status
-## bar link. No case uses the network.
 
 const CHECKER := preload("res://ui/StatusBar/UpdateChecker.gd")
 const STATUS_SCENE := preload("res://ui/StatusBar/StatusBar.tscn")

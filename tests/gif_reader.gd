@@ -1,15 +1,9 @@
 extends RefCounted
 
-## Reads the GIF files that the test suite writes. Test-only.
-##
-## The reader parses one global or local color table, the NETSCAPE loop
-## extension, a graphic control extension per frame, and the LZW image data.
 
 var width := 0
 var height := 0
 var frames: Array[Dictionary] = []
-## -1 means no loop extension. Zero means forever. A positive value is a
-## repeat count.
 var loop_count := -1
 
 
@@ -120,9 +114,6 @@ func read(data: PackedByteArray) -> bool:
 	return false
 
 
-## Composites the raw frames as a standard viewer does. It applies the previous
-## frame's disposal before it draws the next frame. It returns one full-canvas
-## RGBA8 image per frame.
 func compose() -> Array[Image]:
 	var composed: Array[Image] = []
 	if width <= 0 or height <= 0:

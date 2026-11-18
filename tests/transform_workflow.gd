@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the transform-workflow tests. Each test keeps the steps and
-# checks of its original scene. The user arguments after `--` name the tests to
-# run, so an old scene name still selects its own test.
 
 const TransformGizmoScript := preload("res://plugins/Transform/tools/TransformGizmo.gd")
 
@@ -29,8 +26,6 @@ func _ready() -> void:
 	test("the transform gizmo shows the source pivot and follows the transform", _transform_gizmo, "transform_gizmo")
 
 
-# Each test starts from an empty frame, no selection, no history, the Move tool,
-# and a known camera and viewport. The hooks run under the per-test watchdog.
 func before_test() -> void:
 	_capture_originals_once()
 	State.stop()
@@ -46,8 +41,6 @@ func before_test() -> void:
 	camera_rig().is_orthogonal = false
 
 
-# Finish any held press and pending transform, then restore the camera and
-# viewport. A later test must not inherit a mid-drag transform or a moved view.
 func after_test() -> void:
 	await get_tree().process_frame
 	_release_held_press()
@@ -550,7 +543,6 @@ func _transform_obstacle() -> void:
 	)
 
 
-# Shared fixture: the viewport at a fixed size, looking at the front.
 func _view_setup() -> void:
 	viewport = editor_viewport()
 	var container := viewport.get_parent()
@@ -675,7 +667,6 @@ func _expect_selection(list: Array) -> void:
 		expect(State.selection.cells.has(c), "the selection contains %s" % c)
 
 
-# Capture the viewport size and stretch once, before any test changes them.
 func _capture_originals_once() -> void:
 	if _originals_captured:
 		return
@@ -685,8 +676,6 @@ func _capture_originals_once() -> void:
 	_originals_captured = true
 
 
-# The transform settings live in a shared Resource. Reset the tool and the
-# toggles so a test never inherits the previous test's choice.
 func _reset_transform_settings() -> void:
 	var p := plugin("TransformPlugin")
 	if p == null:
@@ -710,8 +699,6 @@ func _release_held_press() -> void:
 	_mouse_button(_last_mouse_pos, false)
 
 
-# Cancel a transform that a test left mid-drag or pending. The tool clears its
-# grab and restores the source shape, so the next test starts clean.
 func _stop_pending_transform() -> void:
 	var p := plugin("TransformPlugin")
 	if p == null:
@@ -724,8 +711,6 @@ func _stop_pending_transform() -> void:
 func _restore_view_state() -> void:
 	var vp := editor_viewport()
 	if _originals_captured:
-		# Restore the size while stretch is off. A stretched container refuses
-		# a manual size change and prints an engine warning.
 		vp.size = _original_size
 		vp.get_parent().stretch = _original_stretch
 	camera_rig().set_view("default")

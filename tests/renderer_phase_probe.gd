@@ -1,53 +1,20 @@
 extends VoxelRenderer
 
-## A test-only renderer probe for the surface phase timings.
-##
-## It records, for each `_update_surfaces` call, how long the call took, how many
-## shared builds were already finished at entry, and whether the call consumed a
-## result or launched a build. For one watched chunk it also records the frame a
-## build's worker finished, the frame its result was cached, the frame its
-## replacement was launched, and the frame it installed.
-##
-## The probe changes no behavior. The phases are what an ordering change must be
-## judged on, so the numbers are recorded where the renderer itself takes the
-## decisions.
 
-## One entry per `_update_surfaces` call: frame, microseconds, ready builds,
-## whether the call consumed a result, and whether it launched a build.
 var calls: Array[Dictionary] = []
-## The frame a shared build's worker was seen finished while this view looked,
-## keyed by surface key. It stays -1 when another view reaps the build first.
 var worker_frames := {}
-## The frame a finished result was cached by this view, keyed by surface key.
 var cache_frames := {}
-## The frame a launched result was first seen in the shared cache, whichever view
-## cached it. This is the frame the build really became available.
 var available_frames := {}
-## The frames a chunk's result installed.
 var install_frames := {}
-## The frames a build was launched for a chunk.
 var launch_frames := {}
-## The surface key of each launch, in the same order as [member launch_frames].
 var launch_keys := {}
-## The frames a chunk's in-flight result was consumed.
 var consume_frames := {}
-## The number of calls that spent the whole work slice without consuming or
-## launching anything. A call like that deferred this view's own result behind
-## the shared reap work.
 var starved_calls := 0
-## The longest one call took.
 var max_call_us := 0
-## The total microseconds of every call.
 var total_call_us := 0
-## The peak number of shared builds already finished at one call entry.
 var max_ready := 0
-## The surface keys this probe launched. A key that appears twice is a duplicate
-## build for one identical surface.
 var launched_keys := {}
-## The frames of a bare worker round trip, measured in the same frame loop. It
-## separates the pool pickup latency from the surface build cost.
 var pool_trips: Array[int] = []
-## The frame of the current call, relative to the mark.
 var _call_frame := 0
 var _call_started_us := 0
 var _call_consumed := false
@@ -59,7 +26,6 @@ var _trip_start_frame := 0
 var _trip_sink := 0
 
 
-## Starts a relative timeline. Every later frame record is relative to this one.
 func mark() -> void:
 	_mark_frame = Engine.get_process_frames()
 
@@ -68,7 +34,6 @@ func _now() -> int:
 	return Engine.get_process_frames() - _mark_frame
 
 
-## Clears every record. It does not change the renderer state.
 func reset_probe() -> void:
 	calls = []
 	worker_frames = {}
@@ -94,8 +59,6 @@ func _update_surfaces() -> void:
 	_call_launched = false
 	_ready_at_entry = []
 	_tick_pool_trip()
-	# A launched result can be cached by any view that shares the surface cache.
-	# The frame it first appears there is the frame the build became available.
 	for key in launched_keys:
 		if not available_frames.has(key) and _surface_cache.has(key):
 			available_frames[key] = _call_frame
@@ -160,9 +123,6 @@ func _install(chunk_location: Vector3i, surface_key: PackedInt64Array, entry: Di
 		install_frames[chunk_location].append(_call_frame)
 
 
-# Measures one bare worker round trip in the same frame loop. It separates the
-# pool pickup latency from the surface build cost, because the bare task does no
-# work.
 func _tick_pool_trip() -> void:
 	if _trip_task_id >= 0:
 		if WorkerThreadPool.is_task_completed(_trip_task_id):

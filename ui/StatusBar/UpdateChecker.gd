@@ -1,23 +1,12 @@
 extends Node
 
-## Checks GitHub for the latest release when the app starts.
-##
-## The check runs only in release builds, or when `LVE_UPDATE_CHECK=1` is set.
-## Tests and the editor stay offline. The status bar keeps its fallback release
-## page until the request returns.
 
-## Emitted with the latest release tag, its page URL, and whether it is newer.
 signal latest_release(version: String, url: String, newer: bool)
 
-## The GitHub API endpoint for the latest published release.
 const ENDPOINT := "https://api.github.com/repos/LeonardMeagher2/LVE/releases/latest"
-## The prefix that every release page URL must use.
 const RELEASES_PREFIX := "https://github.com/LeonardMeagher2/LVE/releases/"
-## The request timeout in seconds.
 const REQUEST_TIMEOUT := 10.0
-## The wait before a failed request is retried.
 const RETRY_DELAY_SEC := 3.0
-## The maximum request attempts for one start.
 const MAX_ATTEMPTS := 3
 
 @onready var _request: HTTPRequest = $HTTPRequest
@@ -34,7 +23,6 @@ func _ready() -> void:
 	_current_version = str(ProjectSettings.get_setting("application/config/version", ""))
 
 
-## Starts one check. The status bar calls this after it connects the signal.
 func start() -> void:
 	if _started:
 		return
@@ -43,8 +31,6 @@ func start() -> void:
 	_request_release()
 
 
-# Sends one request. A request that cannot start uses the same retry as a failed
-# one, so a transient network fault does not leave the fallback page forever.
 func _request_release() -> void:
 	if not _enabled() or _current_version.is_empty():
 		return
@@ -75,16 +61,12 @@ func _enabled() -> bool:
 	return true
 
 
-## Returns true when a failed request can still succeed on another attempt. A
-## transport fault, a server fault, and a rate limit are temporary. A missing or
-## forbidden release page is not.
 static func should_retry(result: int, response_code: int, headers := PackedStringArray()) -> bool:
 	if result != HTTPRequest.RESULT_SUCCESS:
 		return true
 	if response_code >= 500 or response_code == 429:
 		return true
 	if response_code == 403:
-		# GitHub reports its primary rate limit as 403 with no remaining quota.
 		for header in headers:
 			var lower := header.to_lower()
 			if lower.begins_with("retry-after:"):
@@ -115,8 +97,6 @@ func _emit(version: String, url: String) -> void:
 	latest_release.emit(version, url, is_newer(version, _current_version))
 
 
-## Returns the release fields for a valid GitHub release payload, or an empty
-## dictionary. The payload must be a published release with a release page URL.
 static func parse_release(data: Dictionary) -> Dictionary:
 	if data.get("draft", false) == true or data.get("prerelease", false) == true:
 		return {}
@@ -135,9 +115,6 @@ static func parse_release(data: Dictionary) -> Dictionary:
 	return {"version": version, "url": url}
 
 
-## Returns true when [param latest] is a newer release than [param current].
-## Missing number parts count as zero. A release outranks the same version with
-## a suffix. Two suffixes are not ordered.
 static func is_newer(latest: String, current: String) -> bool:
 	var latest_parts := _parse_version(latest)
 	var current_parts := _parse_version(current)
@@ -155,8 +132,6 @@ static func is_newer(latest: String, current: String) -> bool:
 	return latest_suffix.is_empty() and not current_suffix.is_empty()
 
 
-# Parses a version into three numbers and a suffix. Returns an empty dictionary
-# when the text is not a version.
 static func _parse_version(text: String) -> Dictionary:
 	var value := text.strip_edges()
 	if value.begins_with("v") or value.begins_with("V"):

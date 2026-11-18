@@ -1,14 +1,5 @@
 extends "res://tests/test.gd"
 
-# The deform tools: Grab and Pose.
-#
-# Grab moves every captured source by a weighted, mirrored offset from one
-# baseline snapshot. Pose bends the connected cells inside the brush around its
-# joint. Both commit
-# one history action on release and roll back on Escape.
-#
-# The cases drive the real pointer input through the viewport, so the pick, the
-# view plane, and the undo path are the shipped ones.
 
 const FLOOR_AXIS := {
 	"top": Vector3.Axis.AXIS_Y,
@@ -27,8 +18,6 @@ var tool: Node3D
 var frame: VoxelFrame
 var press := Vector2.ZERO
 var anchor := Vector3i.ZERO
-# A step lambda captures a local by value, so the pose cases keep the values they
-# compare across steps on members.
 var pose_before := {}
 var pose_bent := {}
 var pose_count := 0
@@ -37,7 +26,7 @@ var pose_base := Vector3i.ZERO
 
 func _ready() -> void:
 	timeout = 30.0
-	
+
 	test("grab drags on the true camera-facing plane", _grab_oblique, "grab_oblique")
 	test("grab stretches voxels, keeps materials, and preserves unrelated geometry", _grab_stretch, "grab_stretch")
 	test("grab moves a selected source outside the selection and follows it", _grab_selection_destination, "grab_selection_destination")
@@ -50,7 +39,7 @@ func _ready() -> void:
 	test("a cancelled worker cannot touch a replacement stroke", _cancel_repress, "cancel_repress")
 	test("a click right after a cancelled worker job closes its edit", _cancel_worker_click, "cancel_worker_click")
 	test("the deform options and menu hold Grab and Pose", _deform_controls, "deform_controls")
-	
+
 	test("pose bends the connected limb and keeps the far side still", _pose_limb, "pose_limb")
 	test("a hover shows the rotation point before the press", _pose_hover_pivot, "pose_hover_pivot")
 	test("the cursor circle spans the joint reach around the picked cell", _pose_cursor_circle, "pose_cursor_circle")
@@ -101,8 +90,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Selects one deform tool and refreshes the tool handle. The plugin swaps the
-# active node on the settings change, so a test must read the node after it.
 func _use(kind: int) -> void:
 	_settings.tool = kind
 	tool = plugin("DeformPlugin")._current_tool
@@ -112,9 +99,6 @@ func after_test() -> void:
 	if tool != null and tool._edit != null:
 		tool.finish_on_switch()
 	State.stop()
-
-
-# --- Helpers ----------------------------------------------------------------
 
 
 func _view(view: String) -> void:
@@ -185,9 +169,6 @@ func _await_edit_closed() -> void:
 			await get_tree().process_frame
 			return
 		await get_tree().process_frame
-
-
-# --- Grab -------------------------------------------------------------------
 
 
 func _grab_oblique() -> void:
@@ -447,8 +428,6 @@ func _grab_pending_return() -> void:
 
 
 func _deform_return_selection() -> void:
-	# A drag that comes back to its origin republishes the baseline. The selection
-	# must return with it, or the next stroke searches cells that no longer exist.
 	step("Given a bar with a selection over its first two cells", func():
 		_use(_settings.Tools.GRAB)
 		_settings.size = 3
@@ -486,9 +465,6 @@ func _deform_return_selection() -> void:
 
 
 func _cancel_worker_click() -> void:
-	# A release that arrives while an older, cancelled job still runs must settle
-	# the new stroke when that job retires. Otherwise the edit stays open and the
-	# next press is swallowed until the pointer moves.
 	step("Given a wide plate and a running worker grab", func():
 		_use(_settings.Tools.GRAB)
 		_settings.size = 25
@@ -595,11 +571,6 @@ func _deform_controls() -> void:
 	)
 
 
-# --- Pose -------------------------------------------------------------------
-
-
-# Builds a bar along X. The front view shows the whole bar, so the local limb
-# axis is X and the bone lies in the view plane.
 func _bar(from_x: int, to_x: int) -> void:
 	for x in range(from_x, to_x + 1):
 		frame.set_cell(Vector3i(x, 0, 0), VoxelFrame.material(Color.WHITE))
@@ -713,7 +684,6 @@ func _pose_solid() -> void:
 		pose_count = frame.count()
 		_press(press)
 		expect(tool._joint_found, "the pose finds the joint")
-		# The bar is symmetric around the pick, so either end can be the base.
 		expect(absf(tool._bone_dir.dot(Vector3.RIGHT)) > 0.99, "the bone runs along the bar")
 		var drag_pos := press + Vector2(0.0, -260.0)
 		_motion(drag_pos, drag_pos - press)
@@ -809,8 +779,6 @@ func _pose_end_on() -> void:
 		_view("right")
 		for x in range(-8, 9):
 			frame.set_cell(Vector3i(x, 0, 0), VoxelFrame.material(Color.WHITE))
-		# One off-axis cell next to the base makes a twist visible when the bone
-		# points at the viewer.
 		frame.set_cell(Vector3i(7, 0, 1), VoxelFrame.material(Color.WHITE))
 		sync_viewport()
 		press = _pos(Vector3.ZERO)
@@ -832,8 +800,6 @@ func _pose_end_on() -> void:
 
 
 func _pose_symmetry_isometric() -> void:
-	# The same block from an isometric view checks that the mirrored mask stays a
-	# true mirror when the view is not axis aligned.
 	step("Given a symmetric block, the X symmetry plane, and an oblique view", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 4
@@ -972,14 +938,10 @@ func _pose_history() -> void:
 
 
 func _pose_depth_bias() -> void:
-	# Two occupied cells tie at the same depth. The one behind the view plane of
-	# the press must lose, so a screen-plane bend does not pick a cell that sits
-	# in front of or behind the pointer.
 	step("Given a pick with one candidate on the view plane and one behind it", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 4
 		_settings.falloff = 0.0
-		# The two candidates connect through the brush, so the walk reaches both.
 		_settings.connected = false
 		_view("right")
 		frame.set_cell(Vector3i(0, 0, 0), VoxelFrame.material(Color.WHITE))
@@ -999,8 +961,6 @@ func _pose_depth_bias() -> void:
 
 
 func _pose_face_bias() -> void:
-	# The base leans toward the half of the face under the pointer, and the cursor
-	# draws a cross at that point so the bias is visible.
 	step("Given a bar with one candidate on each side of the pick", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 4
@@ -1029,8 +989,6 @@ func _pose_face_bias() -> void:
 
 
 func _pose_snap() -> void:
-	# The snap rounds the requested angle to a quarter turn before the fit, so the
-	# whole limb lands on one line.
 	step("Given a bar and the pose snap on", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 4
@@ -1096,8 +1054,6 @@ func _pose_large_blob() -> void:
 
 
 func _pose_cursor_circle() -> void:
-	# The circle shows the joint reach, not the flat footprint. A base outside
-	# the brush is then still inside the circle.
 	step("Given a bar and a hover with the Pose tool", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 4
@@ -1161,9 +1117,6 @@ func _pose_selection() -> void:
 	)
 
 func _pose_stable() -> void:
-	# The wall above the bar stops a full bend, so the angle fit decides the
-	# result. A fit that reads the published preview then changes on every second
-	# motion, and the bend flashes between two angles.
 	step("Given a bar with a wall above it and the Pose tool", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 4
@@ -1223,9 +1176,6 @@ func _pose_pointer_angle() -> void:
 	)
 
 func _pose_no_smear() -> void:
-	# A large brush puts the joint far behind the pick, so the turned limb sweeps a
-	# wide box. A fill along each source line would smear the limb across that box
-	# and add cells, which a rigid turn never does.
 	step("Given a thin bar and a brush wider than the bar", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 10
@@ -1251,9 +1201,6 @@ func _pose_no_smear() -> void:
 
 
 func _pose_search_bound() -> void:
-	# A long limb must not send the joint search across the model. The press sits
-	# one brush size from the tip, so the walk sees the tip end within its reach
-	# and keeps the joint on the body side.
 	step("Given a long bar and the Pose tool", func():
 		_use(_settings.Tools.POSE)
 		_settings.size = 4

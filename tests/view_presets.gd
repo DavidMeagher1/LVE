@@ -36,8 +36,6 @@ func _key(code: Key) -> void:
 	viewport.push_input(ev)
 
 
-# A wheel can arrive as a press and a release on some platforms. Only the press
-# may change the zoom, or one notch zooms twice.
 func _wheel() -> void:
 	step("Given the editor viewport at one hundred percent", func():
 		viewport = editor_viewport()

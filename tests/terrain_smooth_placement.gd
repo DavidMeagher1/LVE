@@ -1,10 +1,5 @@
 extends "res://tests/test.gd"
 
-# Smooth must follow the real surface under the cursor. The view plane fixes only
-# the input spacing. Each canonical dab reconstructs its camera ray from the
-# captured segment rays and resolves the real hit and entered face on the
-# accepted frame at dab time, so no dab sits in the air, a miss applies nothing,
-# and a vertical side keeps its own normal. The probe records every resolved hit.
 
 const ProbeScript := preload("./terrain_smooth_probe.gd")
 
@@ -68,8 +63,6 @@ func after_test() -> void:
 	_tool = null
 
 
-# --- Fixtures -----------------------------------------------------------------
-
 func _install(changes: Dictionary) -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -92,7 +85,6 @@ func _floor_and_pillar() -> void:
 	_install(changes)
 
 
-# Two pillars with a gap, and no floor, so the middle rays miss the model.
 func _two_pillars() -> void:
 	var changes := {}
 	var material := _material()
@@ -116,8 +108,6 @@ func _floor_and_wall() -> void:
 				changes[Vector3i(x, y, 10 + dz)] = material
 	_install(changes)
 
-
-# --- The strokes --------------------------------------------------------------
 
 func _button(pressed: bool, position: Vector2) -> void:
 	var event := InputEventMouseButton.new()
@@ -144,9 +134,6 @@ func _screen(world: Vector3) -> Vector2:
 	return camera_rig().unproject_position(world)
 
 
-# Runs one Smooth stroke from a press at one world point through the given world
-# points. A step of one world cell is a cell-by-cell replay, a larger jump is a
-# coalesced segment. Returns the recorded dab hits.
 func _stroke(from: Vector3, path: Array) -> Array:
 	_tool.reset_dabs()
 	_button(true, _screen(from))
@@ -165,8 +152,6 @@ func _air_count(hits: Array, low: int, high: int) -> int:
 			count += 1
 	return count
 
-
-# --- Cases --------------------------------------------------------------------
 
 func _floor_to_pillar() -> void:
 	step("Given a floor and a 20 cell pillar", func():
@@ -250,8 +235,6 @@ func _vertical_side() -> void:
 		_button(true, _screen(Vector3(0, 0, 6)))
 		_motion(_screen(Vector3(0, 0, 10)))
 	)
-	# The drain applies its accepted dabs in bounded batches and yields between
-	# them, so wait until the drag is fully applied before reading the result.
 	while _tool._has_pending():
 		await get_tree().process_frame
 	step("Then the wall dabs hit the wall top and the region follows the wall", func():

@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused checks for the multi-test harness and the runner selection. Every test
-# is independent, so any single test can run alone in any requested order.
 
 const KIT := preload("res://addons/test_kit/test_case.gd")
 const GROUP_SCENES := {"tag_group": ["frames", "tag_frame_remove", "tag_playback", "tags"], "step_timing": []}

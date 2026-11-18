@@ -1,12 +1,5 @@
 extends RefCounted
 
-# Frozen copy of the VoxelPreview outline builder, taken before the shared
-# neighbor scan replaced it. It calls no production code, so a change to the
-# live builder cannot change this reference. The parity test compares the two.
-#
-# The reference keeps the original shape: one five-element array per cell edge,
-# grouped by line, then merged with a start-sorted comparator.
-
 
 static func outline_vertices(selection: VoxelSelection, job: VoxelFrame.EditJob = null) -> PackedVector3Array:
 	var boundary_edges := []

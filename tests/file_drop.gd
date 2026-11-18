@@ -1,6 +1,5 @@
 extends "res://tests/test.gd"
 
-## Checks that files dropped on the window open as document tabs.
 
 var menu: Node
 var prefix := ""

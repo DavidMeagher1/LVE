@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the transform view-axis tests. The option is on by default,
-# so the camera plane drives the drag. The plane mode keeps the nearest world
-# axis. A named view within two degrees of an axis stays exact.
 
 const VIEW_TOOLTIP := "Use the view axis. When off, snap to the nearest world axis plane."
 
@@ -527,7 +524,6 @@ func _stop_pending_transform() -> void:
 func _restore_view_state() -> void:
 	var container := editor_viewport().get_parent()
 	if _originals_captured:
-		# Restore the size while stretch is off, then restore stretch.
 		editor_viewport().size = _original_size
 		container.stretch = _original_stretch
 	camera_rig().set_view("default")

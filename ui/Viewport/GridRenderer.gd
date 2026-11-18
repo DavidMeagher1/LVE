@@ -1,10 +1,5 @@
 extends MeshInstance3D
 
-## Draws the floor grid plane.
-##
-## The grid follows the floor axis, the floor index, and the document size.
-## A bounded axis uses the centered size. An infinite axis uses the content
-## bounds plus one cell. It rebuilds only when one of those changes.
 
 var _last_bounds: AABB
 var _last_axis := -1
@@ -20,8 +15,6 @@ func _ready() -> void:
 	State.floor_plane_changed.connect(rebuild)
 	State.size_changed.connect(rebuild)
 
-## Rebuilds the grid when the floor plane, the document size, or the content
-## bounds changed.
 func rebuild() -> void:
 	var bounds := State.document.workspace_bounds()
 	var axis := State.floor_axis
@@ -62,10 +55,7 @@ func rebuild() -> void:
 	_push_far_bounds()
 
 
-# Registers the grid with the camera, so the far plane cannot cut its edge.
 func _push_far_bounds() -> void:
-	# A tool can roll back its edit while the scene is torn down. The grid is
-	# then outside the tree, so it has no viewport or camera to update.
 	var viewport := get_viewport()
 	if viewport == null:
 		return
@@ -78,15 +68,12 @@ func _push_far_bounds() -> void:
 		camera.clear_helper_far_bounds(&"grid")
 
 
-## Returns the low corner of the grid span. An empty bounds uses a small fixed
-## span.
 static func span_lo(bounds: AABB) -> Vector3:
 	if bounds.has_volume():
 		return bounds.position
 	return Vector3.ONE * -4.5
 
 
-## Returns the high corner of the grid span.
 static func span_hi(bounds: AABB) -> Vector3:
 	if bounds.has_volume():
 		return bounds.end

@@ -55,6 +55,10 @@ Use the `godot-docs` skill to verify API assumptions against the current stable 
 - When custom Resource properties change, emit `changed` if observers require notification.
 - Optimize measured costs. Combine repeated rebuild requests when needed.
 
+### Comments
+
+Write no comments in GDScript. This includes `##` documentation comments. Name variables and functions so the code explains itself.
+
 ## UI conventions
 
 - Never set `focus_mode = 0` (FOCUS_NONE) on controls.

@@ -1,16 +1,8 @@
 extends SceneTree
 
-# The shared test runner. It finds every `*.test.tscn` in the project, runs the
-# selected scenes in this process, and exits with a CI-friendly status.
-#
-# There is no child process and no project setting. A test scene owns its main
-# scene and its environment. The runner only adds the scene, awaits `finished`,
-# prints the result, and frees it.
 
 const KIT := preload("res://addons/test_kit/test_case.gd")
 const TEST_SUFFIX := ".test.tscn"
-# Stop after this many failed scenes. A green project gets fast feedback by
-# default. Edit this constant to run every scene.
 const MAX_FAILURES := 3
 
 var _failed := 0
@@ -52,8 +44,6 @@ func _run_all() -> void:
 	_print_timing(Time.get_ticks_msec() - started)
 
 
-# Report the wall clock and the slowest scenes. A slow scene is visible in every
-# run, so a regression shows in the output, not only in the total.
 func _print_timing(total_ms: int) -> void:
 	if _timings.is_empty():
 		return
@@ -69,9 +59,6 @@ func _print_timing(total_ms: int) -> void:
 	print("SLOWEST: %s" % ", ".join(parts))
 
 
-# One entry per scene to run. An entry holds the scene path and the case names
-# to pass to the scene. A named run resolves the name against the scenes and
-# their cases. An unknown name stops the run instead of running nothing.
 func _test_entries() -> Array:
 	var scenes := {}
 	var paths := {}
@@ -106,9 +93,6 @@ func _test_entries() -> Array:
 	return out
 
 
-# Every `*.test.tscn` under `res://`. Hidden directories and `.godot` are
-# skipped. The file name is the whole test contract; the runner does not inspect
-# a scene to decide whether it is a test.
 func _test_scene_files() -> Array[String]:
 	var out: Array[String] = []
 	_collect_scenes("res://", out)
@@ -135,10 +119,6 @@ func _join(dir_path: String, name: String) -> String:
 	return dir_path + "/" + name
 
 
-# The scenes named after `--`, or every scene when none are named. Name a batch
-# to run only those scenes, still in this one process:
-#
-#   godot --path . -s res://addons/test_kit/run.gd -- paint line brush_modes
 func _requested() -> Dictionary:
 	var names := {}
 	for argument in OS.get_cmdline_user_args():
@@ -167,8 +147,6 @@ func _run_one(entry: Dictionary) -> Dictionary:
 	if scene.has_method("before_scene_free"):
 		await scene.before_scene_free()
 	scene.queue_free()
-	# Let deferred cleanup finish before the next scene starts. A scene can
-	# queue worker joins and preview teardown from `_exit_tree`.
 	for i in 3:
 		await process_frame
 	var seconds := (Time.get_ticks_msec() - begin) / 1000.0

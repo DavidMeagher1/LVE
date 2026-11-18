@@ -1,17 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused proof for the exact enclosed-chunk shortcut of `VoxelMeshBuilder`.
-#
-# A face is emitted only where the neighbor cell is empty or translucent, so a
-# full chunk whose six face planes and whose own materials are all opaque cannot
-# emit any face. The shortcut then skips the padded snapshot and the face scan.
-#
-# Every case builds one builder with the shortcut and one with the frozen baseline
-# body (`enclosed_shortcut = false`) on the same frame, and compares the arrays by
-# element type and value. An unsafe case must fall through to the baseline and
-# match it exactly.
-#
-#   godot --path . res://tests/mesher_enclosed.tscn
 
 const CHUNK := VoxelFrame.CHUNK_SIZE
 
@@ -39,7 +27,6 @@ func _full_block(origin_chunk: Vector3i, span: int, material: PackedFloat32Array
 	return frame
 
 
-# Builds one pair on the same frame and checks the exact contract.
 func _check_pair(label: String, frame: VoxelFrame, location: Vector3i, smooth: bool, textured: bool, expect_culled: bool) -> void:
 	var culled := VoxelMeshBuilder.new()
 	culled.source_frame = frame
@@ -60,7 +47,6 @@ func _check_pair(label: String, frame: VoxelFrame, location: Vector3i, smooth: b
 	expect(culled.geometry_bytes == baseline.geometry_bytes, "%s: the geometry bytes match the baseline" % label)
 
 
-# Compares every entry by type and value, so a differing packed type also fails.
 func _arrays_equal(first: Array, second: Array) -> bool:
 	if first.size() != second.size():
 		return false
@@ -171,7 +157,6 @@ func _safe_variants() -> void:
 		_check_pair("enclosed mixed atlas", frame, center, false, true, true)
 	)
 	step("When an unused palette row is translucent", func():
-		# A conservative skip is fine: the chunk still builds through the baseline.
 		var frame := _full_block(Vector3i.ZERO, 3, opaque)
 		var center := Vector3i(1, 1, 1)
 		expect(VoxelMeshBuilder._enclosed(frame, center), "an opaque enclosed chunk is enclosed")

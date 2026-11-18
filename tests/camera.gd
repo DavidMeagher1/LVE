@@ -109,8 +109,6 @@ func _clip_run() -> void:
 	clip_camera.is_orthogonal = false
 
 
-# A reset must not store its result on the document. `set_view` and `configure`
-# reach `_save_pose` through `view_changed`.
 func _reset_run() -> void:
 	step("Given a document with no saved camera", func():
 		State.document.edit_camera = {}

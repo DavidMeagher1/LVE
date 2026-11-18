@@ -1,9 +1,5 @@
 extends "./TransformTool.gd"
 
-## The move transform tool.
-##
-## A drag moves the source by whole cells. A click opens the move dialog for an
-## exact offset. It changes no other cell property.
 
 const TransformDialog := preload("./TransformDialog.gd")
 

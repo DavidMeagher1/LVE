@@ -1,12 +1,5 @@
 extends "./SelectTool.gd"
 
-## The box selection tool.
-##
-## It selects the volume behind a dragged screen rectangle. A click selects the
-## picked voxel.
-
-# The box tool selects the volume behind a dragged rectangle.
-
 
 func _begin_shape(_pos: Vector2) -> void:
 	_show_band_rectangle(_screen_rectangle(_screen_press))

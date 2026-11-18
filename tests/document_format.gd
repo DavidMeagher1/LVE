@@ -140,7 +140,6 @@ func _run() -> void:
 	step("When shared files contain invalid document data", _check_invalid_documents)
 	step("Then failed document opening preserves the current document and undo history", func():
 		var previous := State.document
-		# This case proves history preservation, not the document size limit.
 		State.document.size = Vector3i.ZERO
 		State.symmetry_axes = 0
 		State.slice_layers = 0

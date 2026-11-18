@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# Dedicated probe for the multi-test runner. It records every test and hook call
-# and checks the sequence after each test. Each probe also runs alone or in a
-# different order, so selected tests never depend on unselected tests.
 
 var events: Array[String] = []
 
@@ -13,7 +10,6 @@ func _ready() -> void:
 	test("the runner ordered every test with its hooks", _probe_c, "probe_c")
 
 
-# Both hooks await a frame, so the probe proves the runner waits for them.
 func before_test() -> void:
 	await get_tree().process_frame
 	events.append("setup")

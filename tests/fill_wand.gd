@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the fill and wand tests. Each test keeps the steps and checks
-# of its original scene. The user arguments after `--` name the tests to run, so
-# an old scene name still selects its own test.
 
 var _selection_settings := preload("res://plugins/selection/SelectionSettings.tres")
 
@@ -34,11 +31,6 @@ func _ready() -> void:
 	test("the slice stops a fill at the floor layer", _slice_fill, "slice_fill")
 
 
-# Each test starts from a fresh document. The selection mode and its connected
-# option live in a shared resource, so they are restored here. The fill option
-# drives its own resource, so its button is restored. The viewport stretch
-# returns to its startup value, so a test that keeps the default size sees the
-# same size as a fresh process.
 func before_test() -> void:
 	var fill_options: Node = plugin("PaintPlugin")._options
 	var connected := fill_options.get_node("Fill/Connected") as Button
@@ -61,8 +53,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Shared viewport setup. The fill and wand_select cases use a fixed 800 by 500
-# view. The wand_all case keeps the default view size.
 func _view_setup() -> void:
 	viewport = editor_viewport()
 	viewport.get_parent().stretch = false
@@ -109,7 +99,7 @@ func _slice_fill() -> void:
 		select_toolbar_item("paint", "Bucket Fill")
 		State.set_color(Color.BLUE)
 		var req := pick_request(center)
-		seed = VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward, true).target
+		seed = VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward, true).target
 		var f: VoxelFrame = State.document.frames[State.current_frame]
 		f.set_cell(seed, VoxelFrame.material(Color.RED))
 		f.set_cell(seed + Vector3i(1, 0, 0), VoxelFrame.material(Color.RED))
@@ -142,7 +132,7 @@ func _slice_screen_pos_of(cell: Vector3i) -> Vector2:
 		for dx in range(0, int(viewport.size.x), 8):
 			var pos := Vector2(dx, dy)
 			var req := pick_request(pos)
-			if VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward, true).target == cell:
+			if VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward, true).target == cell:
 				return pos
 	return Vector2.INF
 
@@ -229,9 +219,6 @@ func _wand_select() -> void:
 		seed = start.target
 		blob_a = [seed, seed + Vector3i(1, 0, 0), seed + Vector3i(0, 0, 1)]
 		blob_b = [seed + Vector3i(8, 0, 0), seed + Vector3i(9, 0, 0)]
-		# Offset in X, not placed directly above seed. The center click's ray has no X
-		# component at the default camera angle, so a voxel stacked with the same X and Z as
-		# seed can sit exactly on that ray and get hit instead of seed.
 		red = seed + Vector3i(1, 1, 0)
 		var gray := Color.from_rgba8(150, 150, 150)
 		var red_c := Color.from_rgba8(200, 60, 60)

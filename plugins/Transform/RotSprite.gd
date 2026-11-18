@@ -1,17 +1,9 @@
 class_name RotSprite
 extends RefCounted
 
-## Rotates a small pixel grid with fewer jags and gaps.
-##
-## The class upscales the grid with a Scale2x-style pass, then rotates and
-## downscales together by nearest-neighbor sampling at the finer resolution.
-## An angle that is an exact multiple of 90 degrees uses an exact integer
-## rotation instead.
 
-## The empty cell color.
 const EMPTY := Color.TRANSPARENT
-## The number of 2x upscale passes.
-const SCALE_STEPS := 3 # three 2x passes = 8x upscale, matching the reference algorithm
+const UPSCALE_PASSES := 3
 
 var _grid: PackedColorArray
 var _w: int
@@ -45,7 +37,7 @@ func _init(cells: Dictionary) -> void:
 		_grid[ly * _w + lx] = cells[key]
 
 	_scale = 1
-	for _i in SCALE_STEPS:
+	for _i in UPSCALE_PASSES:
 		var scaled := _scale2x(_grid, _w, _h)
 		_grid = scaled[0]
 		_w = scaled[1]
@@ -53,9 +45,6 @@ func _init(cells: Dictionary) -> void:
 		_scale *= 2
 
 
-## Rotates the layer by [param angle] radians around [param pivot]. Both use the
-## same local coordinate space as the constructor cells. Returns a cell-to-color
-## dictionary. Empty cells are omitted.
 func rotate(pivot: Vector2, angle: float) -> Dictionary:
 	var corners := [
 		Vector2(_src_min.x, _src_min.y),
@@ -92,7 +81,6 @@ func _sample(cell: Vector2i, pivot: Vector2, angle: float) -> Color:
 	return _grid[gy * _w + gx]
 
 
-# One Scale2x/EPX pass. Treats an out-of-bounds neighbor as the nearest edge pixel.
 static func _scale2x(src: PackedColorArray, w: int, h: int) -> Array:
 	var nw := w * 2
 	var nh := h * 2

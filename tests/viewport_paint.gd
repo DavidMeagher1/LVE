@@ -22,7 +22,7 @@ func _run() -> void:
 
 	step("When the user clicks the center of the viewport", func():
 		var req := pick_request(center)
-		pick_target = VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward).target
+		pick_target = VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward).target
 		var click := InputEventMouseButton.new()
 		click.button_index = MOUSE_BUTTON_LEFT
 		click.pressed = true

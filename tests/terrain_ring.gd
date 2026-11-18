@@ -1,14 +1,5 @@
 extends "res://tests/test.gd"
 
-# Exercise the surface ring helper of the terrain tools.
-#
-# The ring is the outer boundary of one brush footprint on the voxel surface. It
-# must be one exact continuous circle on flat ground, it must land on the real
-# cell face on a step, a slope, or a wall, and it must never draw a diagonal
-# chord through solid or air.
-#
-# The helper is pure geometry, so the tests build their own frames and never
-# open a tool, an edit, or a document.
 
 const Ring := preload("res://plugins/Terrain/TerrainRing.gd")
 const VoxelLineMesh := preload("res://Globals/Rendering/VoxelLineMesh.gd")
@@ -39,9 +30,6 @@ func _ready() -> void:
 	test("the legacy ring is a stepped circle with exact unit segments", _legacy_plane, "legacy_plane")
 	test("the legacy ring of radius one is the 3x3 perimeter", _legacy_small, "legacy_small")
 
-
-
-# --- A flat floor -------------------------------------------------------------
 
 func _flat() -> void:
 	_frame = _frame_of(_slab(-HALF, HALF, 0, 0, -HALF, HALF))
@@ -77,8 +65,6 @@ func _flat() -> void:
 	)
 
 
-# --- Every size ---------------------------------------------------------------
-
 func _sizes() -> void:
 	_frame = _frame_of(_slab(-HALF, HALF, 0, 0, -HALF, HALF))
 	step("Given a floor that covers every size through 64", func() -> void:
@@ -101,8 +87,6 @@ func _sizes() -> void:
 				low_side = minf(low_side, vertex.z)
 				high_side = maxf(high_side, vertex.z)
 			expect(vertices.size() > 0, "size %d emits a ring" % size)
-			# The side axis may hold no sample exactly on its extreme, so the span
-			# may fall short by the chord sagitta of one segment.
 			var sagitta := radius * (1.0 - cos(PI / float(Ring.segments_for(size))))
 			expect(absf((high - low) - float(size)) <= 1e-3, "size %d spans %d cells" % [size, size])
 			expect(absf((high_side - low_side) - float(size)) <= 2.0 * sagitta + 1e-3, "size %d spans %d cells on the side axis" % [size, size])
@@ -126,8 +110,6 @@ func _sizes() -> void:
 		expect(absf(low - (center.x + BrushSize.center_offset(size) - radius)) <= 1e-3, "the negative ring starts on the half cell edge")
 	)
 
-
-# --- The exact face -----------------------------------------------------------
 
 func _faces() -> void:
 	_frame = _frame_of(_slab(-10, 10, -10, 10, -10, 10))
@@ -192,8 +174,6 @@ func _oblique() -> void:
 	)
 
 
-# --- A step and a cliff -------------------------------------------------------
-
 func _stairs() -> void:
 	step("Given a one cell step and a five cell cliff", func() -> void:
 		var step_frame := _step_model(1)
@@ -233,8 +213,6 @@ func _check_profile(frame: VoxelFrame, center: Vector3, label: String) -> void:
 	expect(risers >= 1, "the %s ring draws its exposed riser" % label)
 
 
-# --- A hole -------------------------------------------------------------------
-
 func _holes() -> void:
 	var changes := _slab(-HALF, HALF, 0, 0, -HALF, HALF)
 	for x in range(3, 6):
@@ -263,8 +241,6 @@ func _holes() -> void:
 	)
 
 
-# --- Symmetry -----------------------------------------------------------------
-
 func _symmetry() -> void:
 	_frame = _frame_of(_slab(-HALF, HALF, 0, 0, -HALF, HALF))
 	step("Given eight symmetry masks around the origin and an even size", func() -> void:
@@ -284,8 +260,6 @@ func _symmetry() -> void:
 		expect(missing == 0, "every vertex has its own mirrored partner")
 	)
 
-
-# --- Eligibility --------------------------------------------------------------
 
 func _eligibility() -> void:
 	_frame = _frame_of(_slab(-HALF, HALF, 0, 0, -HALF, HALF))
@@ -314,13 +288,9 @@ func _eligibility() -> void:
 	)
 
 
-# Returns true when the destination of one Build Add sample stays in the
-# selection. The rule reads the destination cell, never the support cell.
 func _destination_allowed(cell: Vector3i, normal: Vector3, _point: Vector3) -> bool:
 	return _selection.is_empty() or _selection.has(Geometry.dominant_step(cell, normal, 1))
 
-
-# --- An empty floor -----------------------------------------------------------
 
 func _floor() -> void:
 	step("Given the seed rule of every terrain tool", func() -> void:
@@ -349,8 +319,6 @@ func _floor() -> void:
 		expect(off_circle == 0, "the plane ring is the true circle")
 	)
 
-
-# --- Cancellation -------------------------------------------------------------
 
 func _cancel() -> void:
 	_frame = _frame_of(_slab(-HALF, HALF, 0, 0, -HALF, HALF))
@@ -385,8 +353,6 @@ func _gate(allowed: int) -> VoxelFrame.EditJob:
 	return job
 
 
-# --- Cost ---------------------------------------------------------------------
-
 func _cost() -> void:
 	var flat := _frame_of(_slab(-HALF, HALF, 0, 0, -HALF, HALF))
 	var slope := _slope_model()
@@ -414,8 +380,6 @@ func _cost() -> void:
 	)
 
 
-# --- Isolation ----------------------------------------------------------------
-
 func _isolation() -> void:
 	step("Then the helper names no editor state and no node", func() -> void:
 		var source := FileAccess.get_file_as_string("res://plugins/Terrain/TerrainRing.gd")
@@ -442,8 +406,6 @@ func _isolation() -> void:
 		)
 	)
 
-
-# --- The legacy plane ring ----------------------------------------------------
 
 func _ring_area(vertices: PackedVector3Array) -> float:
 	var area := 0.0
@@ -510,7 +472,6 @@ func _legacy_small() -> void:
 		expect(absf(low - (first - 0.5)) <= 1e-6, "the size-one ring starts on the cell edge")
 	)
 
-# --- Fixtures -----------------------------------------------------------------
 
 func _frame_of(changes: Dictionary) -> VoxelFrame:
 	var frame := VoxelFrame.new()
@@ -528,7 +489,6 @@ func _slab(x_low: int, x_high: int, y_low: int, y_high: int, z_low: int, z_high:
 	return changes
 
 
-# A low ground on the negative side and a raised top on the positive side.
 func _step_model(height: int) -> VoxelFrame:
 	var changes := _slab(-HALF, -1, 0, 0, -HALF, HALF)
 	var raised := _slab(0, HALF, 0, height, -HALF, HALF)
@@ -537,7 +497,6 @@ func _step_model(height: int) -> VoxelFrame:
 	return _frame_of(changes)
 
 
-# A staircase that rises one cell every two columns.
 func _slope_model() -> VoxelFrame:
 	var changes := {}
 	var material := VoxelFrame.material(Color.WHITE)
@@ -567,10 +526,6 @@ func _context(axes := 0, origin_twice := Vector3i.ZERO) -> VoxelFrame.EditContex
 	return context
 
 
-# --- Cell probes --------------------------------------------------------------
-
-# Returns true when a point lies inside an occupied cell with the given margin
-# from every face. A point exactly on a face is never inside.
 func _inside_occupied(point: Vector3, margin: float) -> bool:
 	for cell in _nearby(point):
 		if not _frame.has(cell):
@@ -581,8 +536,6 @@ func _inside_occupied(point: Vector3, margin: float) -> bool:
 	return false
 
 
-# Returns true when a point lies on or inside an occupied cell box, within the
-# tolerance.
 func _near_solid(point: Vector3, tolerance: float) -> bool:
 	for cell in _nearby(point):
 		if not _frame.has(cell):

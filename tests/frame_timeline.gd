@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the frame-timeline tests. Each test keeps the steps and checks
-# of its original scene. The user arguments after `--` name the tests to run, so
-# an old scene name still selects its own test.
 
 var step_timeline: Node
 
@@ -15,7 +12,6 @@ func _ready() -> void:
 	test("stepping frames moves focus to the selected frame", _step_focus, "step_focus")
 
 
-# Each test starts from a fresh one-frame document.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -23,13 +19,11 @@ func before_test() -> void:
 	State.active_tag = 0
 
 
-# Shared fixture: add frames beside the first one.
 func _add_frames(extra: int) -> void:
 	for i in extra:
 		State.add_frame()
 
 
-# Shared fixture: the timeline frame cells in order.
 func _frame_cells() -> Array:
 	var out: Array = []
 	var grid := main.find_child("FrameGrid", true, false)
@@ -39,7 +33,6 @@ func _frame_cells() -> Array:
 	return out
 
 
-# Shared fixture: the frame buttons in order.
 func _frame_buttons() -> Array:
 	var out: Array = []
 	for cell in _frame_cells():

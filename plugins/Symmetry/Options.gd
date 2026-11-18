@@ -1,9 +1,5 @@
 extends HBoxContainer
 
-## The symmetry option bar.
-##
-## It toggles the mirror axes and edits the symmetry origin. The controls are
-## disabled while an edit is busy.
 
 func _ready() -> void:
 	for axis in 3:
@@ -40,8 +36,6 @@ func _on_origin_changed(value: float, axis: int) -> void:
 	State.symmetry_origin = origin
 
 
-## Places the origin at the selection center, or the model center when the
-## selection is empty.
 func _center_origin() -> void:
 	var bounds := _selection_bounds()
 	if not bounds.has_volume():
@@ -51,7 +45,6 @@ func _center_origin() -> void:
 	State.symmetry_origin = bounds.get_center()
 
 
-## Returns the box of the selected cells. An empty selection has no volume.
 func _selection_bounds() -> AABB:
 	var bounds := AABB()
 	for cell in State.selection.all_cells():

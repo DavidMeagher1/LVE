@@ -1,25 +1,6 @@
 extends RefCounted
 
-# Frozen copy of the erase mutation and compaction algorithm, taken before the
-# shared sentinel, the whole-chunk removal, and the deferred compaction replaced
-# it. The frozen functions own the batch loop, the chunk write, the whole-chunk
-# removal, and the compaction.
-#
-# This is not a fully independent implementation. It reuses production helpers
-# that this unit did not change: `VoxelFrame.chunk_position`, `Chunk.cell_slot`,
-# `VoxelFrame._face_bits`, `VoxelFrame._touched_neighbors`, `Chunk.on_bounds`,
-# `Chunk.get_bounds`, and the chunk storage fields. Re-read this file when any of
-# those helpers changes.
-#
-# The frozen batch path handles transparent batches alone, which is what the erase
-# job writes. A batch that holds any other material is rejected, because the store
-# branch is not part of the frozen algorithm. `apply_cells` covers a batch of any
-# materials through the single-cell path, which this unit did not change.
 
-
-# An independent oracle for a batch of any materials: apply each change through
-# the single-cell path. Erasing is commutative and a single-cell write is
-# idempotent, so the order does not matter.
 static func apply_cells(frame: VoxelFrame, changes: Dictionary) -> void:
 	for cell_position: Vector3i in changes:
 		frame.set_cell(cell_position, changes[cell_position])
@@ -32,7 +13,6 @@ static func prepare_changes(selection_mask: Dictionary) -> Dictionary:
 	return changes
 
 
-# The old full path: prepare one material per cell, then write the batch.
 static func erase(frame: VoxelFrame, selection_mask: Dictionary, uniform_material: Variant = null) -> Array[Vector3i]:
 	return set_cells(frame, prepare_changes(selection_mask), uniform_material)
 
@@ -137,8 +117,6 @@ static func uniform_batch(chunk: VoxelFrame.Chunk, changes: Dictionary, declared
 	return single
 
 
-# The old empty-branch: copy the chunk, zero the grid, compact the table. The
-# caller then removes the emptied chunk from the frame.
 static func fill_chunk(chunk: VoxelFrame.Chunk, cell_material: PackedFloat32Array, chunk_origin: Vector3i, copy_for_write: Callable) -> Array:
 	if not VoxelFrame.is_empty(cell_material):
 		push_error("the erase reference only handles transparent batches")
@@ -156,7 +134,6 @@ static func fill_chunk(chunk: VoxelFrame.Chunk, cell_material: PackedFloat32Arra
 	return [emptied, VoxelFrame.Chunk._extent_face_bits(min_cell, max_cell), removed]
 
 
-# Drop the table entries no slot uses. The grid remaps to the used ids.
 static func old_compact(chunk: VoxelFrame.Chunk) -> void:
 	var used_ids: Array = []
 	var seen := {}

@@ -1,10 +1,5 @@
 extends "res://tests/test.gd"
 
-## Behavior tests for the dither painting brush.
-##
-## The tests drive the real viewport and the real Paint toolbar. The fixture is
-## one solid gray block, so the paint mask is the only reason a cell keeps its
-## color. The dither tool writes visible surface cells only.
 
 const DitherMask := preload("res://Globals/State/Tools/DitherMask.gd")
 const NEIGHBORS := [

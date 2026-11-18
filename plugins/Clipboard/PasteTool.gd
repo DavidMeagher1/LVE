@@ -1,11 +1,6 @@
 extends "res://plugins/brush/LineTool.gd"
 
-## The paste tool.
-##
-## It places a copied pattern at the pointer and commits one paste. Enter
-## commits. Escape cancels. It emits [signal finished] when it stops.
 
-## Emitted when the paste tool stops.
 signal finished()
 
 var _active := false
@@ -15,17 +10,10 @@ var _material_pattern := {}
 var _preview_pattern := {}
 
 
-## One cancellable paste job.
-##
-## It writes the pattern and builds the pasted selection.
-## [method BrushTool.BrushJob.run] is the base worker body.
 class PasteJob extends BrushJob:
-	## The selection offsets relative to the pattern center.
 	var selection_pattern := {}
-	## The pasted selection cells, keyed by cell position.
 	var pasted_selection := {}
 
-	## Writes the pattern and the pasted selection. This is the worker body.
 	func run() -> void:
 		super.run()
 		if not checkpoint(0):
@@ -37,9 +25,6 @@ class PasteJob extends BrushJob:
 				return
 
 
-## Starts one paste placement. [param pattern] maps an offset to a color.
-## [param material_pattern] maps an offset to a full material. [param center] is
-## the pattern center.
 func begin_paste(pattern: Dictionary, selection_pattern: Dictionary, center: Vector3i, material_pattern := {}) -> void:
 	_active = true
 	_source_document = State.document
@@ -62,8 +47,6 @@ func begin_paste(pattern: Dictionary, selection_pattern: Dictionary, center: Vec
 			_preview_pattern.make_read_only()
 	_stroke_shape = _settings.BrushShape.STAMP
 	_stroke_pattern_size = maxi(pattern.size(), selection_pattern.size())
-	# A paste places its whole pattern, so it ignores the selection and the
-	# symmetry. It still respects the slice, which the write gate applies.
 	_edit_context = VoxelFrame.EditContext.new()
 	if State.slice_enabled:
 		_edit_context.slice_axis = State.floor_axis
@@ -73,8 +56,6 @@ func begin_paste(pattern: Dictionary, selection_pattern: Dictionary, center: Vec
 	_update_endpoint(center)
 
 
-## Handles one input event. A pointer move places the pattern. A click or Enter
-## commits the paste. Escape cancels it.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	if not _active:
 		return false
@@ -114,13 +95,10 @@ func _create_preview_job() -> BrushJob:
 	return job
 
 
-## Returns the placement operation, so the placement and the preview share one
-## status entry and one cancel path.
 func _begin_preview_operation(_work: int) -> int:
 	return _placement_operation_id
 
 
-## Keeps the placement operation open until the paste stops.
 func _finish_preview_operation(_id: int) -> void:
 	pass
 
@@ -137,8 +115,6 @@ func _commit_line() -> void:
 	var tx := State.begin_edit()
 	if tx == null:
 		return
-	# Publish the cells the paste preview wrote. The snapshot is unchanged, so
-	# an unchanged chunk stays as it is.
 	frame.apply_published(job.changed_chunks, job.edited_frame)
 	State.document._bounds_dirty = true
 	State.selection.restore(job.pasted_selection)
@@ -158,8 +134,6 @@ func _cancel_edit() -> void:
 		finished.emit()
 
 
-# A removal without a cancel still releases the placement operation, so the
-# status bar cannot keep a finished paste.
 func _exit_tree() -> void:
 	State.finish_operation(_placement_operation_id)
 	_placement_operation_id = 0

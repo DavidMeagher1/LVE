@@ -1,15 +1,8 @@
 extends "res://tests/test.gd"
 
-# Run this optional benchmark directly. Keep it outside automatic suite discovery.
-# Compare warmed alternatives in one process with alternating execution order.
-# Each tool, radius, and gesture runs on the small and the large model. Each
-# pair restores the fixture, resets the counters, drives one real stroke, and
-# reads the phase counters and the surface profile.
 const REPEATS := 5
 const WARMUPS := 2
 const DRAG_STEPS := 12
-# The maximum-radius Smooth drag rounds a 4x larger field per dab. Its edit
-# wait needs more than the shared 120 s deadline. Only it gets this one.
 const HEAVY_TIMEOUT := 900.0
 const ProbeScript := preload("./terrain_latency_tool.gd")
 const TOOLS := ["Build", "Flatten", "Smooth"]
@@ -146,9 +139,6 @@ func _compare(radius: int) -> void:
 	)
 
 
-# Runs one configuration: warm up, then measure alternating paired strokes.
-# Both paths run the same tool and the same input, so their geometry must match
-# and their latencies expose drift across the run.
 func _run(tool_id: int, radius: int, mode: String, fixture: String) -> void:
 	step("Given the %s model, %s, and radius %d" % [fixture, TOOLS[tool_id], radius], func():
 		_settings.tool = tool_id
@@ -183,8 +173,6 @@ func _run(tool_id: int, radius: int, mode: String, fixture: String) -> void:
 	)
 
 
-# Drives one legacy Smooth stroke with the reference or the live job. The
-# paired strokes must leave the same geometry.
 func _stroke(reference: bool) -> Dictionary:
 	_frame.restore(_fixture_chunks)
 	State.undo_redo.clear_history()
@@ -222,9 +210,6 @@ func _stroke(reference: bool) -> Dictionary:
 	return {"input": input_us, "edit": edit_us, "visible": visible_us, "gap": _longest_frame_us}
 
 
-# Drives one real stroke on a restored fixture and reads its timing, its phase
-# counters, and its surface profile. The stroke must leave the model changed and
-# one undo must restore the fixture.
 func _stroke_pair(mode: String) -> Dictionary:
 	_reset_counters()
 	_frame.restore(_fixture_chunks)
@@ -362,9 +347,6 @@ func _tool_id(name: String) -> int:
 	return _settings.Tools.BUILD
 
 
-# Builds the large fixture once. A 96 by 96 by 4 slab plus a 32 by 32 grid of
-# 2 by 2 by 2 blocks every 32 cells holds about a thousand chunks. The blocks
-# that sit over the slab are skipped, so every block owns one chunk.
 func _build_large_fixture() -> void:
 	if _large_fixture != null:
 		return

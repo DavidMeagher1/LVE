@@ -1,47 +1,10 @@
 extends RefCounted
 
-## The pure spray sampler.
-##
-## The sampler computes the write set of one spray batch from explicit inputs
-## only. It reads no Node, no State, and no settings resource. A caller passes a
-## frozen frame snapshot, the brush cell, the symmetry axes and origin, the
-## selection, the full material, the sizes, the speed, and its own random source.
-## The same kernel runs on the main thread inline and on a worker pool thread, so
-## a large batch computes outside the input frame and the result never depends on
-## where it ran.
-##
-## The shape cache holds the spot offsets, the spot pattern, and the spot rows.
-## One cache instance is shared by the main thread and the workers. Every entry
-## is immutable once stored, and a store replaces the whole value under a short
-## lock, so a reader never sees a half-built entry and a build never holds the
-## lock. Two workers can build the same size at once, and the result is the same.
-##
-## The occupancy rows of each chunk hold the occupied x bits of every local row.
-## The sampler counts and ranks the search candidates from those rows, so a wide
-## search never walks the whole reach volume. A material-only write keeps the
-## occupancy revision, so a repaint reuses the rows.
-##
-## A surface index derives the exposed x bits of the same rows. The sampler keeps
-## a spot center and a painted cell only when one face neighbor is empty, so a
-## spray never changes a buried voxel.
-##
-## The sampler names only the pure size and occupancy helpers. A caller preloads
-## this script.
 
 const VoxelBrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
-## The pure occupancy-row index. It counts and ranks occupied cells inside the
-## search sphere, so the sampler never gathers the whole reach volume.
 const SprayIndex := preload("./SprayOccupancyIndex.gd")
 
-# The scanline row of one spot sphere. The entries hold one (dy, dz) pair in "x"
-# and "y" and the row x-span in "z" (low) and "w" (high).
 
-
-## One lock-guarded shape cache for the spot sizes.
-##
-## The cache stores immutable values. A reader gets the value it needs and keeps
-## it, so a later store cannot change it. The lock covers one dictionary read or
-## one dictionary write, never a build.
 class ShapeCache extends RefCounted:
 	var _lock := Mutex.new()
 	var _offsets := {}
@@ -49,59 +12,50 @@ class ShapeCache extends RefCounted:
 	var _rows := {}
 	var _spans := {}
 
-	## Returns the cached spot offsets of one size, or null.
 	func offsets(size: int) -> Variant:
 		_lock.lock()
 		var value: Variant = _offsets.get(size)
 		_lock.unlock()
 		return value
 
-	## Stores the spot offsets of one size. The value is immutable from now on.
 	func put_offsets(size: int, value: Variant) -> void:
 		_lock.lock()
 		_offsets[size] = value
 		_lock.unlock()
 
-	## Returns the cached spot pattern of one size, or null.
 	func pattern(size: int) -> Variant:
 		_lock.lock()
 		var value: Variant = _patterns.get(size)
 		_lock.unlock()
 		return value
 
-	## Stores the spot pattern of one size. The value is immutable from now on.
 	func put_pattern(size: int, value: Variant) -> void:
 		_lock.lock()
 		_patterns[size] = value
 		_lock.unlock()
 
-	## Returns the cached spot rows of one size, or null.
 	func rows(size: int) -> Variant:
 		_lock.lock()
 		var value: Variant = _rows.get(size)
 		_lock.unlock()
 		return value
 
-	## Stores the spot rows of one size. The value is immutable from now on.
 	func put_rows(size: int, value: Variant) -> void:
 		_lock.lock()
 		_rows[size] = value
 		_lock.unlock()
 
-	## Returns the exact row spans of one size, or null.
 	func spans(size: int) -> Variant:
 		_lock.lock()
 		var value: Variant = _spans.get(size)
 		_lock.unlock()
 		return value
 
-	## Stores the exact row spans of one size. The value is immutable from now on.
 	func put_spans(size: int, value: Variant) -> void:
 		_lock.lock()
 		_spans[size] = value
 		_lock.unlock()
 
-	## Drops every entry. The lock covers the clear only.
 	func clear() -> void:
 		_lock.lock()
 		_offsets.clear()
@@ -110,7 +64,6 @@ class ShapeCache extends RefCounted:
 		_spans.clear()
 		_lock.unlock()
 
-	## Returns the number of cached sizes. It is a diagnostic.
 	func size() -> int:
 		_lock.lock()
 		var count := _offsets.size()
@@ -118,8 +71,6 @@ class ShapeCache extends RefCounted:
 		return count
 
 
-## Returns the spot offsets of one size from the cache. A miss builds the offsets
-## off the lock and stores them.
 static func offsets(cache: ShapeCache, size: int) -> Array[Vector3i]:
 	var cached: Variant = cache.offsets(size)
 	if cached != null:
@@ -130,8 +81,6 @@ static func offsets(cache: ShapeCache, size: int) -> Array[Vector3i]:
 	return built
 
 
-## Returns the spot pattern of one size from the cache. A miss builds the
-## read-only lookup set off the lock and stores it.
 static func pattern(cache: ShapeCache, size: int) -> Dictionary:
 	var cached: Variant = cache.pattern(size)
 	if cached != null:
@@ -145,9 +94,6 @@ static func pattern(cache: ShapeCache, size: int) -> Dictionary:
 	return built
 
 
-## Returns the exact row spans of one size from the cache. A miss builds the
-## table off the lock and stores it. One table serves every query of that size,
-## so a wide size pays its square roots once.
 static func sphere_spans(cache: ShapeCache, size: int) -> RefCounted:
 	var cached: Variant = cache.spans(size)
 	if cached != null:
@@ -157,8 +103,6 @@ static func sphere_spans(cache: ShapeCache, size: int) -> RefCounted:
 	return built
 
 
-## Returns the scanline rows of one spot sphere from the cache. A miss builds the
-## rows off the lock and stores them.
 static func rows(cache: ShapeCache, size: int) -> Array:
 	var cached: Variant = cache.rows(size)
 	if cached != null:
@@ -169,8 +113,6 @@ static func rows(cache: ShapeCache, size: int) -> Array:
 	return built
 
 
-## Returns the scanline rows of one spot sphere. Each row holds one (dy, dz) pair
-## in "x", "y" and the row x-span in "z" (low) and "w" (high).
 static func build_rows(size: int) -> Array:
 	var rows := []
 	var first := VoxelBrushSize.first_offset(size)
@@ -196,10 +138,6 @@ static func build_rows(size: int) -> Array:
 	return rows
 
 
-## Returns the number of occupied cells that the reach range can hold. The result
-## caps at the reach cube, so the estimate never counts the same cell twice and
-## never grows past the gather volume. It is a legacy benchmark figure. The tool
-## gate uses [method work_estimate] instead.
 static func occupied_estimate(frame: VoxelFrame, center: Vector3i, reach: int) -> int:
 	var side := 2 * reach + 1
 	var cube := side * side * side
@@ -217,24 +155,14 @@ static func occupied_estimate(frame: VoxelFrame, center: Vector3i, reach: int) -
 	return total
 
 
-## Returns the chunk locations that one worker sample can read or write. The
-## box covers the search sphere, the spot footprint, and every active symmetry
-## reflection. A caller passes the result to [method VoxelFrame.copy_chunks].
 static func capture_chunks(center: Vector3i, search_size: int, spot_size: int, axes: int, origin_twice: Vector3i) -> Array[Vector3i]:
 	return SprayIndex.capture_chunks(center, search_size, spot_size, axes, origin_twice)
 
 
-## Returns the inline work estimate of one sample. The unit is one indexed row
-## operation, not one occupied cell. A caller uses it to choose the inline path
-## or the worker path before it pays the sample.
 static func work_estimate(frame: VoxelFrame, center: Vector3i, search_size: int, spot_size: int, selection: Dictionary, speed: int, selection_index: RefCounted = null) -> int:
 	return SprayIndex.work_estimate(frame, center, search_size, spot_size, selection, speed, selection_index)
 
 
-## Returns the cells inside the slice range. A slice axis below zero keeps every
-## cell. The write gate repeats the test, so a later scope cannot pass. The
-## cursor and the write use this one rule, so a preview shows the exact cells a
-## press writes.
 static func in_slice(cells: Array[Vector3i], axis: int, index: int, count: int) -> Array[Vector3i]:
 	if axis < 0:
 		return cells
@@ -245,24 +173,11 @@ static func in_slice(cells: Array[Vector3i], axis: int, index: int, count: int) 
 	return kept
 
 
-## Samples the write set of one spray batch.
-##
-## The candidate set is the occupied cells of the search sphere. A cell counts
-## only when it is exposed, so a spot center always has an empty face neighbor.
-## The occupancy rows of each chunk count and rank those cells, so the sampler
-## never gathers the whole reach volume and never builds the whole candidate
-## array. The lazy partial shuffle draws the same random sequence as the old
-## in-place shuffle. Every selected spot then paints its footprint directly
-## from the frame, and the footprint keeps only exposed voxels. The optional
-## [param job] supplies the cancel checkpoints. A caller that passes
-## [param report] receives the candidate count and the work counts in it.
 static func sample(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.EditContext, spot_size: int, search_size: int, speed: int, rng: RandomNumberGenerator, material: PackedFloat32Array, cache: ShapeCache, job: VoxelFrame.EditJob = null, report: Dictionary = {}, selection_index: RefCounted = null) -> Array[Vector3i]:
 	var search_spans := sphere_spans(cache, search_size)
 	var surface := SprayIndex.SurfaceIndex.new()
 	surface.frame = frame
 	var candidates := SprayIndex.build_candidates(center, frame, search_size, context.selection, job, selection_index, search_spans, surface)
-	# The indexed sampler never gathers the legacy local array. The key stays so
-	# a caller can tell that the empty value is deliberate, not missing.
 	report["local"] = 0
 	report["candidates"] = candidates.total
 	report["chunks"] = candidates.chunks_scanned
@@ -280,8 +195,6 @@ static func sample(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.Edit
 		_add_surface_stats(report, surface)
 		report["spots"] = 0
 		return []
-	# A lazy partial shuffle keeps the old draws and swaps without an index
-	# array. The override map holds only the positions the shuffle touched.
 	var spots: Array[Vector3i] = []
 	var overrides := {}
 	for i in count:
@@ -305,26 +218,13 @@ static func sample(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.Edit
 	return _expanded_cells(changes, frame, context, job, true)
 
 
-## A read view of the occupied cells of one frozen frame.
-##
-## The view caches the chunk of every coordinate it reads, including the
-## coordinates that the frame does not hold. One lookup costs one chunk
-## dictionary read, one cached chunk read, and one cell lookup, so a mirrored
-## destination far outside the sampled region costs the same as a local one. The
-## view is per job, and it reads no Node and no live frame.
 class Occupancy extends RefCounted:
-	## The frozen frame to read. The caller sets it before the first lookup.
 	var frame: VoxelFrame
-	## The cached chunks, keyed by chunk coordinate. A stored null marks a chunk
-	## that the frame does not hold.
 	var grids := {}
 
-	## Returns true when the frozen frame holds the cell.
 	func occupied(cell: Vector3i) -> bool:
 		return _material_id(cell) > 0
 
-	## Returns true when the frozen frame holds the cell and at least one of its
-	## six face neighbors is empty.
 	func exposed(cell: Vector3i) -> bool:
 		if not occupied(cell):
 			return false
@@ -333,7 +233,6 @@ class Occupancy extends RefCounted:
 				return true
 		return false
 
-	# Returns the material id of one cell, or zero when the cell is empty.
 	func _material_id(cell: Vector3i) -> int:
 		var location := VoxelFrame.chunk_position(cell)
 		var cached: Variant = grids.get(location)
@@ -347,18 +246,6 @@ class Occupancy extends RefCounted:
 		return chunk.cell_id_at_slot(local.x + VoxelFrame.CHUNK_SIZE * (local.y + VoxelFrame.CHUNK_SIZE * local.z))
 
 
-## Expands a change set through the symmetry and the selection with a raw
-## occupancy view.
-##
-## The mask order, the loop order, the selection filter, the existing-only filter,
-## and the original-overlap priority match [method
-## VoxelFrame.EditContext.expand], so the result holds the same cells, the same
-## materials, and the same key order. The view reads the whole frozen frame, so a
-## mirrored destination outside the gathered region is exact. The caller passes
-## `existing_only` true and no matching material, which is the only supported
-## form. An optional [param surface_only] also requires an empty face neighbor at
-## the destination, so a mirrored copy of an exposed voxel stays out when the
-## mirror is buried.
 static func expand_occupied(changes: Dictionary, occupancy: Occupancy, axes: int, origin_twice: Vector3i, selection: Dictionary, job: VoxelFrame.EditJob = null, surface_only := false) -> Dictionary:
 	var expanded := {}
 	var masks: Array[int] = []
@@ -379,8 +266,6 @@ static func expand_occupied(changes: Dictionary, occupancy: Occupancy, axes: int
 				return {}
 	if axes == 0:
 		return expanded
-	# Preserve the original materials where the original and the reflected
-	# patterns overlap.
 	for cell: Vector3i in changes:
 		var held := occupancy.exposed(cell) if surface_only else occupancy.occupied(cell)
 		if (not filtered or selection.has(cell)) and held:
@@ -391,8 +276,6 @@ static func expand_occupied(changes: Dictionary, occupancy: Occupancy, axes: int
 	return expanded
 
 
-## Returns the mirror of one cell for one symmetry mask, exactly as
-## [method VoxelFrame.EditContext.reflect] does.
 static func _reflect(cell: Vector3i, mask: int, origin_twice: Vector3i) -> Vector3i:
 	var destination := cell
 	for axis in 3:
@@ -401,16 +284,6 @@ static func _reflect(cell: Vector3i, mask: int, origin_twice: Vector3i) -> Vecto
 	return destination
 
 
-## Returns the voxels that the selected spot centers paint, read directly from
-## the frozen frame.
-##
-## The spot sphere of every selected center is unioned by scanline rows, and each
-## merged span reads the chunk occupancy rows. The union therefore visits only
-## the occupied cells of the spots, not the whole search-plus-spot reach. An
-## optional [param surface] restricts every painted cell to an exposed voxel, so
-## a spot never recolors a buried cell. The result holds the same cells as
-## [method footprints] for the same occupied local set, with the same selection,
-## material, and surface filter.
 static func footprints_selected(spots: Array[Vector3i], frame: VoxelFrame, context: VoxelFrame.EditContext, spot_size: int, material: PackedFloat32Array, cache: ShapeCache, job: VoxelFrame.EditJob = null, report: Dictionary = {}, surface: RefCounted = null) -> Dictionary:
 	var changes := {}
 	if spots.is_empty():
@@ -426,8 +299,6 @@ static func footprints_selected(spots: Array[Vector3i], frame: VoxelFrame, conte
 		report["footprint_visits"] = changes.size()
 		report["footprint_rows"] = 0
 		return changes
-	# A sparse frame is cheaper to scan per spot than to union every spot row.
-	# The chunk occupied counts bound the scan without touching a grid slot.
 	var first := VoxelBrushSize.first_offset(spot_size)
 	var last := VoxelBrushSize.last_offset(spot_size)
 	var min_spot := spots[0]
@@ -495,27 +366,18 @@ static func footprints_selected(spots: Array[Vector3i], frame: VoxelFrame, conte
 	return changes
 
 
-# Adds the real chunk row builds of one footprint phase to the sample report.
 static func _add_footprint_stats(report: Dictionary, stats: Dictionary) -> void:
 	report["index_builds"] = int(report.get("index_builds", 0)) + int(stats.get("index_builds", 0))
 	report["index_grid_reads"] = int(report.get("index_grid_reads", 0)) + int(stats.get("index_grid_reads", 0))
 	report["index_build_slots"] = int(report.get("index_build_slots", 0)) + int(stats.get("index_build_slots", 0))
 
 
-# Adds the chunk row work that the surface index paid to the sample report. The
-# surface index builds a boundary neighbor row that the count walk never visits,
-# so it owns that count.
 static func _add_surface_stats(report: Dictionary, surface: RefCounted) -> void:
 	report["index_builds"] = int(report.get("index_builds", 0)) + surface.index_builds
 	report["index_grid_reads"] = int(report.get("index_grid_reads", 0)) + surface.index_grid_reads
 	report["index_build_slots"] = int(report.get("index_build_slots", 0)) + surface.index_build_slots
 
 
-# Scans the occupied cells of every spot sphere directly. It walks the chunks of
-# the spot box and reads one row mask at a time, so a sparse frame costs the real
-# occupied cells instead of every row of every spot. A dense frame keeps the row
-# union, because the scan would repeat the overlapping spot cells. An optional
-# surface index restricts the emitted cells to exposed voxels.
 static func footprints_scan(spots: Array[Vector3i], frame: VoxelFrame, context: VoxelFrame.EditContext, spot_size: int, material: PackedFloat32Array, cache: ShapeCache, job: VoxelFrame.EditJob = null, report: Dictionary = {}, stats: Dictionary = {}, surface: RefCounted = null) -> Dictionary:
 	var changes := {}
 	var selection: Dictionary = context.selection
@@ -566,10 +428,6 @@ static func footprints_scan(spots: Array[Vector3i], frame: VoxelFrame, context: 
 	return changes
 
 
-# Emits the occupied cells of one merged world row span. The span is split by
-# chunk, so each chunk row mask answers the whole span. An optional surface
-# index intersects the row mask. Returns the number of occupied cells that the
-# span visited.
 static func _emit_row_span(changes: Dictionary, frame: VoxelFrame, key: Vector2i, low: int, high: int, filtered: bool, selection: Dictionary, material: PackedFloat32Array, stats: Dictionary = {}, surface: RefCounted = null) -> int:
 	var visits := 0
 	var y := key.x
@@ -597,9 +455,6 @@ static func _emit_row_span(changes: Dictionary, frame: VoxelFrame, key: Vector2i
 	return visits
 
 
-# Emits the occupied cells of one chunk row inside one world x span. Returns the
-# number of occupied cells that the span visited. An optional surface index
-# intersects the row mask, so a buried cell stays out.
 static func _emit_chunk_row(changes: Dictionary, chunk: VoxelFrame.Chunk, index: VoxelFrame.OccupancyRows, row: int, y: int, z: int, low: int, high: int, filtered: bool, selection: Dictionary, material: PackedFloat32Array, surface: RefCounted = null) -> int:
 	var origin_x := chunk.location.x * VoxelFrame.CHUNK_SIZE
 	var local_low := maxi(low, origin_x) - origin_x
@@ -624,9 +479,6 @@ static func _emit_chunk_row(changes: Dictionary, chunk: VoxelFrame.Chunk, index:
 	return visits
 
 
-# Expands one change set through the frozen symmetry and selection. An identity
-# context returns the keys as they are. An optional surface rule also requires
-# an empty face neighbor at each destination.
 static func _expanded_cells(changes: Dictionary, frame: VoxelFrame, context: VoxelFrame.EditContext, job: VoxelFrame.EditJob, surface_only := false) -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	if context.axes == 0 and context.selection.is_empty():
@@ -640,12 +492,6 @@ static func _expanded_cells(changes: Dictionary, frame: VoxelFrame, context: Vox
 	return cells
 
 
-## Returns the occupied cells that the selection allows inside the reach ball.
-##
-## It walks the chunks of the reach range only, so an empty region costs nothing
-## and no large offset array is built. It reads each chunk grid slot directly, so
-## it allocates no per-chunk cell array. The cells come in the same grid order as
-## the chunk `world_cells` walk.
 static func local_cells(center: Vector3i, reach: int, frame: VoxelFrame, context: VoxelFrame.EditContext, job: VoxelFrame.EditJob = null) -> Array[Vector3i]:
 	var min_chunk := VoxelFrame.chunk_position(center - Vector3i.ONE * reach)
 	var max_chunk := VoxelFrame.chunk_position(center + Vector3i.ONE * reach)
@@ -684,13 +530,6 @@ static func local_cells(center: Vector3i, reach: int, frame: VoxelFrame, context
 	return cells
 
 
-## Returns the occupied local cells inside the spray search size.
-##
-## The search sphere lies inside the integer ball of `reach(search_size)`, so a
-## cell outside that ball can never be a candidate. The cheap integer test keeps
-## the per-cell sphere test off the cells that the reach gather added for the
-## spot footprints. The candidate list keeps the gather order, so the random
-## selection is unchanged.
 static func candidate_cells(center: Vector3i, local: Array[Vector3i], search_size: int) -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	var shell := VoxelBrushSize.reach(search_size)
@@ -704,28 +543,8 @@ static func candidate_cells(center: Vector3i, local: Array[Vector3i], search_siz
 	return cells
 
 
-## Returns the voxels that the spot centers paint, keyed by cell position.
-##
-## Each spot covers every local voxel inside a sphere of the spot diameter.
-## Diameter 1 paints the spot center alone.
-##
-## A sparse local set tests every local cell against every spot. A dense local
-## set unions the spot spheres by scanline rows, because one wide spot holds
-## 137376 cells and a dense batch can hold up to 64 spots. The row union groups
-## the spans by their world (y, z) row and sorts each row with the native array
-## sort, which compares two `Vector2i` spans lexicographically. The row keys and
-## the spans hold the world coordinates as they are, so a batch anywhere in the
-## world gives the exact union and no coordinate is packed into a fixed-width
-## field.
-##
-## An optional [param job] supplies the cancel checkpoints. A dense union checks
-## while it builds the row spans and while it sorts and emits them, so a wide
-## batch stops soon after a cancel and never returns a partial dictionary.
-## An optional [param surface] drops the buried cells at the end.
 static func footprints(spots: Array[Vector3i], local: Array[Vector3i], spot_size: int, material: PackedFloat32Array, cache: ShapeCache, job: VoxelFrame.EditJob = null, surface: RefCounted = null) -> Dictionary:
 	var changes := {}
-	# Diameter 1 paints the spot center alone, so the changes are the centers and
-	# no sphere test is needed.
 	if spot_size == 1:
 		for spot in spots:
 			changes[spot] = material
@@ -733,8 +552,6 @@ static func footprints(spots: Array[Vector3i], local: Array[Vector3i], spot_size
 	var spot_rows := rows(cache, spot_size)
 	var completed := 0
 	if local.size() <= spot_rows.size():
-		# The pattern dict is cached by diameter, so the build runs once per
-		# cache and not once per batch.
 		var spot_pattern := pattern(cache, spot_size)
 		for spot in spots:
 			for cell in local:
@@ -747,10 +564,6 @@ static func footprints(spots: Array[Vector3i], local: Array[Vector3i], spot_size
 	var allowed := {}
 	for cell in local:
 		allowed[cell] = true
-	# Each row holds one (dy, dz) pair and the x-span of the sphere on that row.
-	# The union of the spots groups the spans by their world (y, z) row. The spans
-	# sort with the native compare on two world x coordinates, so the batch origin
-	# and the world coordinate need no packing.
 	var by_row := {}
 	for spot in spots:
 		for row in spot_rows:
@@ -790,8 +603,6 @@ static func footprints(spots: Array[Vector3i], local: Array[Vector3i], spot_size
 	return _exposed_changes(changes, surface)
 
 
-# Drops the buried cells of one change set. It returns the same dictionary when
-# no surface index is given.
 static func _exposed_changes(changes: Dictionary, surface: RefCounted) -> Dictionary:
 	if surface == null:
 		return changes
@@ -802,8 +613,6 @@ static func _exposed_changes(changes: Dictionary, surface: RefCounted) -> Dictio
 	return exposed
 
 
-# Writes one merged span into the changes. A cell outside the local set stays
-# out, so a spot never paints an empty cell.
 static func _add_span(changes: Dictionary, allowed: Dictionary, y: int, z: int, lo: int, hi: int, material: PackedFloat32Array) -> void:
 	for x in range(lo, hi + 1):
 		var cell := Vector3i(x, y, z)
@@ -811,13 +620,6 @@ static func _add_span(changes: Dictionary, allowed: Dictionary, y: int, z: int, 
 			changes[cell] = material
 
 
-## Returns the identity and the voxel revision of every chunk that holds one of
-## these cells, keyed by chunk coordinate.
-##
-## The frame snapshot is a copy-on-write view, so a chunk object stays the one
-## the snapshot read until a later write copies it. A caller compares this
-## witness against the live frame, so a stale sample is detected with one test
-## per chunk instead of one test per cell.
 static func witness(frame: VoxelFrame, cells: Array[Vector3i]) -> Dictionary:
 	var out := {}
 	for cell in cells:

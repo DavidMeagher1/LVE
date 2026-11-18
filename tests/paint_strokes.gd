@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the paint and stroke tests. Each test keeps the steps and
-# checks of its original scene. The user arguments after `--` name the tests to
-# run, so an old scene name still selects its own test.
 
 var _brush_settings := preload("res://plugins/brush/BrushSettings.tres")
 
@@ -34,10 +31,6 @@ func _ready() -> void:
 	test("the slice option keeps a stroke on the floor layer", _slice_stroke, "slice_stroke")
 
 
-# Each test starts from a fresh document and the default brush. The brush mode
-# and the pixel-perfect option live in the shared settings resource, so they are
-# restored here. The brush color is restored to its startup value for the tests
-# that do not set one.
 func before_test() -> void:
 	if not _defaults_ready:
 		_default_color = State.current_color
@@ -59,8 +52,6 @@ func before_test() -> void:
 	var pixel_perfect := plugin("BrushPlugin")._options.get_node("PixelPerfect") as Button
 	if pixel_perfect != null and pixel_perfect.button_pressed != _default_pixel_perfect:
 		pixel_perfect.button_pressed = _default_pixel_perfect
-	# The brush-modes case switches to the paintbrush. A later case that drags in
-	# the viewport needs the startup tool back.
 	if not _default_tool_button.is_empty() and not _is_tool_button_pressed(_default_tool_button):
 		activate_tool(_default_tool_button)
 
@@ -79,7 +70,6 @@ func _is_tool_button_pressed(button_name: String) -> bool:
 	return false
 
 
-# Shared viewport setup. Every viewport case uses the same view and center.
 func _view_setup() -> void:
 	viewport = editor_viewport()
 	viewport.get_parent().stretch = false
@@ -87,7 +77,6 @@ func _view_setup() -> void:
 	center = Vector2(400.0, 250.0)
 
 
-# Shared input helpers. Every case drives the real viewport input path.
 func _press(pos: Vector2) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
@@ -125,7 +114,7 @@ func _paint() -> void:
 
 	step("When the user presses and drags the viewport", func():
 		var req := pick_request(center)
-		pressed = VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward).target
+		pressed = VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward).target
 		_press(center)
 		var drag_pos := center + Vector2(0.0, 150.0)
 		_motion(drag_pos, Vector2(0.0, 150.0))
@@ -154,7 +143,7 @@ func _undo_redo() -> void:
 
 	step("When the user paints a voxel at the cursor", func():
 		var req := pick_request(center)
-		painted = VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward).target
+		painted = VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward).target
 		_click(center)
 	)
 
@@ -290,7 +279,7 @@ func _pixel_perfect_tool() -> void:
 			_motion(pos, Vector2(0.0, 14.0))
 		_release(pos)
 		var req_end := pick_request(pos)
-		mouse_end = VoxelPicking.start_pick(req_end.origin, req_end.dir, req_end.frame, req_end.forward).target
+		mouse_end = VoxelPicking.start_pick(req_end.origin, req_end.direction, req_end.frame, req_end.forward).target
 	)
 
 	step("Then the stroke is connected and the cursor cell is painted", func():
@@ -318,7 +307,7 @@ func _slice_stroke() -> void:
 	)
 	step("Then the center aim targets the top slab layer", func():
 		var req := pick_request(center)
-		var target := VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward, true).target
+		var target := VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward, true).target
 		expect(target.y == 2, "the press aim lands on the top slab layer")
 	)
 	step("When the user presses and releases on the model", func():

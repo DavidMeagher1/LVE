@@ -230,7 +230,6 @@ func _expect_exact(cells: Array, msg: String) -> void:
 		expect(State.selection.contains(c), msg)
 
 
-# Draw a lasso around both cells. A straight path would collapse the polygon.
 func _drag_cells(a: Vector3i, b: Vector3i, with_shift: bool) -> void:
 	var pa := camera_rig().unproject_position(Vector3(a))
 	var pb := camera_rig().unproject_position(Vector3(b))

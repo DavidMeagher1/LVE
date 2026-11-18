@@ -1,30 +1,14 @@
 extends "res://tests/test.gd"
 
-# Focused regression tests for the chunk surface scheduling of `VoxelRenderer`.
-#
-# One chunk owns at most one in-flight build. A completed build installs even when
-# a newer request for the same chunk already arrived, so a held edit shows
-# progressive surfaces while it runs. A context change, a retire, or a chunk
-# removal drops the in-flight eligibility, so an obsolete result never appears.
-#
-#   godot --path . res://tests/renderer_progress.tscn
-#   godot --path . res://tests/renderer_progress.tscn -- held_edits
-#
-# The end-to-end drag acceptance lives in `tests/benchmarks/spray_latency.tscn`.
 
-## The surface edits of one held edit.
 const EDITS := 24
-## The frames that a scenario observes after its last edit.
 const SETTLE_FRAMES := 40
-## The block edge of the single-chunk fixture.
 const BLOCK := 16
-## The block edge of the multi-chunk fixture.
 const WIDE := 32
 
 var renderer: VoxelRenderer
 var second: VoxelRenderer
 var frame: VoxelFrame
-# The ordered wanted keys of one scenario, for the install order check.
 var _wanted: Array[PackedInt64Array] = []
 var _watch := Vector3i.ZERO
 var _last_shown_key := PackedInt64Array()
@@ -37,7 +21,6 @@ var _measuring := false
 var _last_frame_us := 0
 var _longest_frame_us := 0
 var _kept := {}
-# Per-scenario state that a later step reads.
 var _edit_started_us := 0
 var _edited_key := PackedInt64Array()
 var _history := 0
@@ -49,7 +32,6 @@ var _peak_jobs := 0
 var _peak_pending := 0
 var _broken_eligibility := 0
 var _wanted_key := PackedInt64Array()
-# The shared cache saved around the lost-in-flight scenario.
 var _saved_cache := {}
 var _saved_order: Array[PackedInt64Array] = []
 var _saved_bytes := 0
@@ -66,9 +48,6 @@ var _one_copy_us := 0
 var _shared_snapshots := 0
 
 
-## A test view whose update ends after the first queue item, so a finished
-## backlog cannot fit in one update. It proves the install order without a slow
-## native bake. The slice stays the real one until a test shortens it.
 class ShortSliceRenderer extends VoxelRenderer:
 	var slice_us := State.WORK_SLICE_US
 
@@ -100,8 +79,6 @@ func _process(_delta: float) -> void:
 	_longest_frame_us = maxi(_longest_frame_us, now - _last_frame_us)
 	_last_frame_us = now
 
-
-# --- Scenarios ---------------------------------------------------------------
 
 func _held_edits() -> void:
 	step("Given one dense chunk with a fractured top face", func():
@@ -135,9 +112,6 @@ func _held_edits() -> void:
 		print("MEASURE renderer_progress held_edits: edits=%d installs_before_stop=%d installs_total=%d first_install_frame=%d edit_span_us=%d gap_us=%d" % [
 			EDITS, installs_before_stop, _installs, first_frame, edits_us, _longest_frame_us,
 		])
-		# Progress only. How many intermediate surfaces fit in the window follows
-		# the chunk build cost and the machine load, so the count is reported and
-		# the cadence target lives in `tests/benchmarks/renderer_cycle.tscn`.
 		expect(installs_before_stop > 0, "a surface installs while the edits continue")
 	)
 	step("Then the installs follow the request order and the last one is exact", func():
@@ -161,8 +135,6 @@ func _undo_no_stale() -> void:
 		_edited_key = _active_key(_watch)
 		_history = State.undo_redo.get_history_count()
 	)
-	# Let the renderer start the build for the edited state, then undo it while
-	# that result is still in flight.
 	await get_tree().process_frame
 	await get_tree().process_frame
 	step("When the user undoes the edit", func():
@@ -265,13 +237,6 @@ func _chunk_removed() -> void:
 	)
 
 
-# A completed in-flight result can leave the shared cache before this view
-# consumes it: another view reaps the build and later caches evict the entry. The
-# view must drop that eligibility and schedule the newest request, or the chunk
-# never updates and the view never settles.
-#
-# The scenario uses a dedicated view of a standalone frame, so no sibling view
-# rebuilds the key and hides the gap.
 func _lost_inflight() -> void:
 	step("Given a settled dedicated view of a standalone frame", func():
 		second = load("res://ui/Viewport/VoxelRenderer.tscn").instantiate()
@@ -291,13 +256,9 @@ func _lost_inflight() -> void:
 		_wanted_key = _view_key(second, _watch)
 		var wanted: PackedInt64Array = second._pending_surface_keys[_watch]
 		expect(_same_key(wanted, _wanted_key), "the edit requests the newest surface")
-		# A step lambda captures a local by value, so the saved cache lives on a
-		# member.
 		_saved_cache = VoxelRenderer._surface_cache.duplicate()
 		_saved_order = VoxelRenderer._surface_use_order.duplicate()
 		_saved_bytes = VoxelRenderer._surface_cache_bytes
-		# Hold the newest key as this view's in-flight result while the shared
-		# cache no longer holds it, as a full cache after an eviction would.
 		VoxelRenderer._surface_cache = {}
 		VoxelRenderer._surface_use_order = []
 		VoxelRenderer._surface_cache_bytes = 0
@@ -384,8 +345,6 @@ func _job_limits() -> void:
 		_peak_jobs = 0
 		_peak_pending = 0
 		_broken_eligibility = 0
-		# Reset the frame mark, or the first measured frame counts the idle time
-		# since the fixture was built.
 		_reset_observation()
 		_measuring = true
 	)
@@ -411,11 +370,6 @@ func _job_limits() -> void:
 	)
 
 
-# --- Context safety ----------------------------------------------------------
-
-# Watches every location for many frames after a context change. A surface that
-# belongs to the replaced context must never appear. A surviving chunk may keep
-# the key it displayed when the change happened, until its replacement is ready.
 func _context_safety(locations: Array[Vector3i]) -> void:
 	var watched: Array[Vector3i] = locations.duplicate()
 	for location in _kept:
@@ -447,8 +401,6 @@ func _check_allowed(watched: Array[Vector3i]) -> void:
 	for location in watched:
 		var shown := _shown_key(renderer, location)
 		if active == null or not active.chunks.has(location):
-			# The context no longer holds the chunk, so no surface or instance may
-			# survive it.
 			if shown.size() > 0:
 				_record_violation("the removed chunk %s kept a surface" % str(location))
 			if renderer._chunk_instances.has(location):
@@ -462,8 +414,6 @@ func _check_allowed(watched: Array[Vector3i]) -> void:
 			continue
 		_record_violation("the chunk %s installed a surface outside the current context: %s" % [str(location), str(shown)])
 
-
-# --- Observation -------------------------------------------------------------
 
 func _observe() -> void:
 	var shown := _shown_key(renderer, _watch)
@@ -523,7 +473,6 @@ func _shown_key(target: VoxelRenderer, location: Vector3i) -> PackedInt64Array:
 	return target._displayed_surface_keys[location]
 
 
-# The exact wanted key of one chunk in the frame a given view draws.
 func _view_key(view: VoxelRenderer, location: Vector3i) -> PackedInt64Array:
 	var active: VoxelFrame = view._get_frame()
 	if active == null or State.document == null or not active.chunks.has(location):
@@ -531,7 +480,6 @@ func _view_key(view: VoxelRenderer, location: Vector3i) -> PackedInt64Array:
 	return VoxelRenderer._signature(active, location, State.document.smooth_normals, -1, 0, 1, State.document.ao_strength)
 
 
-# The exact wanted key of one chunk in the frame the editor view draws.
 func _active_key(location: Vector3i) -> PackedInt64Array:
 	return _view_key(renderer, location)
 
@@ -549,13 +497,6 @@ func _has_duplicate_order() -> bool:
 	return false
 
 
-# --- Coalescing contract ------------------------------------------------------
-
-# The coalescing contract, with no timing and no worker: an eligible completed
-# result installs in the next renderer update even when a newer request already
-# arrived, and the newer request stays pending until its own result is ready. A
-# renderer that installs only the newest key fails this. The throughput target it
-# replaced lives in `tests/benchmarks/renderer_cycle.tscn`.
 func _coalesced_install() -> void:
 	step("Given a settled dedicated view of a standalone frame", func():
 		second = load("res://ui/Viewport/VoxelRenderer.tscn").instantiate()
@@ -572,8 +513,6 @@ func _coalesced_install() -> void:
 	step("When an older request completes behind a newer one", func():
 		var origin := _watch * VoxelFrame.CHUNK_SIZE
 		_base_key = _view_key(second, _watch)
-		# A first change, then a second change before the view updates, so the
-		# older request and the newest request are two real states of the chunk.
 		_target.set_cell(origin + Vector3i(0, 7, 0), VoxelFrame.material(Color.BLUE))
 		second._request(_target, _watch)
 		_older_key = _view_key(second, _watch)
@@ -586,9 +525,6 @@ func _coalesced_install() -> void:
 			wanted = second._pending_surface_keys[_watch]
 		expect(_same_key(wanted, _newer_key), "the newest change owns the request")
 		expect(_same_key(_shown_key(second, _watch), _base_key), "the view still shows the first state")
-		# The older request finished before the newest change arrived. Another view
-		# left the result in the shared cache, and this view owns it as its
-		# in-flight key.
 		VoxelRenderer._cache_surface(_older_key, ArrayMesh.new(), 0, null)
 		second._inflight_surface_keys[_watch] = _older_key
 		expect(VoxelRenderer._surface_cache.has(_older_key), "the older result is complete")
@@ -609,10 +545,6 @@ func _coalesced_install() -> void:
 	)
 
 
-# A completed in-flight result that the view already holds in the shared cache
-# must install even while a finished backlog of shared builds is reaped and baked
-# in the same update. One atlas bake can spend the whole work slice, so a view
-# that reaps the backlog first would let a ready result wait for a later frame.
 func _ready_install_beats_backlog() -> void:
 	step("Given a settled dedicated view of a standalone frame", func():
 		second = ShortSliceRenderer.new()
@@ -640,18 +572,13 @@ func _ready_install_beats_backlog() -> void:
 		_saved_cache = VoxelRenderer._surface_cache.duplicate()
 		_saved_order = VoxelRenderer._surface_use_order.duplicate()
 		_saved_bytes = VoxelRenderer._surface_cache_bytes
-		# A full cache slot for the eligible key and one finished build whose atlas
-		# bake is far over the work slice. The backlog job is added to the shared
-		# map and removed again, so no other view's job is touched.
 		VoxelRenderer._surface_cache = {_eligible_key: {"surface": ArrayMesh.new(), "material": null, "bytes": 0}}
 		VoxelRenderer._surface_use_order = [_eligible_key]
 		VoxelRenderer._surface_cache_bytes = 0
 		_backlog_key = PackedInt64Array([0, 424242, 7])
 		VoxelRenderer._surface_jobs[_backlog_key] = _backlog_job()
-		# One job is already in flight, so the update must not launch a second one.
 		VoxelRenderer._surface_job_limit = 1
 		second._inflight_surface_keys[_watch] = _eligible_key
-		# End the update after its first item, so the finished backlog cannot fit.
 		second.set("slice_us", 0)
 		var started := Time.get_ticks_usec()
 		second._update_surfaces()
@@ -675,10 +602,6 @@ func _ready_install_beats_backlog() -> void:
 	)
 
 
-# One launch pass shares one frame snapshot. It is made on the first launch and
-# the later launches of the same update read the same object. `copy_frame()` marks
-# the live chunks shared, so the next write copies its chunk and the snapshot stays
-# frozen for the running workers.
 func _shared_snapshot() -> void:
 	step("Given a settled wide block", func():
 		_wide_fixture()
@@ -696,14 +619,9 @@ func _shared_snapshot() -> void:
 		_shared_snapshots = int(snapshot["snapshots"])
 	)
 	step("Then the launches share one snapshot and a live write leaves it frozen", func():
-		# The snapshot is made once for the pass, whatever the launch count. A
-		# worker can clear its own `source_frame` as soon as it starts, so the count
-		# of made snapshots is the race-free proof, not the job field.
 		expect(_profile_launch >= 2, "the update launched a build for each requested chunk")
 		expect(_shared_snapshots == 1, "the update made one frame snapshot for every launch")
 		expect(renderer._launch_snapshot != null, "the update keeps its shared snapshot")
-		# The old path copied the frame once per launch. One measured copy against
-		# the shared pass shows the work the update skipped.
 		var copy_started := Time.get_ticks_usec()
 		renderer._get_frame().copy_frame()
 		_one_copy_us = Time.get_ticks_usec() - copy_started
@@ -714,7 +632,6 @@ func _shared_snapshot() -> void:
 		var shared: VoxelFrame = renderer._launch_snapshot
 		var frozen_revision: int = shared.chunks[location].voxel_revision
 		var live_before: int = renderer._get_frame().chunks[location].voxel_revision
-		# A fresh cell of the same chunk, so the write really changes the chunk.
 		var write_cell := Vector3i(6, 6, 6)
 		_edit_recorded(write_cell.x, write_cell.y, write_cell.z)
 		expect(renderer._get_frame().chunks[location].voxel_revision != live_before, "the live chunk changed after the write")
@@ -723,9 +640,6 @@ func _shared_snapshot() -> void:
 	)
 
 
-# The opt-in per-instance profile attributes one edit to the real phases, without
-# a static retainer and without a cost when it is off. The waits stay in the test
-# body, because a step lambda does not propagate its await to the harness.
 func _profile_counters() -> void:
 	step("Given a settled single-chunk view with the profile on", func():
 		_single_chunk_fixture()
@@ -753,9 +667,6 @@ func _profile_counters() -> void:
 	)
 
 
-# One finished build whose material bake costs far more than the work slice. Its
-# atlas is large enough that the three atlas textures and their readback alone
-# spend the update.
 func _backlog_job() -> VoxelMeshBuilder:
 	var job := VoxelMeshBuilder.new()
 	job.surface_arrays.resize(Mesh.ARRAY_MAX)
@@ -772,8 +683,6 @@ func _backlog_job() -> VoxelMeshBuilder:
 	return job
 
 
-# A task that has finished and was not awaited yet, so `is_task_completed` still
-# reports it finished and the renderer can reap it as a real completed build.
 func _completed_task() -> int:
 	var task_id := WorkerThreadPool.add_task(func(): pass, false, "backlog probe")
 	var deadline := Time.get_ticks_msec() + 5000
@@ -781,8 +690,6 @@ func _completed_task() -> int:
 		pass
 	return task_id
 
-
-# --- Fixtures ----------------------------------------------------------------
 
 func before_test() -> void:
 	State.stop()
@@ -811,8 +718,6 @@ func after_test() -> void:
 	_reset_observation()
 
 
-# One dense chunk whose top face holds sixteen materials, so a surface edit
-# changes real geometry and a chunk build costs more than one frame.
 func _single_chunk_fixture() -> void:
 	_wipe_document()
 	_fill_block(BLOCK, true)
@@ -843,7 +748,6 @@ func _build_frame(size: int, height: int) -> VoxelFrame:
 	return other
 
 
-# A uniform block, or one whose top face holds sixteen materials.
 func _fill_block(size: int, fractured: bool) -> void:
 	var cells := {}
 	for z in size:
@@ -856,21 +760,16 @@ func _fill_block(size: int, fractured: bool) -> void:
 	frame.set_cells(cells)
 
 
-# --- Edits -------------------------------------------------------------------
-
 func watch_chunk(x: int, y: int, z: int) -> void:
 	_watch = VoxelFrame.chunk_position(Vector3i(x, y, z))
 
 
-# One top-face cell of the single chunk takes a new material.
 func _edit_surface(index: int) -> void:
 	var cell := Vector3i(index % BLOCK, BLOCK - 1, (index / BLOCK) % BLOCK)
 	frame.set_cell(cell, VoxelFrame.material(Color.from_hsv(float(index % 12) / 12.0, 1.0, 0.5 + 0.03 * (index % 12))))
 	_emit_cells([cell])
 
 
-# One cell takes a new material through an edit transaction, so history can undo
-# it.
 func _edit_recorded(x: int, y: int, z: int) -> void:
 	var cell := Vector3i(x, y, z)
 	var tx := State.begin_edit()
@@ -879,7 +778,6 @@ func _edit_recorded(x: int, y: int, z: int) -> void:
 	_emit_cells([cell])
 
 
-# One cell of every chunk of the block takes a new material.
 func _edit_ring(index: int) -> void:
 	var cells: Array[Vector3i] = []
 	for location in _all_locations():
@@ -889,7 +787,6 @@ func _edit_ring(index: int) -> void:
 	_emit_cells(cells)
 
 
-# Removes every voxel of one chunk, so the frame drops the chunk.
 func _wipe_chunk(location: Vector3i) -> void:
 	var cells: Array[Vector3i] = []
 	var origin := location * VoxelFrame.CHUNK_SIZE
@@ -925,8 +822,6 @@ func _settle(target: VoxelRenderer) -> void:
 		await get_tree().process_frame
 
 
-# Settles a renderer inside a bounded frame count, so a view that cannot make
-# progress fails a check instead of hanging the watchdog.
 func _settle_within(target: VoxelRenderer, frames: int) -> bool:
 	for index in frames:
 		if target.is_settled():

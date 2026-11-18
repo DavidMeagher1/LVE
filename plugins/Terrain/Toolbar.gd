@@ -1,11 +1,6 @@
 extends ToolMenuButton
 
-## The terrain tool menu button.
-##
-## It selects a terrain tool and shows that tool's icon.
 
-# The popup item id of each terrain tool. The ids stay fixed, so a menu item and
-# its icon select the same tool even when the enum changes.
 const BUILD_ID := 0
 const FLATTEN_ID := 1
 const SMOOTH_ID := 2
@@ -29,8 +24,6 @@ func _sync_icon(tool: int) -> void:
 		icon = get_popup().get_item_icon(item_index)
 
 
-# Select one tool by its popup item id. The icon comes from the matching item,
-# so the button shows the active tool.
 func _select_id(id: int) -> void:
 	var item_index := get_popup().get_item_index(id)
 	if item_index < 0:

@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-## Bakes and reads the voxel ambient occlusion. The unit cases read the four
-## corner levels of one cell face, so one corner at a time is exact. The builder
-## cases cover the color table and the split of a merged face along a crease.
 
 const SURFACE := preload("res://Globals/Rendering/VoxelSurface.gd")
 
@@ -34,7 +31,6 @@ func _level(code: int, index: int) -> int:
 
 func _free_corner() -> void:
 	var frame := _frame([Vector3i(1, 0, 0)])
-	# The +Y face of cell (1, 0, 0).
 	var plane := Vector3i(1, 1, 1)
 	var code := _code(frame, plane, Vector3i(1, 0, 0))
 	step("Given one face cell with nothing around it", func():
@@ -47,8 +43,6 @@ func _free_corner() -> void:
 
 
 func _concave_ends() -> void:
-	# A one-cell wall stands on the low x side of a floor. Its top face is
-	# covered, so only the floor cell at x = 1 exposes its +Y face.
 	var frame := _frame([Vector3i(0, 0, 0), Vector3i(1, 0, 0), Vector3i(0, 1, 0)])
 	var plane := Vector3i(1, 1, 1)
 	var code := _code(frame, plane, Vector3i(1, 0, 0))
@@ -66,9 +60,6 @@ func _concave_ends() -> void:
 
 
 func _direct_outside() -> void:
-	# The cell directly in front of a face cannot shade that face. A face that
-	# is exposed always has an empty direct cell, so the cell face must ignore
-	# the one that sits at the face cell tangent.
 	var frame := _frame([Vector3i(1, 0, 0), Vector3i(1, 1, 0)])
 	var plane := Vector3i(1, 1, 1)
 	var code := _code(frame, plane, Vector3i(1, 0, 0))
@@ -95,8 +86,6 @@ func _both_sides() -> void:
 
 
 func _negative_face() -> void:
-	# The -X face of cell (1, 0, 0) looks at an occluder at (0, 1, 0). The
-	# negative face must sample the same layer as the positive face.
 	var frame := _frame([Vector3i(1, 0, 0), Vector3i(0, 1, 0)])
 	var plane := Vector3i(0, -1, 1)
 	var code := _code(frame, plane, Vector3i(1, 0, 0))

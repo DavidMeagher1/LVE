@@ -1,6 +1,5 @@
 extends "res://tests/test.gd"
 
-## Checks the recovery copy beside the original and the startup listing.
 
 const DIR := "user://autosave_test"
 const MANIFEST := "user://autosave_test/manifest.json"
@@ -9,10 +8,7 @@ const AutosaveScript := preload("res://Globals/Autosave/Autosave.gd")
 
 class CountingDocument extends VoxelDocument:
 	var encodes := 0
-	## A document keeps a frame in the editor. This flag fails the encode without
-	## an invalid frame list.
 	var encodable := true
-	## Simulates a path that cannot be written, so the copy returns RETRY.
 	var fail_writes := false
 
 	func encode_document() -> PackedByteArray:
@@ -63,8 +59,6 @@ func after_test() -> void:
 		autosave.queue_free()
 		autosave = null
 	_clear_dir()
-	# A case can leave a document that cannot encode as the active one. The next
-	# scene builds its plugins from the live document, so restore a valid one.
 	State.set_tabs([State.new_document()], 0)
 	await get_tree().process_frame
 
@@ -159,8 +153,6 @@ func _discard() -> void:
 	)
 
 
-## A recovery folder that cannot hold a file makes both save paths fail. The
-## manager must keep its dirty mark, or only the next edit retries the copy.
 func _retry_failure() -> void:
 	var blocked := DIR.path_join("blocked")
 	step("Given a recovery folder that is an ordinary file", func():
@@ -186,8 +178,6 @@ func _retry_failure() -> void:
 	)
 
 
-## A document that cannot encode can never produce a copy. The manager must not
-## retry that permanent failure on a timer.
 func _invalid_no_retry() -> void:
 	var document := CountingDocument.new()
 	step("Given an edited document that cannot encode", func():
@@ -212,9 +202,6 @@ func _invalid_no_retry() -> void:
 	)
 
 
-## An invalid document next to a document whose copy fails must not be encoded
-## on every retry. The write failure keeps the timer, so the invalid id is
-## remembered for the retry cycle.
 func _mixed_retry() -> void:
 	var invalid := CountingDocument.new()
 	var blocked := DIR.path_join("blocked_mixed")
@@ -249,8 +236,6 @@ func _mixed_retry() -> void:
 	)
 
 
-## An edit to one document must retry only that document. Another invalid
-## document keeps its skip, because the edit cannot fix it.
 func _invalid_edit_scope() -> void:
 	var edited := CountingDocument.new()
 	var untouched := CountingDocument.new()
@@ -279,8 +264,6 @@ func _invalid_edit_scope() -> void:
 	)
 
 
-## A frame switch or a tab change does not make a document encodable. Only a
-## content edit can, so only the edit clears the skip.
 func _invalid_view_scope() -> void:
 	var document := CountingDocument.new()
 	var other := State.new_document()

@@ -1,9 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the terrain tests. The parent registers the terrain plugin in
-# State, so the setup looks the existing plugin up under the scene root. The
-# tests drive the real viewport input, the deterministic time hook, and the
-# shared geometry helpers.
 
 const FLOOR_AXIS := {"right": 0, "left": 0, "top": 1, "bottom": 1, "front": 2, "back": 2, "isometric": 1}
 const VIEW_AXIS := {"right": 0, "left": 0, "top": 1, "bottom": 1, "front": 2, "back": 2, "isometric": 1}
@@ -107,14 +103,11 @@ func after_test() -> void:
 
 
 func _ensure_plugin() -> void:
-	# The parent registers the plugin in State. Wait for the deferred add.
 	for _frame in 5:
 		if plugin("TerrainPlugin") != null:
 			return
 		await get_tree().process_frame
 
-
-# --- Shared helpers ---------------------------------------------------------
 
 func _view(view: String) -> void:
 	State.floor_axis = FLOOR_AXIS[view]
@@ -242,7 +235,6 @@ func _await_edit_closed() -> void:
 		await get_tree().process_frame
 
 
-# Waits until the accepted path is consumed, no job runs, and the stroke closes.
 func _await_drained() -> void:
 	for _frame in 1200:
 		if not tool._busy() and not tool._has_pending() and tool._edit == null:
@@ -258,8 +250,6 @@ func _fill_ramp(x_max: int, slope: int, z_min: int, z_max: int) -> void:
 			for z in range(z_min, z_max + 1):
 				frame.set_cell(Vector3i(x, y, z), VoxelFrame.material(Color.WHITE))
 
-
-# --- Build and flatten -------------------------------------------------------
 
 func _build_empty_floor() -> void:
 	step("Given the Build tool in Add mode on an empty floor", func():
@@ -581,9 +571,6 @@ func _build_uniform_oblique() -> void:
 	)
 
 
-# A slope-two staircase. A positive slope rises toward +x, a negative slope
-# rises toward -x. The surface is one cell wide in the layer column, so a
-# coherent shell must add exactly one cell per column.
 func _steep_frame(slope: int) -> VoxelFrame:
 	var source := VoxelFrame.new()
 	for x in range(0, 14):
@@ -988,8 +975,6 @@ func _flatten_symmetry_target() -> void:
 	)
 
 
-# --- Surface plane -----------------------------------------------------------
-
 func _surface_slope() -> void:
 	step("Given a ramp that rises two cells per step", func():
 		_view("top")
@@ -1093,9 +1078,6 @@ func _surface_opposing() -> void:
 	)
 
 
-# The channel floor is three cells wide. A one-cell floor gives only collinear
-# height samples, so the gradient is undefined and the frame falls back. The
-# wider floor gives a real read and still tests the symmetric walls.
 func _surface_collinear() -> void:
 	step("Given a one-cell-wide strip", func():
 		var strip := VoxelFrame.new()
@@ -1309,9 +1291,6 @@ func _surface_symmetry() -> void:
 		_settings.build_mode = _settings.BuildMode.ADD
 		_settings.radius = 9
 		_settings.falloff = 0.0
-		# One layer per press. A higher strength would let the sideways walk of a
-		# steep slope run across the symmetry plane, and the two masks would then
-		# write into each other's cells.
 		_settings.strength = 1.0
 		press = _pos(Vector3(2.0, 6.0, 0.0))
 		split_cells = _cell_colors(frame)
@@ -1350,8 +1329,6 @@ func _smooth_stops_at_document_edge() -> void:
 		expect(outside == 0, "the smooth field drops every outside cell")
 	)
 
-
-# --- Stroke lifecycle -------------------------------------------------------
 
 func _stroke_history() -> void:
 	step("Given a grow stroke on an empty floor", func():
@@ -1513,8 +1490,6 @@ func _selection_symmetry() -> void:
 		expect(frame.has(mirror), "the mirrored column grows")
 	)
 
-
-# --- Smooth -----------------------------------------------------------------
 
 func _flat_plate(half: int) -> void:
 	for x in range(-half, half + 1):
@@ -2064,9 +2039,6 @@ func _smooth_reentrant() -> void:
 	)
 
 
-# --- Smooth rounding geometry -----------------------------------------------
-
-# Fills the inclusive block from lo to hi.
 func _solid(lo: Vector3i, hi: Vector3i, cell_material: PackedFloat32Array) -> void:
 	for x in range(lo.x, hi.x + 1):
 		for y in range(lo.y, hi.y + 1):
@@ -2349,8 +2321,6 @@ func _smooth_job_cancel() -> void:
 	)
 
 
-# --- Flatten materials ------------------------------------------------------
-
 func _flatten_materials() -> void:
 	step("Given columns of different materials below one flat target", func():
 		_settings.tool = _settings.Tools.FLATTEN
@@ -2502,13 +2472,6 @@ func _flatten_material_signed() -> void:
 	)
 
 
-# --- Preview and controls ---------------------------------------------------
-
-
-# --- Movement applications --------------------------------------------------
-
-# A solid block with a two-cell spike, so Build, Flatten, and Smooth all change
-# the surface in one application.
 func _spike_block() -> void:
 	for x in range(-4, 1):
 		for y in range(-4, 1):
@@ -2519,7 +2482,6 @@ func _spike_block() -> void:
 	sync_viewport()
 
 
-# Fills a flat plate of half width 4 on the floor plane.
 func _build_plate() -> void:
 	for x in range(-4, 5):
 		for z in range(-4, 5):
@@ -2765,8 +2727,6 @@ func _smooth_move_adaptive() -> void:
 	)
 
 
-# Draws the same six-cell Build path with a fixed number of frame waits per cell.
-# A coalesced path delivers the whole segment as one motion.
 func _draw_build_path(waits: int, coalesced: bool) -> void:
 	var start := press
 	_press(start)
@@ -2812,8 +2772,6 @@ func _frame_replay() -> void:
 		expect(VoxelEditTransaction._chunks_equal(split_cells["0:false"], split_cells["0:true"]), "one coalesced segment matches every crossed cell")
 	)
 
-
-# --- Lazy path scheduler ----------------------------------------------------
 
 func _dab_path_iterator() -> void:
 	step("Given straight, diagonal, and negative segments", func():
@@ -2974,8 +2932,6 @@ func _smooth_slope_replay() -> void:
 	)
 
 
-# Fills a coarse 45 degree staircase. Each step rises three cells over three
-# cells in x, so the surface normal is 45 degrees with both signs.
 func _staircase() -> void:
 	for x in range(-9, 10):
 		var top := -3 * floori(float(x) / 3.0)

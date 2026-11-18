@@ -1,10 +1,5 @@
 extends "./TransformTool.gd"
 
-## The scale transform tool.
-##
-## A drag scales the source around its bounds center. A click opens the scale
-## dialog for an exact factor. The uniform option keeps one factor on every
-## axis.
 
 const TransformDialog := preload("./TransformDialog.gd")
 
@@ -29,15 +24,9 @@ var _total_view_scale := Vector3.ONE
 var _gesture_base_view := Vector3.ONE
 var _dialog_open_view := false
 
-## The minimum reference distance in cells.
 const MIN_REF := 0.5
-## The minimum scale factor.
 const MIN_SCALE := 0.05
 
-## One cancellable scale transform job.
-##
-## It samples the source for each destination cell.
-## [method TransformJob.compute_destination] is overridden.
 class ScaleJob extends TransformJob:
 	var axis := 1
 	var p := 0
@@ -203,8 +192,6 @@ class ScaleJob extends TransformJob:
 					if _candidate_completed % 4096 == 0 and not checkpoint(_candidate_completed):
 						return
 
-	# Scales in the captured screen basis. It resamples every destination cell,
-	# so a non-uniform view scale can shear the voxel lattice.
 	func _compute_view() -> void:
 		var regions: Array[AABB] = [source_bounds]
 		var source_volume := source_bounds.size.x * source_bounds.size.y * source_bounds.size.z
@@ -330,10 +317,6 @@ func _update_params(origin: Vector3, dir: Vector3) -> bool:
 	else:
 		sp = v.x / _ref_p
 		sq = v.y / _ref_q
-	# The camera ray round-trip and the reference-vector normalization both lose a little
-	# precision, on the order of 1e-6. A factor the user drags to "exactly" 2x can land at
-	# 1.9999993 instead, which tips a boundary cell to the wrong side in `ScaleJob._samples`.
-	# Snapping erases that noise without meaningfully rounding an intentionally fractional drag.
 	sp = snapped(sp, 0.0001)
 	sq = snapped(sq, 0.0001)
 	if is_equal_approx(sp, _scale_p) and is_equal_approx(sq, _scale_q):
@@ -392,9 +375,6 @@ func _make_job() -> TransformJob:
 	job.axis = _axis
 	job.p = _p
 	job.q = _q
-	# The job treats a cell as [c, c + 1), so its pivot sits half a cell above
-	# the cell-centred bounds centre. Without the shift a mirror lands one cell
-	# off and an odd factor grows away from the selection.
 	job.pivot = _pivot + Vector3.ONE * 0.5
 	job.scale_p = _safe_scale(_scale_p)
 	job.scale_q = _safe_scale(_scale_q)

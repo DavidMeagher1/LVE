@@ -1,13 +1,7 @@
 class_name PluginHost
 extends Node
 
-## Owns the editor plugins and the context that they read.
-##
-## The plugins live under the scene root, so they outlast a tab switch. The host
-## sets the context before a plugin enters the tree, because a plugin reads the
-## context in its own `_ready`.
 
-## The built-in plugins. The order is the creation order of the tool buttons.
 const PLUGIN_PATHS := [
 	"res://plugins/brush/BrushPlugin.gd",
 	"res://plugins/Primitive/PrimitivePlugin.gd",
@@ -25,11 +19,9 @@ const PLUGIN_PATHS := [
 	"res://plugins/ImageImport/ImageImportPlugin.gd",
 ]
 
-## The main-scene nodes that every plugin reads.
 var context: EditorContext
 
 
-## Adds one plugin under the scene root.
 func add_plugin(plugin: VoxelPlugin) -> void:
 	if plugin == null:
 		return
@@ -37,7 +29,6 @@ func add_plugin(plugin: VoxelPlugin) -> void:
 	get_node("/root").add_child.call_deferred(plugin, true)
 
 
-## Removes one plugin and frees it.
 func remove_plugin(plugin: VoxelPlugin) -> void:
 	if plugin == null:
 		return
@@ -47,7 +38,6 @@ func remove_plugin(plugin: VoxelPlugin) -> void:
 	plugin.queue_free()
 
 
-## Removes every editor plugin from the scene root.
 func clear_plugins() -> void:
 	var root := get_node("/root")
 	for child in root.get_children():
@@ -55,7 +45,6 @@ func clear_plugins() -> void:
 			remove_plugin(child)
 
 
-## Rebuilds the built-in plugins under the current main scene.
 func reset_plugins() -> void:
 	clear_plugins()
 	for path in PLUGIN_PATHS:

@@ -4,23 +4,11 @@ extends RefCounted
 const BrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
 const VoxelFalloff := preload("res://Globals/State/Tools/VoxelFalloff.gd")
 
-## Pure geometry and surface helpers for the terrain tools.
-##
-## The helpers hold no state. The tool and the tests share them, so the
-## footprint, the falloff, and the column surface have one definition.
 
-## The smallest tilt from the seed normal that a surface plane accepts.
 const MIN_NORMAL_TILT := 0.3
-## The margin by which one axis must beat another to become the dominant axis.
-## A near tie keeps the preferred axis, so a surface normal never flips its
-## dominant axis between two reads of one unchanged 45 degree surface.
 const AXIS_TIE_EPSILON := 1e-3
-## The disc offsets between two cancel checks of one worker read. One offset is one
-## bounded surface walk, so a small value bounds the work between two cancels.
 const READ_CANCEL_CHECKPOINT := 32
 
-## Returns the first non-zero axis of a cell step, or -1 when every axis is
-## zero.
 static func axis_of(step: Vector3i) -> int:
 	for axis in 3:
 		if step[axis] != 0:
@@ -28,17 +16,10 @@ static func axis_of(step: Vector3i) -> int:
 	return -1
 
 
-## Returns the depth of one surface read from a footprint column. The depth
-## follows the brush size, with a minimum of 16 cells for tall support and a
-## maximum of 64. The hover watch box uses the same value, so a cached hover
-## covers every cell the read can touch.
 static func read_depth(radius: int) -> int:
 	return mini(64, maxi(16, maxi(radius, 1)))
 
 
-## Returns the one axis of an exactly cardinal direction, or -1 when the direction
-## has zero or two non-zero components. An exact cardinal direction is the only
-## one whose walk stays inside a single column.
 static func cardinal_axis(direction: Vector3) -> int:
 	for axis in 3:
 		if direction[axis] == 0.0:
@@ -50,9 +31,6 @@ static func cardinal_axis(direction: Vector3) -> int:
 	return -1
 
 
-## Returns the axis of the largest absolute component of a vector. A zero vector
-## returns axis 0. A near tie keeps the lowest axis, so a slightly different
-## normal of one unchanged surface keeps the same axis.
 static func dominant_axis(vector: Vector3) -> int:
 	var axis := 0
 	var best := absf(vector.x)
@@ -64,22 +42,16 @@ static func dominant_axis(vector: Vector3) -> int:
 	return axis
 
 
-## Returns the signed step of one axis. A zero value returns 1.
 static func sign_of(step: Vector3i, axis: int) -> int:
 	return 1 if step[axis] >= 0 else -1
 
 
-## Returns the stable logical column key of one cell and normal. The axis and its
-## signed orientation join the two lateral world coordinates.
 static func column_key(cell: Vector3i, normal: Vector3) -> Vector3i:
 	var axis := dominant_axis(normal)
 	var sign_bit := 1 if normal[axis] >= 0.0 else 0
 	return Vector3i(axis * 2 + sign_bit, cell[(axis + 1) % 3], cell[(axis + 2) % 3])
 
 
-## Returns the neighbor of a surface cell one layer along the dominant axis of
-## the normal. [param direction] is 1 outward and -1 inward. Flatten uses this
-## one-cell step toward its plane.
 static func dominant_step(surface: Vector3i, normal: Vector3, direction: int) -> Vector3i:
 	var axis := dominant_axis(normal)
 	var sign := 1 if normal[axis] >= 0.0 else -1
@@ -90,15 +62,6 @@ static func dominant_step(surface: Vector3i, normal: Vector3, direction: int) ->
 	return cell
 
 
-## Returns the cells of one Build or Dig step and the surface of the next step.
-##
-## The step is one cardinal cell along the dominant axis of the normal. A gentle
-## plane grows upward. A steep plane grows sideways. The plane still shows the
-## slope, and the layer stays one cell thick.
-##
-## Build writes the empty cell outward. Dig clears the surface and continues
-## inward while the next cell is occupied. An empty surface seeds one cell on the
-## captured floor for Add. [param add] is true for Build and false for Dig.
 static func build_layer_cells(frame: VoxelFrame, changes: Dictionary, surface: Vector3i, normal: Vector3, seed: Vector3i, add: bool, selection: Dictionary) -> Dictionary:
 	var cells: Array[Vector3i] = []
 	if surface == VoxelPicking.NONE:
@@ -124,35 +87,16 @@ static func build_layer_cells(frame: VoxelFrame, changes: Dictionary, surface: V
 	return {"cells": cells, "next": next}
 
 
-## Returns the distance of the nearest disk cell from the disk center.
-##
-## It is the start of the disk falloff. An odd size centers on a cell, so the
-## result is zero. An even size centers half a cell from four cells, so the
-## result is the half-cell diagonal. Pass it to `VoxelFalloff.weight_at` for a
-## disk.
 static func disk_inner(size: int) -> float:
 	var center := BrushSize.center_offset(clampi(size, 1, 64))
 	var offset := absf(float(roundi(center)) - center)
 	return offset * sqrt(2.0)
 
 
-## Returns the cell that holds a world point. A voxel is centered on an integer
-## cell, so the nearest integer cell holds the point.
 static func cell_at(point: Vector3) -> Vector3i:
 	return Vector3i(roundi(point.x), roundi(point.y), roundi(point.z))
 
 
-## Resolves a footprint candidate list into the exact sample map.
-##
-## Every candidate holds an "anchor" cell, a "weight", and a "claim" cell. The result keeps one row per accepted anchor, keyed by that anchor. An
-## anchor and a claim are each unique, so no two rows write the same cell and no
-## row is left without its own key.
-##
-## The candidates resolve in one pass in their own order, so the row order is the
-## shipped order. The strongest influence keeps a claimed cell. An anchor keeps
-## the last candidate, which is the shipped rule. A displacement releases the
-## whole opposite map entry, so an owner is never left dangling. The pass never
-## aborts on a duplicate anchor or claim.
 static func resolve_samples(candidates: Array) -> Dictionary:
 	var built := {}
 	var claim_owner := {}
@@ -160,15 +104,12 @@ static func resolve_samples(candidates: Array) -> Dictionary:
 		var anchor: Vector3i = row["anchor"]
 		var claim: Vector3i = row["claim"]
 		var weight := float(row["weight"])
-		# The claim rule: the strongest influence keeps the claimed cell.
 		if claim_owner.has(claim):
 			var owner: Vector3i = claim_owner[claim]
 			if float(built[owner]["weight"]) >= weight:
 				continue
 			claim_owner.erase(claim)
 			built.erase(owner)
-		# The anchor rule keeps the shipped last-wins result. The previous claim of
-		# the anchor is released, so its owner is never left dangling.
 		if built.has(anchor):
 			var previous: Vector3i = built[anchor]["claim"]
 			claim_owner.erase(previous)
@@ -177,15 +118,6 @@ static func resolve_samples(candidates: Array) -> Dictionary:
 	return built
 
 
-## Returns the integer offsets of a disk in a plane. Each entry holds the two
-## in-plane offsets and the distance from the center. The size is the brush
-## diameter, so 1 is one cell and 2 is a 2x2 block.
-##
-## The result is cached per size. The array and every entry dictionary are
-## read-only, and a mutex guards the build, so a preview worker can read one
-## size while the main thread builds another. A caller must not change an
-## entry. One preview at a high size asks for the disc several times, so the
-## cache removes the repeated allocation and square root of every entry.
 static func disk_offsets(size: int) -> Array:
 	var use_size := clampi(size, 1, 64)
 	_disk_lock.lock()
@@ -212,11 +144,6 @@ static var _disk_cache := {}
 static var _disk_lock := Mutex.new()
 
 
-## Returns the integer offsets of a sphere of the size.
-##
-## Each entry holds the world-cell offset and its distance from the center. The
-## size is the diameter, so size 1 is one cell. The result is cached per size and
-## read-only, like [method disk_offsets].
 static func sphere_offsets(size: int) -> Array:
 	var use_size := clampi(size, 1, 64)
 	_disk_lock.lock()
@@ -252,9 +179,6 @@ static func sphere_offsets(size: int) -> Array:
 static var _sphere_cache := {}
 
 
-## Returns the cells a ray passes through, starting at the cell that holds
-## [param origin]. It uses the DDA method and returns at most [param steps]
-## cells. The direction need not be normalized.
 static func march_cells(origin: Vector3, direction: Vector3, steps: int) -> Array[Vector3i]:
 	var cells: Array[Vector3i] = []
 	if steps <= 0 or direction == Vector3.ZERO:
@@ -287,8 +211,6 @@ static func march_cells(origin: Vector3, direction: Vector3, steps: int) -> Arra
 	return cells
 
 
-## Returns the next cell along a ray. Keep the same origin across voxel steps.
-## Without an origin, the ray starts at the cell center.
 static func next_cell(cell_position: Vector3i, direction: Vector3, ray_origin := Vector3.INF) -> Vector3i:
 	if direction == Vector3.ZERO:
 		return cell_position
@@ -301,7 +223,6 @@ static func next_cell(cell_position: Vector3i, direction: Vector3, ray_origin :=
 		step[axis] = 1 if direction[axis] > 0.0 else -1
 		var boundary := float(cell_position[axis]) + 0.5 * float(step[axis])
 		crossing[axis] = (boundary - origin[axis]) / direction[axis]
-	# Keep the same tie order as march_cells, including edge-touching cells.
 	var exit_axis := 2
 	if crossing.x < crossing.y and crossing.x < crossing.z:
 		exit_axis = 0
@@ -312,44 +233,18 @@ static func next_cell(cell_position: Vector3i, direction: Vector3, ray_origin :=
 	return next
 
 
-## Returns the previous cell along a direction from a cell center.
 static func previous_cell(cell_position: Vector3i, direction: Vector3, ray_origin := Vector3.INF) -> Vector3i:
 	return next_cell(cell_position, -direction, ray_origin)
 
 
-## Returns the outermost occupied cell nearest to [param point] along an
-## oriented ray. The search is bounded to [param depth] cells on each side of
-## the point. An occupied run that continues past the bound returns
-## [constant VoxelPicking.NONE] instead of an interior cell.
-##
-## The nearest cell is almost always the cell that holds the point or one of its
-## two neighbors along the ray. Those three cells are tested first, in the order
-## of the bounded scan. The fallback then walks the two rays one cell at a time
-## from distance two, so no full path array is built, no cell is read twice, and
-## no cell is tested out of order.
-##
-## [param context] is an optional exact read-only index of one frame snapshot. It
-## shortens an exactly cardinal query on an empty column, because a cardinal walk
-## never leaves its column. It also rejects a query whose whole ray misses the
-## occupied bounds of that snapshot, because every read cell of the walk holds a
-## point of the ray. The result is identical, so a caller without a context keeps
-## the walk.
 static func surface_along(frame: VoxelFrame, point: Vector3, normal: Vector3, depth: int, changes := {}, context: TerrainQueryContext = null) -> Vector3i:
 	if normal == Vector3.ZERO:
 		return VoxelPicking.NONE
-	# Nothing can hold a cell, so no ray can find a surface. A pending change can
-	# still add a cell outside an empty frame, so the check needs no changes.
 	if changes.is_empty() and (frame == null or frame.chunks.is_empty()):
 		return VoxelPicking.NONE
 	var use_depth := maxi(depth, 0)
-	# The first cell of both walks. The shifted point and its floor are the exact
-	# start of the march, and they keep the negative half boundary with it.
 	var g := point + Vector3(0.5, 0.5, 0.5)
 	var origin_cell := Vector3i(floori(g.x), floori(g.y), floori(g.z))
-	# An exactly cardinal walk stays in the column of its origin cell, so an empty
-	# column returns NONE with no walk. Every read cell of any walk also holds a
-	# point of the ray, so a ray that misses the occupied bounds reads nothing.
-	# Both are exact, so the result never changes.
 	if context != null and changes.is_empty():
 		var cardinal := cardinal_axis(normal)
 		if cardinal >= 0 and context.column_empty(cardinal, origin_cell):
@@ -357,7 +252,6 @@ static func surface_along(frame: VoxelFrame, point: Vector3, normal: Vector3, de
 		if context.misses_bounds(point, normal):
 			return VoxelPicking.NONE
 	var nearest := VoxelPicking.NONE
-	# The origin cell is the distance zero cell of the outward walk.
 	var first_distance := 1
 	if is_occupied(frame, changes, origin_cell):
 		nearest = origin_cell
@@ -375,8 +269,6 @@ static func surface_along(frame: VoxelFrame, point: Vector3, normal: Vector3, de
 			if is_occupied(frame, changes, outward.cell):
 				nearest = outward.cell
 				break
-			# The inward walk starts only when the outward cell is empty, so a
-			# fallback that finds its surface outward builds one walk.
 			if inward == null:
 				inward = SurfaceWalk.new(point, -normal)
 				for _index in first_distance:
@@ -401,20 +293,10 @@ static func surface_along(frame: VoxelFrame, point: Vector3, normal: Vector3, de
 	return current
 
 
-## One bounded DDA walk along a fixed ray, for [method surface_along].
-##
-## It holds the state that a full march would build, and it advances one cell at
-## a time, so a fallback query never allocates a path array. The start cell, the
-## axis steps, the boundary parameters, and the strict tie order are the exact
-## ones of `march_cells`. The origin stays fixed, so no step re-centers.
 class SurfaceWalk extends RefCounted:
-	## The cell the walk stands on.
 	var cell := Vector3i.ZERO
-	## The step of each axis.
 	var step := Vector3i.ZERO
-	## The ray parameter of the next boundary crossing of each axis.
 	var t_max := Vector3(INF, INF, INF)
-	## The ray parameter one cell adds on each axis.
 	var t_delta := Vector3(INF, INF, INF)
 
 	func _init(origin: Vector3, direction: Vector3) -> void:
@@ -430,8 +312,6 @@ class SurfaceWalk extends RefCounted:
 			t_delta[axis] = absf(1.0 / dir[axis])
 			t_max[axis] = ((float(cell[axis]) + (1.0 if step[axis] > 0 else 0.0)) - g[axis]) / dir[axis]
 
-	## Advances to the next cell along the ray. An axis with a zero direction keeps
-	## its infinite parameter, so the walk never moves on it.
 	func advance() -> void:
 		if t_max.x < t_max.y and t_max.x < t_max.z:
 			cell.x += step.x
@@ -444,10 +324,6 @@ class SurfaceWalk extends RefCounted:
 			t_max.z += t_delta.z
 
 
-## Returns the first occupied neighbor of [param origin_cell] along the ray, in
-## the order of the bounded scan: the outward cell at distance one, then the
-## inward cell at distance one. The two marches test the same two cells in that
-## order, from the same fixed origin.
 static func _first_neighbor_along(frame: VoxelFrame, changes: Dictionary, origin_cell: Vector3i, normal: Vector3, point: Vector3) -> Vector3i:
 	var outward := next_cell(origin_cell, normal, point)
 	if is_occupied(frame, changes, outward):
@@ -458,8 +334,6 @@ static func _first_neighbor_along(frame: VoxelFrame, changes: Dictionary, origin
 	return VoxelPicking.NONE
 
 
-## Returns [code]true[/code] when a cell holds voxels after the pending changes.
-## The tool and the preview share the test, so a preview shows the same cells.
 static func is_occupied(frame: VoxelFrame, changes: Dictionary, cell_position: Vector3i) -> bool:
 	if changes.has(cell_position):
 		var changed: PackedFloat32Array = changes[cell_position]
@@ -467,22 +341,10 @@ static func is_occupied(frame: VoxelFrame, changes: Dictionary, cell_position: V
 	return frame != null and frame.has(cell_position)
 
 
-## Returns [code]true[/code] when a selection allows a cell. An empty selection
-## allows every cell.
 static func allows(selection: Dictionary, cell_position: Vector3i) -> bool:
 	return selection.is_empty() or selection.has(cell_position)
 
 
-## Returns the next Flatten action for one sample. The result holds the cell, an
-## add flag, and a settled flag. A [constant VoxelPicking.NONE] cell means the
-## sample cannot act. The execution and the preview share this rule.
-##
-## The target band is one cell thick. A cell whose outer face sits on the plane
-## is at distance -0.5, so the test accepts the half-cell band around it.
-##
-## An empty column fills the cell just inside the plane. The plane comes from the
-## stroke, not from the floor, so a stroke that started on a surface fills at that
-## surface when it leaves the model. It never drops a layer at another depth.
 static func flatten_action(frame: VoxelFrame, changes: Dictionary, surface: Vector3i, normal: Vector3, anchor: Vector3i, plane_origin: Vector3, threshold: float, selection: Dictionary) -> Dictionary:
 	if surface == VoxelPicking.NONE:
 		var axis := dominant_axis(normal)
@@ -505,14 +367,6 @@ static func flatten_action(frame: VoxelFrame, changes: Dictionary, surface: Vect
 	return {"cell": destination, "add": true}
 
 
-## Returns the exposed face boundary points around a hit. The points come from
-## the connected outward surface only, so an opposing wall or a cave floor is
-## excluded. Each point holds the boundary position and its weight.
-##
-## [param job] supplies the cancel checkpoints of a worker. [param context] is an
-## optional exact read-only column index of the same frame snapshot. A cancelled
-## read returns no points, so the caller keeps its fallback and the job publishes
-## nothing. The point order and the query stream are unchanged.
 static func surface_points(frame: VoxelFrame, hit: Vector3i, entry: Vector3i, radius: int, job: VoxelFrame.EditJob = null, context: TerrainQueryContext = null) -> Array:
 	var points := []
 	if frame == null or entry == Vector3i.ZERO:
@@ -539,8 +393,6 @@ static func surface_points(frame: VoxelFrame, hit: Vector3i, entry: Vector3i, ra
 			"point": Vector3(surface) + entry_normal * 0.5,
 			"weight": VoxelFalloff.weight_at(offset["distance"], float(use_radius), 0.5, disk_inner(use_radius)),
 		}
-	# Keep the surface patch connected across the disc. Empty columns separate
-	# unrelated islands. Sample heights, not the normals of individual cube faces.
 	var queue: Array[Vector2i] = [Vector2i.ZERO]
 	var visited := {Vector2i.ZERO: true}
 	var index := 0
@@ -558,13 +410,6 @@ static func surface_points(frame: VoxelFrame, hit: Vector3i, entry: Vector3i, ra
 	return points
 
 
-## Reads the surface height gradient across a disc. The two derivatives
-## define the normal. Missing or collinear heights cannot define a plane.
-##
-## The derivatives are measured in a proper orthonormal frame: the signed
-## cardinal axis of the seed is the height axis, and the other two cardinal axes
-## are in plane. The seed only sets that height axis and the outward orientation,
-## so repeated reads of one unchanged surface give one normal.
 static func surface_gradient(points: Array, seed: Vector3) -> Dictionary:
 	if seed == Vector3.ZERO:
 		return {"ok": false}

@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the tag and frame tests. Each test keeps the steps and checks
-# of its original scene. The user arguments after `--` name the tests to run, so
-# an old scene name still selects its own test.
 
 const FRAME_DELAY_MS := 100000
 
@@ -14,7 +11,6 @@ func _ready() -> void:
 	test("can add a frame to the document", _frames, "frames")
 
 
-# Each test starts from a fresh one-frame document with its default tag.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -22,7 +18,6 @@ func before_test() -> void:
 	State.active_tag = 0
 
 
-# Shared fixture: add frames beside the first one.
 func _add_frames(extra: int) -> void:
 	for i in extra:
 		State.document.add_frame()

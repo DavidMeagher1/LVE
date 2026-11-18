@@ -1,9 +1,5 @@
 extends "res://tests/test.gd"
 
-# The stamp tool prepares a file frame or a selection into a voxel pattern. A
-# source above the inline limit runs on the worker pool through the shared
-# `State.run_edit_job` helper. These tests cover the worker path, the document
-# change cancellation, the reentry guard, and the selection-source availability.
 
 const FILL_X := 32
 const FILL_Y := 16

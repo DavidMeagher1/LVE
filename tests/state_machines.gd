@@ -1,12 +1,5 @@
 extends "res://tests/test.gd"
 
-# Regression tests for the editor state machines.
-#
-# Each case locks one invariant that a transition, a retry, or a concurrent
-# worker could otherwise break. The cases run in one process.
-#
-#   godot --path . res://tests/state_machines.tscn
-#   godot --path . res://tests/state_machines.tscn -- undo_open_edit
 
 var _playback: AnimationPlayback
 var _playback_document: VoxelDocument
@@ -50,10 +43,6 @@ func after_test() -> void:
 	await get_tree().process_frame
 
 
-# An open edit captures the frame before the history action it would follow. A
-# history change in that window makes the captured start snapshot describe a
-# state that the linear history no longer contains, so a later commit records
-# the wrong before/after pair. The guard is to refuse the history change.
 func _undo_open_edit() -> void:
 	step("Given one committed action and a newer open edit", func():
 		_frame = State.get_current_voxel_frame()
@@ -90,8 +79,6 @@ func _undo_open_edit() -> void:
 	)
 
 
-# The menu path must show the same refusal. The button is disabled while an
-# edit is open, so a pointer or shortcut press cannot reach State.undo.
 func _history_buttons_open_edit() -> void:
 	step("Given a committed action and an enabled undo button", func():
 		_menu_bar = main.get_node("Content/VBoxContainer/MenuBar")
@@ -118,8 +105,6 @@ func _history_buttons_open_edit() -> void:
 	)
 
 
-# A long frame must advance every elapsed step. Dropping the remainder makes the
-# playback speed depend on the render frame rate.
 func _playback_catch_up() -> void:
 	step("Given a three-frame loop with a ten millisecond delay", func():
 		_playback_document = VoxelDocument.new()
@@ -142,8 +127,6 @@ func _playback_catch_up() -> void:
 	)
 
 
-# A finite repeat counts as one pass on a one-frame tag as well. A tag that
-# never advances otherwise stays "playing" forever.
 func _playback_single_stop() -> void:
 	step("Given a one-frame tag with one repeat", func():
 		_playback_document = VoxelDocument.new()
@@ -163,8 +146,6 @@ func _playback_single_stop() -> void:
 	)
 
 
-# remove_tag assumes the active tag index. The public deselect path sets it to
-# -1, so the guard must refuse the removal instead of indexing the array.
 func _remove_tag_without_active() -> void:
 	step("Given two tags and no active tag", func():
 		State.document.tags.clear()
@@ -185,9 +166,6 @@ func _remove_tag_without_active() -> void:
 	)
 
 
-# An infinite tag counts passes forever. A later finite repeat count must apply
-# to a fresh count, or the playback stops on the next boundary instead of after
-# the requested passes.
 func _playback_repeat_reset() -> void:
 	step("Given a two-frame tag that played several infinite passes", func():
 		_playback_document = VoxelDocument.new()

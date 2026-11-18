@@ -1,9 +1,5 @@
 extends HBoxContainer
 
-## The plane option bar.
-##
-## It selects the floor axis. The number control sets the slice layer count. A
-## count of zero shows every layer.
 
 func _ready() -> void:
 	State.floor_plane_changed.connect(_sync)

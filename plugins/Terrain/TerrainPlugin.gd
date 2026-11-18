@@ -1,12 +1,6 @@
 extends VoxelPlugin
 
-## The terrain plugin.
-##
-## It owns the terrain tool and adds its toolbar and option bar. A tool switch
-## ends an open stroke like a release, so the queued work commits as one history
-## action.
 
-## The stable id of the terrain toolbar. The persisted active tool uses it.
 const TOOL_ID := "terrain"
 
 var _settings := preload("./TerrainSettings.tres")
@@ -33,7 +27,6 @@ func _notification(what: int) -> void:
 				node.free()
 
 
-## Activates the terrain tool and shows its option bar.
 func activate_tool() -> void:
 	if not _toolbar.button_pressed:
 		_toolbar.button_pressed = true
@@ -43,13 +36,8 @@ func activate_tool() -> void:
 	add_option_bar_item(_options)
 
 
-## Deactivates the terrain tool and hides its option bar. It ends an open stroke
-## like a release.
 func _end_deactivation() -> void:
 	_active = false
-	# A switch ends the stroke like a release. Escape and a context change keep
-	# their rollback.
 	_tool.finish_on_switch()
 	remove_editor_node(_tool)
 	remove_option_bar_item(_options)
-

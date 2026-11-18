@@ -1,21 +1,10 @@
 extends "./TransformTool.gd"
 
-## The rotate transform tool.
-##
-## A drag rotates the source around its bounds center. The axis is the view
-## normal or the nearest world axis. A smooth angle turns around the centre. An
-## exact quarter turn permutes from the source low corner, then recentres on the
-## previous preview's centre. The smooth path does not recentre per preview, so
-## it stays steady during the drag. A click opens the rotate dialog for exact
-## angles. Any other angle uses [RotSprite].
 
 const TransformDialog := preload("./TransformDialog.gd")
 
-## One quarter turn in radians.
 const QUARTER := PI / 2.0
-## One degree in radians.
 const DEGREE := PI / 180.0
-## The magnetic pull to the nearest quarter turn, in radians.
 const MAGNETIC_PULL := DEGREE * 2.0
 
 var _view_normal := Vector3.BACK
@@ -28,33 +17,15 @@ var _gesture_base_basis := Basis.IDENTITY
 var _job_axis := Vector3.ZERO
 var _job_angle := 0.0
 
-## One cancellable rotate transform job.
-##
-## A quarter turn permutes the cell indices, so no voxel is lost. Any other
-## angle samples the source with [RotSprite].
-## [method TransformJob.compute_destination] is overridden.
 class RotateJob extends TransformJob:
-	## The rotation axis.
 	var axis := 1
-	## The rotation direction on the axis.
 	var axis_sign := 1.0
-	## A rotation axis that is not a world axis. A zero vector uses [member euler].
 	var axis_vector := Vector3.ZERO
-	## The rotation angle in radians about [member axis_vector].
 	var angle_radians := 0.0
-	## The point that a snapped result centres on. [constant Vector3.INF] uses
-	## [member pivot].
 	var recenter_center := Vector3.INF
-	## The pivot in cell units.
 	var pivot := Vector3.ZERO
-	## The single-axis angle in radians.
 	var angle := 0.0
-	# Total rotation as XYZ Euler angles in radians. Applies Z first, then Y, then X.
-	## The total rotation as XYZ Euler angles in radians. It applies Z first, then
-	## Y, then X.
 	var euler := Vector3.ZERO
-	## The dot product above which an axis counts as a world axis. It matches the
-	## tool dead zone of about two degrees.
 	const AXIS_DOT := 0.99939
 	var _candidate_total := 0
 	var _candidate_completed := 0
@@ -81,14 +52,12 @@ class RotateJob extends TransformJob:
 		var extent := source_bounds.size.x + source_bounds.size.y + source_bounds.size.z + 6.0
 		return maxi(source_positions.size(), ceili(extent * extent * extent))
 
-	# Returns the world axis that a unit normal faces, or -1 when it is not close.
 	func _world_axis(normal: Vector3) -> int:
 		var index := normal.abs().max_axis_index()
 		if absf(normal[index]) >= AXIS_DOT:
 			return index
 		return -1
 
-	# True when every Euler component is a whole quarter turn.
 	func _is_cardinal() -> bool:
 		for i in 3:
 			var turns: float = euler[i] / QUARTER
@@ -104,8 +73,6 @@ class RotateJob extends TransformJob:
 		var span := source_bounds.size[p] + source_bounds.size[q] + 4
 		return maxi(source_positions.size(), ceili(span * span * source_bounds.size[single_axis]))
 
-	# Splits the Euler triple into one single-axis rotation when only one
-	# component turns. Returns [is_single, angle, axis, axis_sign].
 	func _euler_single() -> Array:
 		var count := 0
 		var index := 0
@@ -143,8 +110,6 @@ class RotateJob extends TransformJob:
 		var world_axis := _world_axis(normal)
 		if world_axis >= 0:
 			axis = world_axis
-			# The axis sign carries the drag direction, so a negative angle
-			# turns the shape the other way.
 			axis_sign = (1.0 if normal[world_axis] > 0.0 else -1.0) * (1.0 if angle_radians >= 0.0 else -1.0)
 			angle = absf(angle_radians)
 			if is_equal_approx(angle / QUARTER, roundf(angle / QUARTER)):
@@ -198,8 +163,6 @@ class RotateJob extends TransformJob:
 					if _candidate_completed % 4096 == 0 and not checkpoint(_candidate_completed):
 						return
 
-	# Cardinal multi-axis rotation. The rotation matrix rounds to a signed
-	# permutation, so cells permute within the source box. No voxel is lost.
 	func _compute_euler_cardinal() -> void:
 		var min_c := Vector3i(source_bounds.position + Vector3.ONE * 0.5)
 		var max_c := Vector3i(source_bounds.end - Vector3.ONE * 0.5)
@@ -266,8 +229,6 @@ class RotateJob extends TransformJob:
 				return
 		_recenter_exact()
 
-	# The exact permutation starts at the source low corner. Move the whole
-	# result so its bounds centre sits on the pivot. The shift is whole cells.
 	func _recenter_exact() -> void:
 		var keys: Array = destination_selection.keys() if track_selection else destination_colors.keys()
 		if keys.is_empty():
@@ -295,8 +256,6 @@ class RotateJob extends TransformJob:
 			shifted[key + offset] = source[key]
 		return shifted
 
-	# Rounds a half towards zero. The smooth and exact paths use the same rule,
-	# so the snap at a cardinal angle does not move the model by one cell.
 	func _round_half_to_zero(value: float) -> int:
 		var lower := floorf(value)
 		var fraction := value - lower
@@ -306,8 +265,6 @@ class RotateJob extends TransformJob:
 			return int(lower + 1.0)
 		return int(lower) if value > 0.0 else int(lower + 1.0)
 
-	# Permute cell indices with the source low corner as the origin to keep
-	# cardinal rotations exact. The caller recentres the result on the pivot.
 	func _rotate_cell(source: Vector3i, p: int, q: int, min_c: Vector3i, max_c: Vector3i, direction: int, turns: int) -> Vector3i:
 		var lp := source[p] - min_c[p]
 		var lq := source[q] - min_c[q]
@@ -397,7 +354,6 @@ class RotateJob extends TransformJob:
 				var layer_materials: Dictionary = material_layers.get(layer, {})
 				var cell_material: PackedFloat32Array = layer_materials.get(source_uv, VoxelFrame.material(layer_results[layer][uv]))
 				cell_material = cell_material.duplicate()
-				# Scale2x can select a neighbor's color. Keep that sampled color.
 				var color: Color = layer_results[layer][uv]
 				cell_material[VoxelFrame.MATERIAL_COLOR] = color.r
 				cell_material[VoxelFrame.MATERIAL_COLOR + 1] = color.g
@@ -416,7 +372,6 @@ class RotateJob extends TransformJob:
 			if not checkpoint(completed):
 				return
 
-	# The source cell that a rotated cell samples. A material follows the nearest source cell.
 	func _source_cell(cell: Vector2i, pivot2d: Vector2, angle: float) -> Vector2i:
 		var center := Vector2(cell) + Vector2(0.5, 0.5)
 		var back := (center - pivot2d).rotated(-angle) + pivot2d
@@ -457,12 +412,8 @@ func _update_params(origin: Vector3, dir: Vector3) -> bool:
 	if is_equal_approx(total, _angle):
 		return false
 	_angle = total
-	# The gesture turns the cells as they are now. The job rotates about the
-	# captured normal, so any axis works.
 	_job_axis = _view_normal
 	_job_angle = _angle
-	# The dialog reports a running total. Compose the gesture with the base
-	# rotation so the total stays right across grabs and view changes.
 	_total_basis = Basis(_view_normal, _angle) * _gesture_base_basis
 	_euler = _total_basis.get_euler(EULER_ORDER_XYZ)
 	return true
@@ -480,8 +431,6 @@ func _make_job() -> TransformJob:
 	return job
 
 
-# A snapped result keeps the previous preview's centre. That avoids a one-cell
-# jump when the magnetic pull switches from the smooth path to the exact path.
 func _snap_center() -> Vector3:
 	var turns := absf(_job_angle) / QUARTER
 	if _destination_bounds.has_volume() and is_equal_approx(turns, roundf(turns)):

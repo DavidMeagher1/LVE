@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One fixed white ring is the whole terrain cursor. Every tool poses it with its
-# own radius. It snaps to cell centers, steps whole cells, and stays neutral
-# white in every state.
 
 const ProbeScript := preload("./terrain_stroke_input_probe.gd")
 
@@ -68,9 +65,6 @@ func after_test() -> void:
 	_tool = null
 
 
-# --- Fixtures and input -------------------------------------------------------
-
-# A wide flat plate on the floor plane.
 func _plate() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -86,9 +80,6 @@ func _plate() -> void:
 	camera_rig().is_orthogonal = true
 
 
-# A one-step ramp. Columns with x below 2 hold one cell, and columns with x at
-# or above 2 hold two. The top surface steps up one cell at the x boundary, so
-# the surface read around a cell on the raised step tilts toward -x.
 func _ramp() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -138,17 +129,12 @@ func _wait_idle() -> void:
 		await get_tree().process_frame
 
 
-# Waits for the idle surface read to finish. A Surface hover reads the surface on the worker pool,
-# so a test waits before it reads the ring pose. The controller owns the
-# surface read job, so its settled state is the wait condition.
 func _wait_ring_ready() -> void:
 	for _index in 1200:
 		if _tool._preview == null or _tool._preview.is_settled():
 			return
 		await get_tree().process_frame
 
-
-# --- Cases --------------------------------------------------------------------
 
 func _ring_per_tool() -> void:
 	step("Given a plate and each terrain tool in turn", func() -> void:
@@ -348,8 +334,6 @@ func _document_change() -> void:
 		_plate()
 		_motion(_screen(Vector3(0.25, 0.5, 0.25)))
 	)
-	# The Surface hover reads the surface on the worker pool, so wait for the pose
-	# before the document change.
 	await get_tree().process_frame
 	await _wait_ring_ready()
 	var footprint := _tool.get_node("Footprint") as MeshInstance3D
@@ -371,15 +355,11 @@ func _document_change() -> void:
 
 
 func _hover_orientation() -> void:
-	# The picking DDA works in cell space, where a coordinate ending in 0.5
-	# sits on a cell boundary. Hover the open interior of the raised step.
 	var hover := Vector3(2.25, 1.5, 0.25)
 	step("Given a step ramp and a hover on the raised step", func() -> void:
 		_ramp()
 		_motion(_screen(hover))
 	)
-	# The Surface hover reads the surface on the worker pool, so wait before reading the
-	# ring normal.
 	await get_tree().process_frame
 	await _wait_ring_ready()
 	var pick := aim(_screen(hover))

@@ -39,7 +39,7 @@ func _slice_run() -> void:
 		expect(pick.target == Vector3i(0, 2, 0), "the slice pick targets the layer under the ray")
 		expect(pick.hit == Vector3i(0, 2, 0), "an occupied slice cell is the hit")
 		expect(pick.plane != null and pick.plane.axis == Vector3.Axis.AXIS_Y, "the pick plane faces the slice axis")
-		expect(pick.plane.idx == 2, "the pick plane holds the layer index")
+		expect(pick.plane.cell_index == 2, "the pick plane holds the layer index")
 	)
 	step("Then an empty slice cell is still the target and not the hit", func():
 		var frame := State.get_current_voxel_frame()
@@ -255,8 +255,6 @@ func _mouse_motion(pos: Vector2) -> void:
 func _key(code: Key) -> void:
 	var ev := InputEventKey.new()
 	ev.keycode = code
-	# The axis actions use physical keys, so the event must carry the position
-	# as a real keyboard event does.
 	ev.physical_keycode = code
 	ev.pressed = true
 	viewport.push_input(ev)

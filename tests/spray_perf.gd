@@ -1,20 +1,5 @@
 extends "res://tests/test.gd"
 
-# Differential and performance test for the spray sampler.
-#
-# `tests/spray_reference.gd` freezes the kernel that ran before the in-place
-# partial shuffle, the diameter-1 shortcut, and the identity-context fast path.
-# Every fixture is sampled by the live `SprayTool._sample` and by the reference,
-# then compared as cell sets under the identity, the symmetry, and the selection
-# contexts. The A/B alternates the two kernels in one process and reports medians
-# with their sample counts. A repeated hover is compared with the per-cell
-# occupancy check and the preview dict build it replaced.
-#
-# A size whose occupied reach estimate passes the tool's inline limit samples on
-# the worker pool. That hover row reports the request cost alone, because the
-# inline A/B cannot compare a job that runs off the input frame.
-#
-#   godot --path . res://tests/spray_perf.tscn
 
 const REFERENCE := preload("res://tests/spray_reference_size.gd")
 const VoxelBrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
@@ -23,9 +8,6 @@ const SpraySampler := preload("res://plugins/paint/SpraySampler.gd")
 const SEED := 20261020
 const AB_SAMPLES := 5
 const AB_WARMUPS := 1
-# The spot size, the spray search size, and the speed of each measured setting.
-# The sizes are canonical widths. The old table named the search value a radius:
-# its spans were 9, 17, and 33 cells, so the span-equivalent sizes are used here.
 const SETTINGS := [[1, 9, 8], [8, 17, 16], [32, 33, 64]]
 const SETTING_NAMES := ["default", "medium", "max"]
 
@@ -74,7 +56,6 @@ func after_test() -> void:
 	_reference = null
 
 
-# A solid block around the origin, so a spot sphere is fully occupied.
 func _dense_cells(half: int) -> Dictionary:
 	var cells := {}
 	for x in range(-half, half + 1):
@@ -84,7 +65,6 @@ func _dense_cells(half: int) -> Dictionary:
 	return cells
 
 
-# A square plate on the floor plane.
 func _plate_cells() -> Dictionary:
 	var cells := {}
 	for x in range(-32, 33):
@@ -93,7 +73,6 @@ func _plate_cells() -> Dictionary:
 	return cells
 
 
-# Scattered voxels in one plane, so the reach holds a mostly empty region.
 func _sparse_cells() -> Dictionary:
 	var cells := {}
 	for index in 40:
@@ -147,9 +126,6 @@ func _same_set(first: Array[Vector3i], second: Array[Vector3i]) -> bool:
 
 func _compare(label: String, center: Vector3i, context: VoxelFrame.EditContext, seed_value: int) -> void:
 	var live := _live_sample(center, context, seed_value)
-	# The live kernel draws from the tool source and the frozen kernel from its
-	# own source. The two must consume the same draws, so the random state after
-	# the sample is one more ground truth than the cell set alone.
 	var live_state: int = tool._rng.state
 	var reference := _reference_sample(center, context, seed_value)
 	var reference_state: int = _reference_rng.state
@@ -199,8 +175,6 @@ func _parity() -> void:
 	)
 
 
-# One A/B pair of the sample kernel. The frames are prepared outside the timed
-# region, so only the sampler runs inside it.
 func _time_live(center: Vector3i, context: VoxelFrame.EditContext, seed_value: int) -> int:
 	var started := Time.get_ticks_usec()
 	var cells := _live_sample(center, context, seed_value)
@@ -238,9 +212,6 @@ func _measure_sample(label: String, center: Vector3i) -> void:
 	])
 
 
-# The per-cell occupancy check, the preview dict build, the preview dedupe scan,
-# and the material update that the repeated hover used before the chunk snapshot
-# and the cached preview dict.
 func _time_old_hover() -> int:
 	var started := Time.get_ticks_usec()
 	var holds := true
@@ -258,7 +229,6 @@ func _time_old_hover() -> int:
 			if not spots.has(cell):
 				same = false
 				break
-	# The material update is shared by both paths, so the baseline includes it.
 	_cursor.set_brush_material(tool._batch_material)
 	_sink = spots.size() if holds and same else -1
 	return Time.get_ticks_usec() - started
@@ -271,9 +241,6 @@ func _time_new_hover() -> int:
 	return Time.get_ticks_usec() - started
 
 
-# One A/B pair of the hover request. A size whose occupied reach estimate passes
-# the inline limit queues a worker sample, so the inline path is not comparable
-# there and the request cost is reported as it is.
 func _measure_hover(label: String, center: Vector3i) -> void:
 	var pick := PickResult.new()
 	pick.target = center

@@ -1,24 +1,14 @@
 extends VoxelPlugin
 
-## The export plugin.
-##
-## It adds the Export tab and the menu item. The tab previews the model and the
-## sprite sheet. The plugin exports a GLB model or a PNG sprite sheet with a
-## JSON sidecar.
 
 const GLTF_EXPORT := preload("./GLTFExport.gd")
 const GIF_ENCODER := preload("./GifEncoder.gd")
 const NORMAL_SHADER := preload("./normal_export.gdshader")
 const SPECULAR_SHADER := preload("./specular_export.gdshader")
-## The camera view names of the sprite sheet.
 const VIEWS := ["3D preview", "Isometric", "Front", "Back", "Left", "Right", "Top", "Bottom"]
-## The stable API names of the sprite sheet views. They match the screenshot tool.
 const VIEW_KEYS := ["current", "isometric", "front", "back", "left", "right", "top", "bottom"]
-## The yaw and pitch of each sprite sheet view.
 const ANGLES := [Vector2.ZERO, Vector2(-45, 45), Vector2.ZERO, Vector2(180, 0), Vector2(90, 0), Vector2(-90, 0), Vector2(0, 90), Vector2(0, -90)]
-## The debounce delay of the sheet preview in milliseconds.
 const PREVIEW_DELAY_MS := 200
-## The gap between two sheet tiles in pixels.
 const SPRITE_GAP := 1
 
 @onready var _menu_item := preload("./MenuBarItem.tscn").instantiate()
@@ -99,8 +89,6 @@ func _ready() -> void:
 	_model_playback.frame_changed.connect(_show_model_frame)
 	_model_playback.is_playing_toggled.connect(_on_model_playing_changed)
 	_model_camera = _model_viewport.get_node("ViewportScene/CameraRig")
-	# The preview camera keeps its own pose. Only the editor camera writes the
-	# document pose, otherwise the last camera to deactivate would win.
 	_model_camera.stores_document_pose = false
 	_model_camera.bounds_provider = _model_bounds
 	var view_group: ButtonGroup = _model.get_node("Viewport/ControlBar/PanToggle").button_group.duplicate()
@@ -148,8 +136,6 @@ func _ready() -> void:
 	_model.get_node("AnimationRow/Play").toggled.connect(_on_play_toggled)
 	_model_camera.view_changed.connect(_on_preview_camera_changed)
 	State.document_changed.connect(_on_document_changed)
-	# The preview content depends on the frames and the tags, not on the editor's
-	# current frame. Following that frame would reset the preview clock.
 	State.frames_changed.connect(_source_changed)
 	State.tag_changed.connect(_source_changed)
 	State.cells_changed.connect(_source_changed.unbind(2))
@@ -211,7 +197,6 @@ func _restore_export_settings() -> void:
 	_model_camera._yaw = _pending_export_camera.get("yaw", _default_camera.yaw)
 	_model_camera._pitch = _pending_export_camera.get("pitch", _default_camera.pitch)
 	_model_camera.fov = _pending_export_camera.get("fov", _default_camera.fov)
-	# Use the scene method so the camera menu check follows the restored projection.
 	_model_scene.set_orthographic(_pending_export_camera.get("orthographic", _default_camera.orthographic))
 	_gif_button.set_pressed_no_signal(false)
 	_controls.get_node("Preview").clear_animation()
@@ -228,19 +213,13 @@ func _restore_export_settings() -> void:
 	_restoring_export_settings = false
 
 
-## Applies the active document's saved export workspace to this tab. The MCP
-## workspace write calls it after it replaces the document settings.
 func apply_document_export_settings() -> void:
 	_restore_export_settings()
-	# Do not call _source_changed here: its save path writes the clamped tab
-	# controls back over the settings the caller just stored.
 	_model_dirty = true
 	_preview_revision += 1
 	_preview_due_ms = Time.get_ticks_msec() + PREVIEW_DELAY_MS
 
 
-## Returns the settings the export tab uses now. An agent can start from these
-## values and override what it needs.
 func current_export_settings() -> Dictionary:
 	var view_index: int = _sheet_settings.get_node("ViewRow/View").selected
 	var sheet_range := _selected_frames()
@@ -268,7 +247,6 @@ func current_export_settings() -> Dictionary:
 			"tag": model_tag_index,
 			"smooth_normals": State.document.smooth_normals,
 			"ao": State.document.ao_strength,
-			# The panel always exports lit materials. A caller can override one export.
 			"unlit": false,
 			"first_frame": model_range.x,
 			"last_frame": model_range.y,
@@ -437,8 +415,6 @@ func _on_model_lighting_changed() -> void:
 	_sheet_settings_changed()
 
 
-## Applies the preview's shading option to both preview renderers. The preview
-## swaps between two renderers, so one renderer would keep a stale state.
 func _sync_model_shading() -> void:
 	var unshaded: bool = not bool(_sheet_lighting().get("shaded", true))
 	_model_renderer.unshaded = unshaded
@@ -450,7 +426,6 @@ func _on_preview_camera_changed() -> void:
 		return
 	_save_export_settings()
 	_refresh_export_status()
-	# A fixed view uses only the camera projection. A free view uses the full pose.
 	var projection_changed := _model_camera.projection != _sheet_projection
 	_sheet_projection = _model_camera.projection
 	if projection_changed or _sheet_settings.get_node("ViewRow/View").selected == 0:
@@ -492,15 +467,11 @@ func _refresh_model() -> void:
 		preview_document.tags.append(tag)
 	_model_playback.document = preview_document
 	_model_playback.active_tag = 0 if _selected_tag else -1
-	# A running preview keeps its own position. A stopped preview follows the
-	# editor frame. Rebuilding the content must not restart the preview clock.
 	_model_playback.current_frame = clampi(
 		was_frame if was_playing else State.current_frame - frame_range.x,
 		0,
 		maxi(0, _model_frames.size() - 1)
 	)
-	# The replacement document starts stopped. Restore the running state after
-	# the setters above, so they do not restart the clock.
 	preview_document.edit_playing = was_playing
 	_show_model_frame()
 	_apply_export_camera()
@@ -508,8 +479,6 @@ func _refresh_model() -> void:
 	_model_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 
 
-## Applies the saved export camera and the centering option. The preview tab may
-## be closed, so an export cannot rely on the preview process loop.
 func _apply_export_camera() -> void:
 	_restoring_export_settings = true
 	if _model_camera_needs_center or not _pending_export_camera.is_empty():
@@ -525,8 +494,6 @@ func _apply_export_camera() -> void:
 	_restoring_export_settings = false
 
 
-## Applies the export camera before an export. The preview process does not run
-## while the export tab is closed, so the camera may still hold its old pose.
 func _ensure_export_camera() -> void:
 	if _model_dirty:
 		_refresh_model()
@@ -652,8 +619,6 @@ func _set_status_context(provider: Callable) -> void:
 func _process(delta: float) -> void:
 	if not is_instance_valid(_workspace) or not _workspace.is_visible_in_tree():
 		return
-	# Advance the preview clock on every visible frame, like the editor clock.
-	# A pending frame build must not change the animation timing.
 	_model_playback.update(delta)
 	if State.edit_busy():
 		return
@@ -695,7 +660,6 @@ func _on_gif_toggled(_pressed: bool) -> void:
 	_show_sheet_preview()
 	_apply_preview_animation()
 	if _light_button.button_pressed:
-		# GIF mode renders the basic color sheet, so the map passes stop.
 		_preview_due_ms = Time.get_ticks_msec() + PREVIEW_DELAY_MS
 	_sync()
 
@@ -726,8 +690,6 @@ func _on_gltf_file_selected(path: String) -> void:
 	_report_result(await export_gltf(path), path)
 
 
-## Exports the model as a GLB file and returns the error code. It uses the
-## current center option and the selected tag.
 func export_gltf(path: String) -> Error:
 	return await export_gltf_settings(path, {
 		"center": _model.get_node("AnimationRow/Center").button_pressed,
@@ -735,12 +697,6 @@ func export_gltf(path: String) -> Error:
 	})
 
 
-## Exports the model as a GLB file with explicit settings. Keys: [code]center[/code],
-## [code]tag[/code] (-1 for every tag), [code]smooth_normals[/code], [code]ao[/code],
-## and [code]unlit[/code]. An absent [code]center[/code] is false and an absent
-## [code]tag[/code] is -1. An absent [code]smooth_normals[/code] or [code]ao[/code]
-## keeps the document value. An absent [code]unlit[/code] exports lit materials.
-## The call does not change the document.
 func export_gltf_settings(path: String, settings: Dictionary) -> Error:
 	if _exporting or State.edit_busy():
 		return ERR_BUSY
@@ -782,8 +738,6 @@ func _report_result(error: Error, path: String, normal := false, specular := fal
 	_refresh_export_status()
 
 
-## Returns the sprite sheet grid for one frame count and tile size. The result
-## holds [code]size[/code], [code]tile_size[/code], and [code]rects[/code].
 static func sheet_layout(frame_count: int, tile_size: int) -> Dictionary:
 	var dimensions := Vector2i.ONE * tile_size
 	var actual_columns := maxi(1, ceili(sqrt(float(frame_count))))
@@ -797,12 +751,10 @@ static func sheet_layout(frame_count: int, tile_size: int) -> Dictionary:
 	return {"size": size, "tile_size": dimensions, "rects": rects}
 
 
-## Returns the aligned normal sheet path for one color sheet path.
 static func normal_path(path: String) -> String:
 	return path.get_basename() + "_normal.png"
 
 
-## Returns the aligned specular sheet path for one color sheet path.
 static func specular_path(path: String) -> String:
 	return path.get_basename() + "_specular.png"
 
@@ -856,7 +808,6 @@ func _sheet_render_settings(view: int, views: int, orthographic: bool, center: b
 		var forward := -pose.basis.z
 		near_depth = minf(near_depth, (render_bounds.get_support(-forward) - pose.origin).dot(forward))
 		far_depth = maxf(far_depth, (render_bounds.get_support(forward) - pose.origin).dot(forward))
-	# Use the same clipping planes for every frame and turntable view.
 	settings.near = maxf(0.05, minf(settings.near, near_depth - 1.0))
 	settings.far = maxf(settings.near + 1.0, far_depth + 1.0) * 2.0
 	return settings
@@ -923,8 +874,6 @@ func _render_sheet(frames: Array[VoxelFrame], settings: Dictionary, document: Vo
 					renderer.material_builder = Callable(self, "_specular_material")
 				else:
 					renderer.material_builder = Callable()
-				# The color pass renders the changed geometry and camera before the
-				# shadowed image. The unshaded normal pass needs one draw.
 				viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 				await RenderingServer.frame_post_draw
 				if not _render_current(document, revision):
@@ -961,8 +910,6 @@ func _render_sheet(frames: Array[VoxelFrame], settings: Dictionary, document: Vo
 	return sheets if complete and capture_index == capture_count else null
 
 
-## Returns the specular material for one chunk. The chunk material holds the
-## finish atlas, so the data pass reads its roughness and metallic textures.
 func _specular_material(source: Material) -> Material:
 	if not source is StandardMaterial3D:
 		return _specular_default
@@ -980,8 +927,6 @@ func _specular_material(source: Material) -> Material:
 	return material
 
 
-## Converts one rendered specular tile into the sheet format. Red holds the
-## metallic mask in RGB and green holds shininess in alpha.
 func _specular_sheet_image(image: Image) -> Image:
 	var specular := Image.create(image.get_width(), image.get_height(), false, Image.FORMAT_RGBA8)
 	specular.fill(Color.TRANSPARENT)
@@ -996,13 +941,10 @@ func _specular_sheet_image(image: Image) -> Image:
 	return specular
 
 
-## Builds one temporary render viewport for the sprite sheet or the GIF export.
 func _open_image_viewport(settings: Dictionary, viewport_size: Vector2i) -> SubViewport:
 	var lighting_settings: Dictionary = settings.lighting
 	var viewport: SubViewport = VoxelImageRenderer.VIEWPORT_SCENE.instantiate()
 	viewport.size = viewport_size
-	# The normal pass writes data bytes. Debanding and tonemapping would change
-	# those bytes, so the sheet viewport keeps a linear data path.
 	viewport.use_debanding = false
 	add_child(viewport)
 	var environment_node: WorldEnvironment = viewport.get_node("Node3D/WorldEnvironment")
@@ -1024,9 +966,6 @@ func _open_image_viewport(settings: Dictionary, viewport_size: Vector2i) -> SubV
 	return viewport
 
 
-## Renders one GIF frame at a time and passes it to [param encoder]. It returns
-## [constant OK], [constant ERR_BUSY] after a cancel or document change, or the
-## encoder error.
 func _render_gif_frames(frames: Array[VoxelFrame], settings: Dictionary, document: VoxelDocument, encoder) -> Error:
 	var tile_size: Vector2i = settings.tile_size
 	var viewport := _open_image_viewport(settings, tile_size * 2)
@@ -1057,7 +996,6 @@ func _render_gif_frames(frames: Array[VoxelFrame], settings: Dictionary, documen
 			if not _render_current(document, -1):
 				error = ERR_BUSY
 				break
-			# Render the changed geometry and camera before capturing the image.
 			viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 			await RenderingServer.frame_post_draw
 			if not _render_current(document, -1):
@@ -1145,14 +1083,11 @@ func _update_sheet_preview() -> void:
 			_preview_canvas_texture.normal_texture = _preview_normal_texture
 			if _preview_specular_texture:
 				_preview_canvas_texture.specular_texture = _preview_specular_texture
-				# A value below 0.999 enables the default specular map.
 				_preview_canvas_texture.specular_shininess = 0.99
 		_show_sheet_preview()
 		_apply_preview_animation()
 
 
-## Returns a display copy of the specular sheet. The RGB holds metallic. The
-## color sheet supplies the silhouette, so the shininess alpha stays hidden.
 func _specular_display_image(specular: Image, color: Image) -> Image:
 	var display := Image.create(specular.get_width(), specular.get_height(), false, Image.FORMAT_RGBA8)
 	display.fill(Color.TRANSPARENT)
@@ -1165,8 +1100,6 @@ func _specular_display_image(specular: Image, color: Image) -> Image:
 	return display
 
 
-## Shows the color sheet, both map sheets, or the GIF color sheet. The maps
-## view and the pointer light are display-only states.
 func _show_sheet_preview() -> void:
 	var preview: Control = _controls.get_node("Preview")
 	if _gif_enabled():
@@ -1184,8 +1117,6 @@ func _show_sheet_preview() -> void:
 		preview.set_light_enabled(_light_button.button_pressed)
 
 
-## Applies the GIF preview mode to the current sheet image. The preview shows
-## one tile at a time with the source frame delays.
 func _apply_preview_animation() -> void:
 	var preview: Control = _controls.get_node("Preview")
 	if not _gif_enabled() or _preview_image == null:
@@ -1204,12 +1135,6 @@ func _apply_preview_animation() -> void:
 	preview.set_animation(layout.rects, delays)
 
 
-## Exports a PNG sprite sheet and returns the error code. [param first_frame]
-## and [param last_frame] select the range. [param tile_size] sets one tile in
-## pixels. [param view] selects the camera view. [param include_json] also
-## writes the Aseprite JSON sidecar. The sidecar is off by default. [param views]
-## adds turntable views. [param normal] also writes the aligned normal sheet.
-## [param specular] also writes the aligned specular sheet.
 func export_sprite_sheet(path: String, first_frame := 0, last_frame := -1, tile_size := -1, view := 1, include_json := false, views := 1, tag_name := "", normal := false, specular := false) -> Error:
 	if view < 0 or view >= VIEW_KEYS.size():
 		return ERR_INVALID_PARAMETER
@@ -1226,15 +1151,6 @@ func export_sprite_sheet(path: String, first_frame := 0, last_frame := -1, tile_
 	})
 
 
-## Exports a PNG sprite sheet with explicit settings. Keys: [code]first_frame[/code],
-## [code]last_frame[/code], [code]tile_size[/code], [code]view[/code] (an API
-## name from [constant VIEW_KEYS]), [code]views[/code], [code]orthographic[/code],
-## [code]center[/code], [code]metadata[/code], [code]tag_name[/code],
-## [code]lighting[/code], [code]normal[/code], and [code]specular[/code]. An
-## absent view, camera, size, metadata, normal, or specular key keeps the value
-## of the export tab. The frame range defaults to every frame, and a negative
-## [code]last_frame[/code] or [code]tile_size[/code] also selects the default.
-## The call does not change the document or the saved export settings.
 func export_sprite_sheet_settings(path: String, settings: Dictionary) -> Error:
 	if _exporting or State.edit_busy():
 		return ERR_BUSY
@@ -1325,20 +1241,10 @@ func export_sprite_sheet_settings(path: String, settings: Dictionary) -> Error:
 	return error
 
 
-## Exports the selected frames as an animated GIF and returns the error code.
-## It uses the sprite sheet settings: frames, views, view, tile size,
-## projection, centering, lighting, and frame delays. The GIF loops forever.
 func export_gif(path: String) -> Error:
 	return await export_gif_settings(path, current_export_settings().sprite)
 
 
-## Exports a GIF with explicit settings. Keys: [code]first_frame[/code],
-## [code]last_frame[/code], [code]tile_size[/code] (1 to 2048), [code]view[/code]
-## (an API name from [constant VIEW_KEYS]), [code]views[/code],
-## [code]orthographic[/code], [code]center[/code], and [code]lighting[/code].
-## An absent key keeps the value of the export tab. The frame order matches the
-## sprite sheet: each view plays the selected frames in order. The call does not
-## change the document or the export settings.
 func export_gif_settings(path: String, settings: Dictionary) -> Error:
 	if _exporting or State.edit_busy():
 		return ERR_BUSY
@@ -1403,9 +1309,6 @@ func export_gif_settings(path: String, settings: Dictionary) -> Error:
 	return error
 
 
-## Returns the Aseprite JSON sidecar for one sprite sheet. It lists every frame
-## rectangle and every tag. When [param normal] or [param specular] is true it
-## also names that sheet and its convention.
 func sheet_metadata(path: String, first: int, last: int, layout: Dictionary, views := 1, tag_name := "", normal := false, specular := false) -> Dictionary:
 	var count := last - first + 1
 	var dimensions: Vector2i = layout.tile_size

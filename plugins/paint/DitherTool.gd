@@ -1,16 +1,5 @@
 extends "res://plugins/paint/PaintBrushTool.gd"
 
-## The dither painting brush.
-##
-## The tool recolors visible surface cells on a 4 by 4 by 4 Bayer order. The
-## density runs from 0 through 1 and keeps that fraction of the surface cells in
-## the brush footprint. The lowest Bayer thresholds win. The pattern starts at
-## the first cell of the stroke, so a new stroke starts a fresh tile.
-##
-## The cursor shows only the surface cells that the stroke will write. Hidden
-## cells inside the brush volume keep their material. The tool keeps the other
-## paintbrush rules: a large stamp runs on the worker pool, and a stroke records
-## one history action.
 
 var _paint_settings: PaintToolSettings
 var _stroke_density := 0.5
@@ -51,8 +40,6 @@ func update_visual(pick: PickResult) -> void:
 		_preview_density = density
 		_preview_center = pick.target
 		_preview_frame = frame
-		# Rebuild the cursor for the new surface selection. A small surface
-		# builds inline, so the new cells install in the same input frame.
 		_cursor_axis = -1
 	super.update_visual(pick)
 
@@ -68,7 +55,6 @@ func _cursor_pattern(pattern: Dictionary) -> Dictionary:
 
 
 func _cursor_cube_diameter() -> int:
-	# The box mesh cannot show which cells the mask keeps.
 	return 0
 
 

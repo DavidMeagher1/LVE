@@ -1,28 +1,19 @@
 class_name AnimationFrame
 extends PanelContainer
 
-## One frame cell of the animation timeline.
-##
-## It shows the frame number, the duration, and a thumbnail. A press selects
-## the frame. A duration edit records one history action.
 
-## The thumbnail texture of this frame.
 @export var texture:Texture : set=set_texture
 
-## The frame index that this cell shows.
 var frame_index := 0
 
-## Shows one frame. It sets the number, the duration, and the pressed state.
 func set_frame(value:int) -> void:
 	%Button.button_pressed = State.current_frame == value
 	%Number.text = str(value + 1)
-	#%Delay.editable = State.current_frame == value
 	var voxel_frame = State.get_voxel_frame(value)
 	if voxel_frame:
 		%Delay.value = voxel_frame.delay_ms
 
 
-## Sets the thumbnail texture.
 func set_texture(value:Texture) -> void:
 	if value == texture:
 		return

@@ -1,8 +1,5 @@
 extends RefCounted
 
-## The MCP tool catalog: input schemas, output schemas, and the initialize
-## instructions. The server keeps thin aliases so callers and tests still read
-## MCPServer.TOOLS.
 
 const TOOLS := [
 	{
@@ -734,8 +731,6 @@ const TOOLS := [
 	},
 ]
 
-## The shared response schema parts. A legacy revision requires a root object,
-## so every output schema below is an object with properties.
 const SCHEMA_CELL := {"type": "array", "items": {"type": "integer"}, "minItems": 3, "maxItems": 3}
 const SCHEMA_BOUNDS := {
 	"type": ["object", "null"],
@@ -794,8 +789,6 @@ const SCHEMA_FRAME_RESULT := {
 	},
 }
 
-## The output schema of each tool, keyed by tool name. Clients show this as the
-## return type, so an agent sees the shape before the first call.
 const OUTPUT_SCHEMAS := {
 	"get_state": {
 		"type": "object",

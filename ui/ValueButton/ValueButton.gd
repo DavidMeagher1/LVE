@@ -1,19 +1,10 @@
 extends Button
 
-## A button that shows one numeric value.
-##
-## A drag changes the value. A click opens a text entry. The button shows a
-## fill bar behind its label. Escape cancels the edit and restores the start
-## value.
 
-## Emitted when the value changes.
 signal value_changed(value: float)
-## Emitted when an edit gesture starts.
 signal edit_started()
-## Emitted when an edit gesture finishes. [param cancelled] reports a rollback.
 signal edit_finished(cancelled: bool)
 
-## The drag distance in pixels that crosses the whole value range.
 const DRAG_RANGE_PIXELS := 200.0
 
 var _value := 0.0
@@ -25,25 +16,19 @@ var _drag_value := 0.0
 var _original_value := 0.0
 var _entry_initial_text := ""
 
-# Declared before `value` so a saved scene applies the bounds before the value.
-## The minimum value.
 @export var min_value: float = 0.0:
 	set(next):
 		min_value = next
 		set_value_no_signal(value)
-## The maximum value.
 @export var max_value: float = 1.0:
 	set(next):
 		max_value = next
 		set_value_no_signal(value)
-## The value step. A value of zero disables snapping.
 @export var step: float = 0.01
-## The number of decimal places.
 @export var decimals: int = 2:
 	set(next):
 		decimals = maxi(next, 0)
 		set_value_no_signal(value)
-## The current value. A write emits [signal value_changed] when it changes.
 @export var value: float = 0.0:
 	get:
 		return _value
@@ -52,7 +37,6 @@ var _entry_initial_text := ""
 		set_value_no_signal(next)
 		if value != previous:
 			value_changed.emit(value)
-## Whether the user can edit the value. A false value resets an open edit.
 @export var editable: bool = true:
 	get:
 		return not disabled
@@ -66,8 +50,6 @@ func _ready() -> void:
 	set_value_no_signal(value)
 
 
-## Sets the value without emitting [signal value_changed]. It clamps to the
-## bounds.
 func set_value_no_signal(next: float) -> void:
 	if not is_finite(next):
 		return
@@ -81,12 +63,10 @@ func set_value_no_signal(next: float) -> void:
 		fill.value = value
 
 
-## Returns the text entry that edits the value.
 func get_line_edit() -> LineEdit:
 	return $LineEdit
 
 
-## Clears the edit state and hides the entry and the fill.
 func reset_edit() -> void:
 	_editing = false
 	_pointer_down = false
@@ -104,17 +84,12 @@ func _format(next: float) -> String:
 	return ("%." + str(decimals) + "f") % next
 
 
-# Handle the pointer in the GUI stage. The GUI keeps the pointer on the pressed
-# button until the release, so this receives the drag outside the button's rect.
-# It also needs the release, because the release clears that state. A mouse event
-# consumed in the input stage stops before the GUI, so a drag must not use _input.
 func _gui_input(event: InputEvent) -> void:
 	if disabled:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			accept_event()
-			# Finish the previous field before starting this field's undo scope.
 			grab_focus()
 			_begin_edit()
 			_pointer_down = _editing
@@ -122,8 +97,6 @@ func _gui_input(event: InputEvent) -> void:
 		elif _pointer_down:
 			_end_drag()
 	elif event is InputEventMouseMotion and _pointer_down:
-		# A release outside the window delivers no button event, so the button
-		# state on the motion ends the drag instead.
 		if event.button_mask & MOUSE_BUTTON_MASK_LEFT:
 			_update_drag(event.relative)
 		else:
@@ -164,8 +137,6 @@ func _update_drag(relative: Vector2) -> void:
 		return
 	_dragging = true
 	$Fill.show()
-	# Track the accumulated movement, not the pointer's position, so the drag
-	# does not depend on where the press landed.
 	var span := max_value - min_value
 	_drag_value = clampf(_drag_value + relative.x / DRAG_RANGE_PIXELS * span, min_value, max_value)
 	value = snappedf(_drag_value, step) if step > 0.0 else _drag_value
@@ -194,7 +165,6 @@ func _finish_edit(cancelled: bool) -> void:
 			var typed_value := typed.to_float()
 			next = snappedf(typed_value, step) if step > 0.0 else typed_value
 	value = _original_value if cancelled else next
-	# A value listener can reset the control during a document switch.
 	if not _editing:
 		return
 	reset_edit()

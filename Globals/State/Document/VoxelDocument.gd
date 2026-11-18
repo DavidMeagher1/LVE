@@ -1,67 +1,35 @@
 class_name VoxelDocument
 extends Resource
 
-## The voxel document resource.
-##
-## A document holds the palette, the frames, and the animation tags. It also
-## holds the editor lighting and the export settings. The class encodes and
-## decodes the `.lve` binary format and the `.lve.png` container. See
-## `docs/DOCUMENT_FORMAT.md` for the format.
 
-## Emitted when [member file_path] changes.
 signal file_path_changed()
 
-## The application name.
 const APP_NAME := "Leonard's Voxel Editor"
-## The four-byte binary file signature.
 const FILE_SIGNATURE := [76, 86, 69, 0]
-## The current binary format version.
 const FORMAT_VERSION := 4
-## The maximum file size in bytes.
 const MAX_FILE_BYTES := 64 * 1024 * 1024
-## The maximum document size on one axis.
 const MAX_DOCUMENT_SIZE := 4096
-## The maximum frame count.
 const MAX_FRAMES := 10000
-## The maximum tag count.
 const MAX_TAGS := 10000
-## The maximum palette entry count.
 const MAX_PALETTE_COLORS := 65536
-## The PNG file signature.
 const PNG_SIGNATURE := [137, 80, 78, 71, 13, 10, 26, 10]
-## The private PNG chunk type that holds the document bytes.
 const PNG_DOCUMENT_CHUNK := "lvED"
 static var _crc_table := PackedInt64Array()
 
-# Phase counters of the terrain benchmark. The benchmark resets them by direct
-# static write.
 static var _profile_rescan_calls := 0
 static var _profile_rescan_us := 0
 
-## The ordered material entries. Each entry holds nine floats.
 @export var palette: Array[PackedFloat32Array] = []
-## The animation frames.
 @export var frames: Array[VoxelFrame] = []
-## The animation tags.
 @export var tags: Array[AnimationTag] = []
-## The smooth normals model option.
 @export var smooth_normals := false
-## The viewport and model preview ambient occlusion strength, from 0 to 1.
 @export_range(0.0, 1.0, 0.01) var ao_strength := 1.0
-## The editor lighting settings. See `docs/DOCUMENT_FORMAT.md` for the keys.
 @export var lighting_settings: Dictionary = {}
-## The export workspace settings. See `docs/DOCUMENT_FORMAT.md` for the keys.
 @export var export_settings: Dictionary = {}
-## The editor tool state. It holds one entry per plugin, the active tool, the
-## active material, and the editing aids. See `docs/DOCUMENT_FORMAT.md`.
 @export var tool_settings: Dictionary = {}
-## The editor view state. See `docs/DOCUMENT_FORMAT.md` for the keys.
 @export var view_settings: Dictionary = {}
-## The centered document size in cells. Zero on an axis means that axis is
-## infinite. The box is centered on the origin.
 @export var size := Vector3i.ZERO
 
-## The path of the last save or load. The document data does not store it.
 var file_path := "":
 	set(value):
 		if value == file_path:
@@ -71,27 +39,14 @@ var file_path := "":
 var _bounds: AABB
 var _bounds_dirty := true
 
-# Runtime editor state. The editor keeps one document per tab, so this state
-# moves with the document. The frame, the active tag, the playback state, and
-# the camera are serialized. The selection, the history, the save path, the
-# dirty flag, and the stamp source are not.
-## The frame that the editor shows.
 var edit_frame := 0
-## The active animation tag index, or -1 when no tag is active.
 var edit_tag := 0
-## Whether animation playback runs. A saved document opens playing.
 var edit_playing := false
-## The cell selection of this document.
 var edit_selection := VoxelSelection.new()
-## The undo and redo history of this document.
 var edit_history := UndoRedo.new()
-## The path that Save writes to. Empty until the first save.
 var edit_save_path := ""
-## Whether the document changed since the last save.
 var edit_dirty := false
-## The editor camera pose. It is serialized as the `camera` field.
 var edit_camera := {}
-## The runtime stamp source of this document. It is not serialized.
 var edit_stamp := {}
 
 
@@ -101,21 +56,17 @@ func _init() -> void:
 
 
 func _notification(what: int) -> void:
-	# UndoRedo is an Object, not a RefCounted value. Free it with the document.
 	if what == NOTIFICATION_PREDELETE and is_instance_valid(edit_history):
 		edit_history.free()
 		edit_history = null
 
 
-## Returns the file name for display. It falls back to [code]Untitled[/code].
 func get_file_name() -> String:
 	var path := file_path if not file_path.is_empty() else resource_path
 	return path.get_file() if not path.is_empty() else "Untitled"
 
 
-## Returns the document as an untyped dictionary for the binary encoder.
 func document_data() -> Dictionary:
-	# Use an untyped container for the document's restricted Variant decoder.
 	var palette_data := []
 	for entry in palette:
 		palette_data.append(entry.duplicate())
@@ -136,8 +87,6 @@ static func _storage_settings(settings: Dictionary) -> Dictionary:
 	return stored
 
 
-## Returns the encoded document bytes. Returns an empty array when the data is
-## invalid or too large.
 func encode_document() -> PackedByteArray:
 	var data := document_data()
 	if not _valid_document_data(data):
@@ -154,9 +103,6 @@ func encode_document() -> PackedByteArray:
 	return result
 
 
-## Writes the document to a file and returns the error code. A PNG destination
-## also writes the preview image. An already encoded byte array is reused when
-## it is not empty.
 func save_file(path: String, preview: Image = null, encoded := PackedByteArray()) -> Error:
 	if path.get_extension().to_lower() not in ["lve", "png"]:
 		return ERR_FILE_UNRECOGNIZED
@@ -169,7 +115,6 @@ func save_file(path: String, preview: Image = null, encoded := PackedByteArray()
 		data = document_png(preview, data)
 	if data.is_empty() or data.size() > MAX_FILE_BYTES:
 		return ERR_OUT_OF_MEMORY
-	# Write beside the destination so the final rename stays on one file system.
 	var temporary_path := path + ".%s.tmp" % Time.get_ticks_usec()
 	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
 	if file == null:
@@ -185,8 +130,6 @@ func save_file(path: String, preview: Image = null, encoded := PackedByteArray()
 	return error
 
 
-## Loads a document from a file. It accepts `.lve` bytes and PNG containers.
-## Returns null on failure.
 static func load_file(path: String) -> VoxelDocument:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null or file.get_length() > MAX_FILE_BYTES:
@@ -201,8 +144,6 @@ static func load_file(path: String) -> VoxelDocument:
 	return document
 
 
-## Decodes a document from bytes. It also reads format versions 1 and 2.
-## Returns null when the bytes are invalid.
 static func decode_document(data: PackedByteArray) -> VoxelDocument:
 	if data.size() < 16 or data.size() > MAX_FILE_BYTES or data.slice(0, 4) != PackedByteArray(FILE_SIGNATURE):
 		return null
@@ -210,12 +151,9 @@ static func decode_document(data: PackedByteArray) -> VoxelDocument:
 	if version < 1 or version > FORMAT_VERSION or data.decode_u32(8) != data.size() - 16:
 		return null
 	var payload := data.slice(16)
-	# Version 4 stores the first four bytes of a SHA-256 digest. Older files
-	# keep CRC-32, so both must pass the same header slot.
 	var expected := _checksum(payload) if version >= 4 else _crc32(payload)
 	if expected != data.decode_u32(12):
 		return null
-	# Reject object types, typed containers, excessive nesting, and invalid lengths before decoding.
 	if _variant_end(payload, 0, 0, [1000000]) != payload.size():
 		return null
 	var fields: Variant = bytes_to_var(payload)
@@ -265,7 +203,6 @@ static func decode_document(data: PackedByteArray) -> VoxelDocument:
 	return document
 
 
-## Returns PNG bytes that hold the preview image and the document chunk.
 static func document_png(preview: Image, document_bytes: PackedByteArray) -> PackedByteArray:
 	var png := preview.save_png_to_buffer()
 	if png.size() < 20:
@@ -280,8 +217,6 @@ static func document_png(preview: Image, document_bytes: PackedByteArray) -> Pac
 	return result
 
 
-## Returns the document bytes from a PNG. Returns an empty array when no valid
-## document chunk exists.
 static func png_document_data(png: PackedByteArray) -> PackedByteArray:
 	if png.size() < 8 or png.size() > MAX_FILE_BYTES or png.slice(0, 8) != PackedByteArray(PNG_SIGNATURE):
 		return PackedByteArray()
@@ -318,8 +253,6 @@ static func _u32_be(data: PackedByteArray, offset: int) -> int:
 	return (data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]
 
 
-# The version 4 document checksum. The engine computes the digest, so the save
-# does not run a per-byte loop in GDScript.
 static func _checksum(data: PackedByteArray) -> int:
 	var context := HashingContext.new()
 	context.start(HashingContext.HASH_SHA256)
@@ -340,7 +273,6 @@ static func _crc32(data: PackedByteArray) -> int:
 	return crc ^ 0xffffffff
 
 
-# The document permits only the Variant types that its schema uses.
 static func _variant_end(data: PackedByteArray, offset: int, depth: int, budget: Array) -> int:
 	if depth > 16 or offset < 0 or offset + 4 > data.size() or budget[0] <= 0:
 		return -1
@@ -523,8 +455,6 @@ static func _valid_document_size(value: Variant) -> bool:
 	return true
 
 
-## Returns the palette with duplicate entries removed. The first occurrence
-## keeps its position.
 static func unique_palette(materials: Array) -> Array[PackedFloat32Array]:
 	var result: Array[PackedFloat32Array] = []
 	var seen := {}
@@ -535,7 +465,6 @@ static func unique_palette(materials: Array) -> Array[PackedFloat32Array]:
 	return result
 
 
-## Returns [code]true[/code] when the value is a valid palette.
 static func valid_palette(value: Variant) -> bool:
 	if not value is Array or value.size() > MAX_PALETTE_COLORS:
 		return false
@@ -545,8 +474,6 @@ static func valid_palette(value: Variant) -> bool:
 	return true
 
 
-## Returns [code]true[/code] when the value is a valid nine-float material. Each
-## component must be finite and between zero and one.
 static func valid_material(value: Variant) -> bool:
 	if not value is PackedFloat32Array or value.size() != VoxelFrame.MATERIAL_STRIDE:
 		return false
@@ -556,24 +483,18 @@ static func valid_material(value: Variant) -> bool:
 	return true
 
 
-## Returns [code]true[/code] when the value is a valid editor lighting
-## dictionary. The light strength is stored in each color alpha.
 static func valid_lighting_settings(value: Variant) -> bool:
 	return _valid_lighting(value, false)
 
 
-## Returns [code]true[/code] when the value is a valid editor view dictionary.
 static func valid_view_settings(value: Variant) -> bool:
 	return _valid_view_settings(value)
 
 
-## Returns [code]true[/code] when the value is a valid camera pose dictionary.
 static func valid_camera_pose(value: Variant) -> bool:
 	return _valid_camera(value)
 
 
-## Returns [code]true[/code] when the value is a valid export workspace
-## dictionary. The tag indices must name a tag or -1.
 static func valid_export_settings(value: Variant, tag_count: int) -> bool:
 	return _valid_export(value, tag_count)
 
@@ -598,7 +519,6 @@ static func _valid_lighting(data: Variant, exported: bool) -> bool:
 	if not data is Dictionary:
 		return false
 	if exported:
-		# These fields are read directly by the export workspace.
 		for key in ["basis", "color", "ambient_color", "energy", "ambient_energy", "shadows", "shaded"]:
 			if not data.has(key):
 				return false
@@ -659,12 +579,9 @@ static func _valid_camera(data: Variant) -> bool:
 	return true
 
 
-## Adds a frame after the last frame. A source index above or equal to zero
-## copies that frame. Returns the new frame.
 func add_frame(from_frame: int = -1) -> VoxelFrame:
 	var f := VoxelFrame.new()
 	if from_frame >= 0 and from_frame < frames.size():
-		# `copy_frame` already carries the delay.
 		f = frames[from_frame].copy_frame()
 	elif not frames.is_empty():
 		f.delay_ms = frames.back().delay_ms
@@ -674,7 +591,6 @@ func add_frame(from_frame: int = -1) -> VoxelFrame:
 	return f
 
 
-## Duplicates one frame and inserts it after the source.
 func duplicate_frame(i: int) -> void:
 	if i < 0 or i >= frames.size():
 		return
@@ -692,7 +608,6 @@ func _extend_end_tags(old_last: int) -> void:
 			tag.to = new_last
 
 
-## Removes one frame. The last remaining frame is kept.
 func remove_frame(i: int) -> void:
 	if frames.size() <= 1:
 		return
@@ -718,8 +633,6 @@ func _shift_tags_after_remove(i: int) -> void:
 			tag.to = tag.from
 
 
-## Adds a tag and returns its index. The frame range is inclusive. A repeat
-## count of zero means continuous playback.
 func add_tag(name: String, from: int, to: int, loop_mode := AnimationTag.LoopMode.FORWARD, repeats := 0) -> int:
 	var tag := AnimationTag.new()
 	tag.name = name
@@ -730,19 +643,15 @@ func add_tag(name: String, from: int, to: int, loop_mode := AnimationTag.LoopMod
 	tags.append(tag)
 	return tags.size() - 1
 
-## Returns one tag by index, or null when the index is out of range.
 func get_tag(i:int) -> AnimationTag:
 	if i >= 0 and i < tags.size():
 		return tags[i]
 	return null
 
-## Returns [code]true[/code] when at least one axis has a finite document size.
 func has_size() -> bool:
 	return size.x > 0 or size.y > 0 or size.z > 0
 
 
-## Returns the cell range of one axis as [first, last_exclusive]. An infinite
-## axis returns [constant Vector2i.ZERO].
 func axis_cell_range(axis: int) -> Vector2i:
 	var extent := size[axis]
 	if extent <= 0:
@@ -751,8 +660,6 @@ func axis_cell_range(axis: int) -> Vector2i:
 	return Vector2i(first, first + extent)
 
 
-## Returns the finite box that the grid and the viewport use. A bounded axis
-## uses [member size]. An infinite axis uses the content bounds plus one cell.
 func workspace_bounds() -> AABB:
 	var content := bounds()
 	var box := AABB(Vector3.ONE * -4.5, Vector3.ONE * 8.0)
@@ -767,7 +674,6 @@ func workspace_bounds() -> AABB:
 	return box
 
 
-## Returns the bounds of every frame in cell units.
 func bounds() -> AABB:
 	if _bounds_dirty:
 		_rescan_bounds()
@@ -781,7 +687,7 @@ func _rescan_bounds() -> void:
 		var box := f.get_bounds()
 		if box.has_volume():
 			b = b.merge(box) if b.has_volume() else box
-		
+
 	_bounds = b
 	_bounds_dirty = false
 	_profile_rescan_calls += 1
@@ -806,12 +712,10 @@ func _may_shrink_bounds(_frame: int, cell: Vector3i) -> void:
 		_bounds_dirty = true
 
 
-## Paints one cell. It erases the cell when the material is empty.
 func paint(frame: int, cell: Vector3i, cell_material: PackedFloat32Array) -> void:
 	set_cell(frame, cell, cell_material)
 
 
-## Sets one cell. It erases the cell when the material is empty.
 func set_cell(frame: int, cell: Vector3i, cell_material: PackedFloat32Array) -> void:
 	if VoxelFrame.is_empty(cell_material):
 		erase(frame, cell)
@@ -820,7 +724,6 @@ func set_cell(frame: int, cell: Vector3i, cell_material: PackedFloat32Array) -> 
 	_grow_bounds(cell)
 
 
-## Erases one cell.
 func erase(frame: int, cell: Vector3i) -> void:
 	if not frames[frame].has(cell):
 		return
@@ -828,18 +731,14 @@ func erase(frame: int, cell: Vector3i) -> void:
 	_may_shrink_bounds(frame, cell)
 
 
-## Returns the color of one cell in a frame.
 func get_color_at(frame: int, cell: Vector3i) -> Color:
 	return frames[frame].get_color(cell)
 
 
-## Returns [code]true[/code] when a frame holds the cell.
 func has_cell(frame: int, cell: Vector3i) -> bool:
 	return frames[frame].has(cell)
 
 
-## Returns the color of one palette entry. An out-of-range index returns
-## magenta.
 func get_color(index: int) -> Color:
 	if index >= 0 and index < palette.size():
 		return VoxelFrame.material_color(palette[index])

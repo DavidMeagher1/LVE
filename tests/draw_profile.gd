@@ -1,33 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused, opt-in profile of the maximum-diameter brush frame gap. This scene is
-# a probe, not a regression test. It measures one configuration per process so
-# the numbers stay isolated.
-#
-# With no environment set it runs a small configuration that the full suite can
-# afford. Run one configuration in its own window with:
-#
-#   $env:LVE_PROF_DIAMETER="64"; $env:LVE_PROF_SHAPE="cube"
-#   godot --path . --screen 0 res://tests/draw_profile.tscn
-#
-# Environment:
-#   LVE_PROF_SHAPE      cube | sphere            (default cube)
-#   LVE_PROF_DIAMETER   1..64                    (default 9)
-#   LVE_PROF_MODE       continuous | burst       (default continuous)
-#   LVE_PROF_VIEWPORTS  1 | 2                    (default 1)
-#   LVE_PROF_MOTIONS    int                      (default 16, or 4 for burst)
-#   LVE_PROF_MODEL      cube side                (default 32)
-#   LVE_PROF_RENDERER   on | off                 (default on)
-#   LVE_PROF_MATERIALS  int                      (default 1)
-#   LVE_PROF_SMOOTH     1                        (default off)
-#   LVE_PROF_ISOLATE    1                        (default off)
-#   LVE_PROF_STAGES     1                        (default off)
-#   LVE_PROF_TAG        label for the run
-#
-# The renderer on/off pair separates the surface work from the edit publication
-# and UI work. The idle interval is the vsync floor. Nothing here changes
-# production behavior. The extra renderer subclass only times its own
-# `_process`, so the real renderer path is preserved.
 
 const BUILDER := preload("res://Globals/Rendering/VoxelMeshBuilder.gd")
 const BrushScript := preload("res://plugins/brush/BrushTool.gd")
@@ -38,8 +10,6 @@ const IDLE_FRAMES := 40
 const SIGNATURE_REPEATS := 20
 
 
-# Test-only wrapper. It measures the main-thread cost of the renderer's own
-# `_process`, which the frame gap hides. It adds no behavior.
 class ProfRenderer extends VoxelRenderer:
 	var process_us := 0
 	var frames := 0
@@ -114,9 +84,6 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
-	# Consume a publication once. The brush tool publishes after this node's
-	# `_process`, so a publication is seen one frame later. The sequence marks it
-	# consumed, so an idle frame reports zero.
 	var publication_us := _consume_publication()
 	last_interval_publication_us = publication_us
 	if not measuring:
@@ -127,8 +94,6 @@ func _process(_delta: float) -> void:
 	if interval > longest_frame_us:
 		longest_frame_us = interval
 		if prof:
-			# The renderer ran after this sample last frame, so its last time is
-			# the renderer share of the interval just measured.
 			gap_renderer_us = prof.last_us
 			gap_pending = prof._pending_surface_keys.size()
 			gap_jobs = prof._surface_jobs.size()
@@ -147,8 +112,6 @@ func _process(_delta: float) -> void:
 	max_publish_us = maxi(max_publish_us, publication_us)
 
 
-# Return the publication duration for this interval, or zero. The sequence marks
-# the publication consumed, so it is never counted twice.
 func _consume_publication() -> int:
 	var current := Profile.finish_seq
 	if current == observed_pub_seq:
@@ -185,8 +148,6 @@ func _run() -> void:
 		step("When the cost stages are timed in isolation", func():
 			_print_stages()
 		)
-	# Two frames after the stroke, so the probe consumes the final publication
-	# before the idle check.
 	await get_tree().process_frame
 	await get_tree().process_frame
 	step("Then an idle interval does not inherit a publication", func():
@@ -257,8 +218,6 @@ func _build_model() -> void:
 			for x in model_side:
 				cells[Vector3i(x, y, z)] = palette[(x + y + z) % materials]
 	frame.set_cells(cells)
-	# A direct frame write does not dirty the document bounds. The brush tool
-	# sets the same flag after it restores an edited frame.
 	State.document._bounds_dirty = true
 	model_us = Time.get_ticks_usec() - started_us
 	camera_rig().configure()
@@ -293,9 +252,6 @@ func _install_renderers() -> void:
 		_isolate_renderers()
 
 
-# Remove every other surface renderer from the edit notification, so the
-# publication runs on the configured renderer count alone. Diagnostic only. The
-# renderers stay in the tree, so no other node holds a freed reference.
 func _isolate_renderers() -> void:
 	var removed := 0
 	for connection in State.chunks_changed.get_connections():
@@ -315,9 +271,6 @@ func _prepare_tool() -> void:
 	plugin("BrushPlugin")._options.get_node("Diameter").value = diameter
 	expect(tool._settings.diameter == diameter, "the brush uses the configured diameter")
 	expect(tool._settings.shape == shape, "the brush uses the configured shape")
-	# The pattern is built once and cached, so the stroke measures its steady
-	# state. Above diameter sixteen the settings do not cache the pattern, so the
-	# first job would otherwise build it inside the stroke.
 	var started_us := Time.get_ticks_usec()
 	var pattern := BrushToolSettings.build_pattern(diameter, shape)
 	tool._settings.cache_pattern(diameter, shape, pattern, pattern.keys())
@@ -328,7 +281,6 @@ func _prepare_tool() -> void:
 
 func _measure_idle() -> void:
 	idle_us.clear()
-	# Warm up past the renderer build, the grid rebuild, and the first draws.
 	for index in 10:
 		await get_tree().process_frame
 	var prev := Time.get_ticks_usec()
@@ -389,8 +341,6 @@ func _run_stroke() -> void:
 	var started_us := Time.get_ticks_usec()
 	measuring = true
 	_button(origin, true)
-	# Reset the frame mark here, or the first frame counts the idle time since
-	# the last measured frame.
 	last_frame_us = Time.get_ticks_usec()
 	if mode == "burst":
 		var burst_started := Time.get_ticks_usec()
@@ -473,12 +423,10 @@ func _print_stages() -> void:
 	, SIGNATURE_REPEATS)
 	var copy_us := _time_repeat(func(): frame.copy_frame(), 20)
 	var capture_us := _time_repeat(func(): frame.capture(), 20)
-	# A dirty document rescan reads every chunk's cached bounds.
 	State.document._bounds_dirty = true
 	var bounds_started := Time.get_ticks_usec()
 	State.document.bounds()
 	var bounds_us := Time.get_ticks_usec() - bounds_started
-	# A dirty chunk rescan is the worst case the batch write avoids.
 	var dirty_location: Vector3i = chunks[0]
 	var dirty_chunk: VoxelFrame.Chunk = frame.chunks[dirty_location]
 	dirty_chunk.bounds_dirty = true
@@ -503,9 +451,6 @@ func _print_stages() -> void:
 		prof._build_material(builder)
 		material_us = Time.get_ticks_usec() - material_started
 	var cache_us := _measure_cache()
-	# One chunk notification replayed on the live listeners. The renderer's
-	# request work is timed apart from the remaining listeners, so the split is
-	# visible. The replay only repeats reads and UI refreshes.
 	var notify_all_us := 0
 	var notify_renderer_us := 0
 	var grid_us := 0
@@ -518,7 +463,6 @@ func _print_stages() -> void:
 			var extra_callable := Callable(extra_prof, "_update_chunks")
 			State.chunks_changed.disconnect(extra_callable)
 			extra_callables.append(extra_callable)
-		# The probe handler is not part of production, so it must not count.
 		State.chunks_changed.disconnect(_on_chunks_changed)
 		var notify_started := Time.get_ticks_usec()
 		State.chunks_changed.emit(0, chunks)
@@ -530,7 +474,6 @@ func _print_stages() -> void:
 		var update_started := Time.get_ticks_usec()
 		prof._update_chunks(0, chunks)
 		notify_renderer_us = Time.get_ticks_usec() - update_started
-	# The two listeners that read the bounds and rebuild geometry or text.
 	var grid_node: MeshInstance3D = viewport_scene().get_node_or_null("Grid")
 	if grid_node:
 		grid_node._last_bounds = AABB()
@@ -554,8 +497,6 @@ func _print_stages() -> void:
 	print("MEASURE stage: notify non-renderer %d us, renderer request %d us, grid rebuild %d us, status bar %d us" % [
 		notify_all_us, notify_renderer_us, grid_us, status_us,
 	])
-	# Each listener on one notification, so the heavy handler is visible. The
-	# listeners are called in turn with the renderers out of the list.
 	var connections := State.chunks_changed.get_connections()
 	var callables: Array[Callable] = []
 	for connection in connections:
@@ -625,8 +566,6 @@ func _on_chunks_changed(_updated_frame: int, positions: Array[Vector3i]) -> void
 
 
 func _time_repeat(work: Callable, repeats: int) -> int:
-	# The minimum single-iteration time. A short operation is rarely preempted,
-	# so the minimum is robust to the external load on this machine.
 	var best := -1
 	for index in repeats:
 		var started_us := Time.get_ticks_usec()

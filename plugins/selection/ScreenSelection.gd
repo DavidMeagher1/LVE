@@ -1,69 +1,32 @@
 class_name ScreenSelection
 extends RefCounted
 
-## Builds a voxel selection from a screen shape.
-##
-## Every cell that projects inside the shape joins the region. The frame bounds
-## limit the empty cells. A subtract also tests the selected cells. An optional
-## depth test keeps only the cells that the camera sees a surface point of.
 
-# Screen selection tests each cell against a shape on the screen.
-# Every cell inside the shape joins the region, including hidden voxels.
-# The frame bounds limit the empty cells. A subtract also tests the selected
-# cells, so empty selected cells can leave without the empty cell option.
-# The mode values match SelectionToolSettings.SelectMode.
-# The depth test keeps the cells that the camera sees a surface point of.
-
-## The replace mode value. It matches [enum SelectionToolSettings.SelectMode].
 const REPLACE_MODE := 0
-## The subtract mode value. It matches [enum SelectionToolSettings.SelectMode].
 const SUBTRACT_MODE := 2
-# Aim inside the surface of a cell so the ray starts within the cell.
-## The distance from a cell center to its surface sample point.
 const SURFACE_INSET := 0.48
 
 
-# The job captures the camera and the shape. It reads no scene node.
-## One cancellable screen-selection job.
-##
-## The job captures the camera and the shape, so it reads no scene node.
-## [method VoxelFrame.EditJob.run] is the worker body.
 class Job extends VoxelFrame.EditJob:
-	## The frame snapshot to test.
 	var source_frame: VoxelFrame
-	## The inverse camera transform.
 	var view_matrix := Transform3D()
-	## The camera projection.
 	var projection := Projection()
-	## The viewport size in pixels.
 	var viewport_size := Vector2.ZERO
-	## The screen rectangle of a box selection.
 	var rectangle := Rect2()
-	## The screen polygon of a lasso selection.
 	var polygon := PackedVector2Array()
-	## The selection mode.
 	var mode := REPLACE_MODE
-	## The selection before this operation.
 	var previous_selection := {}
-	## Whether the selection keeps empty cells inside the frame bounds.
 	var include_empty := false
-	## Whether the selection keeps only the cells that the camera sees.
 	var depth_test := false
-	## The first empty cell of the empty-cell volume.
 	var empty_min := Vector3i.ZERO
-	## The last empty cell of the empty-cell volume.
 	var empty_max := Vector3i(-1, -1, -1)
-	## The result selection, keyed by cell position.
-	var result := {}
+	var result_cells := {}
 
-	## Returns the empty cell count of the empty-cell volume. Returns zero when
-	## the empty-cell option is off.
 	func empty_cell_count() -> int:
 		if not include_empty:
 			return 0
 		return (empty_max.x - empty_min.x + 1) * (empty_max.y - empty_min.y + 1) * (empty_max.z - empty_min.z + 1)
 
-	## Builds the result selection. This is the worker body.
 	func run() -> void:
 		var total: int = source_frame.count() + empty_cell_count()
 		if mode == SUBTRACT_MODE:
@@ -101,25 +64,22 @@ class Job extends VoxelFrame.EditJob:
 		if not checkpoint(completed):
 			return
 		stage("Applying the selection mode", region.size())
-		result = {} if mode == REPLACE_MODE else previous_selection.duplicate()
+		result_cells = {} if mode == REPLACE_MODE else previous_selection.duplicate()
 		completed = 0
 		for cell_position in region:
 			if mode == SUBTRACT_MODE:
-				result.erase(cell_position)
+				result_cells.erase(cell_position)
 			else:
-				result[cell_position] = true
+				result_cells[cell_position] = true
 			completed += 1
 			if completed % 4096 == 0 and not checkpoint(completed):
 				return
 
-	# Keep the cells that the camera reaches through an open side.
-	# A cell whose camera-facing sides are all occupied hides behind them.
 	func _visible(region: Dictionary) -> Dictionary:
 		if not depth_test or region.is_empty():
 			return region
 		stage("Testing camera visibility", region.size())
 		var origin: Vector3 = view_matrix.affine_inverse().origin
-		# The frame bounds are read once, so every visibility ray reuses them.
 		var bounds := source_frame.get_bounds()
 		var visible := {}
 		var completed := 0
@@ -145,7 +105,6 @@ class Job extends VoxelFrame.EditJob:
 				return true
 		return false
 
-	# True when no occupied cell stands between the camera and the sample point.
 	func _reaches(origin: Vector3, sample: Vector3, cell_position: Vector3i, bounds: AABB) -> bool:
 		var to_sample := sample - origin
 		var distance := to_sample.length()
@@ -165,9 +124,6 @@ class Job extends VoxelFrame.EditJob:
 		return rectangle.has_point(screen_point)
 
 
-# Return the viewport position of a world point. Return Vector2.INF behind the camera.
-## Returns the viewport position of a world point. Returns [constant Vector2.INF]
-## when the point is behind the camera.
 static func project(view_matrix: Transform3D, projection: Projection, viewport_size: Vector2, world_point: Vector3) -> Vector2:
 	var view_point: Vector3 = view_matrix * world_point
 	if view_point.z > 0.0:
@@ -179,17 +135,12 @@ static func project(view_matrix: Transform3D, projection: Projection, viewport_s
 	return Vector2((normalized.x * 0.5 + 0.5) * viewport_size.x, (-normalized.y * 0.5 + 0.5) * viewport_size.y)
 
 
-# Capture the values that the worker needs to project a cell center.
-## Returns the inverse camera transform, the projection, and the viewport size.
-## Returns an empty array for a null camera.
 static func view_of(camera: Camera3D, viewport_size: Vector2) -> Array:
 	if camera == null:
 		return []
 	return [camera.global_transform.affine_inverse(), camera.get_camera_projection(), viewport_size]
 
 
-## Returns [code]true[/code] when a point lies inside a polygon. It uses the
-## crossing-number rule.
 static func point_in_polygon(point: Vector2, polygon: PackedVector2Array) -> bool:
 	var inside := false
 	var previous := polygon.size() - 1

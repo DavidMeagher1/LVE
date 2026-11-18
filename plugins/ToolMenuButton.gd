@@ -1,11 +1,6 @@
 class_name ToolMenuButton
 extends MenuButton
 
-## A menu button that selects its tool on the first press and opens its menu on
-## the next press.
-##
-## The button stays pressed while its tool is active. The keyboard shortcut and
-## the Enter key use the same path.
 
 func _gui_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_accept"):
@@ -34,7 +29,7 @@ func _select_or_open() -> void:
 func _on_popup_hide() -> void:
 	if not button_pressed:
 		button_pressed = true
-		
+
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_READY:
 		get_popup().popup_hide.connect(_on_popup_hide)

@@ -1,59 +1,15 @@
 extends "res://tests/test.gd"
 
-# Exercise the sample footprint ownership rule.
-#
-# The footprint map must keep one row per anchor and one row per claimed cell.
-# Every claim owner must point at an existing row. A tilted disc can map two
-# entries to one anchor while their bounded surface scans find different cells,
-# so the dedup must resolve that collision without a dangling owner.
-#
-# The stroke path and the prepared worker build the map with the same rule. The
-# tilted disc drives the map directly, so it keeps the old crash reproduction.
-#
-# The idle hover poses one footprint ring and builds no map. The side hover
-# sweep keeps the old crash shape: a hover with no button on the side of a slope
-# that was grown up from the floor. Every hover must pose the ring and leave no
-# edit, no history, and no activity behind.
-#
-# The side hover has two modes with the same test logic and assertions:
-#
-#   godot --path . res://tests/terrain_sample_ownership.tscn
-#   godot --path . res://tests/terrain_sample_ownership.tscn -- exhaustive
-#
-# The default mode hovers representative anchors from every view and radius. The
-# anchors cover the negative floor, the slope boundary, the exact crash columns,
-# and the center. The `exhaustive` mode hovers every cell of the region. It does
-# not meet the suite deadline, so run it directly. The harness reads each argument
-# after `--` as a test name, so the full sweep registers under that name.
-#
-# The maximum-radius matrix has its own root scene, because it needs most of the
-# 30 s scene deadline:
-#
-#   godot --path . res://tests/terrain_sample_max_ownership.tscn
-#
-# The old direct selection still runs only the maximum matrix:
-#
-#   godot --path . res://tests/terrain_sample_ownership.tscn -- worst_case_hover
 
 const TerrainGeometryScript := preload("res://plugins/Terrain/TerrainGeometry.gd")
 
-## The user argument and test name that select the full side hover sweep.
 const EXHAUSTIVE_NAME := "exhaustive"
-## The full sweep hovers every cell from five views at five radii.
 const EXHAUSTIVE_TIMEOUT := 240.0
-## The bounded sweep keeps the suite deadline with room for the other tests.
 const HOVER_SIDE_TIMEOUT := 20.0
-## The maximum-radius matrix test name. The old direct selection still uses it.
 const MAXIMUM_NAME := "worst_case_hover"
-## The maximum-radius scene sets this. Its root then registers one test.
 @export var maximum_only := false
-## Every view and radius stays in both modes.
 const HOVER_VIEWS := ["top", "front", "left", "right", "back"]
 const HOVER_RADII := [3, 4, 5, 6, 8]
-## Nine anchors span the sweep region. The x values cover the far negative floor,
-## the tilted-disc crash columns at -3.5 and 4.0, the negative side, the slope
-## boundary at zero, the first rising column at 0.5, and the far positive slope.
-## The extra z values keep both edges of the boundary.
 const HOVER_ANCHORS := [
 	Vector3(-9.0, 4.0, 0.0),
 	Vector3(-3.5, 4.0, 0.0),
@@ -140,8 +96,6 @@ func after_test() -> void:
 			await get_tree().process_frame
 
 
-# --- Pure ownership -----------------------------------------------------------
-
 func _candidate(anchor: Vector3i, claim: Vector3i, weight: float) -> Dictionary:
 	return {
 		"anchor": anchor, "point": Vector3(anchor), "normal": Vector3.UP,
@@ -211,10 +165,6 @@ func _reversed_order() -> void:
 	)
 
 
-# --- A real tilted disc -------------------------------------------------------
-
-# Builds a tilted frame whose disc maps two entries to one anchor. The unit
-# tangents are not axis aligned, so the rounded anchors collide.
 func _tilted_frame(normal: Vector3, center: Vector3) -> TerrainFrame:
 	var frame := TerrainFrame.new()
 	var n := normal.normalized()
@@ -233,8 +183,6 @@ func _tilted_disc() -> void:
 		_grown_slope()
 	)
 	await _pump()
-	# The second normal and its first center reproduce the exact hover crash of
-	# the old reverse map. The other cases cover nearby collisions.
 	var normals := [Vector3(0.7071, 0.7071, 0.0), Vector3(0.5, 0.7071, 0.5), Vector3(0.6, 0.8, 0.0)]
 	var centers := [
 		Vector3(0.6, 0.4, 0.0), Vector3(0.4, 0.6, 0.0), Vector3(0.5, 0.5, 0.0),
@@ -254,8 +202,6 @@ func _tilted_disc() -> void:
 					var duplicate_claims := []
 					for anchor in built:
 						var row: Dictionary = built[anchor]
-						# Keep the exact predicates for every row. Collect the
-						# details per disc, so the report stays small.
 						if (row["anchor"] as Vector3i) != anchor:
 							bad_keys.append("%s -> %s" % [anchor, row["anchor"]])
 						var claim: Vector3i = row["surface"] if row["surface"] != VoxelPicking.NONE else anchor
@@ -277,10 +223,6 @@ func _tilted_disc() -> void:
 	)
 
 
-# --- The hover regression -----------------------------------------------------
-
-# Builds a slope that rises to one side and carries an L ridge. The shape stands
-# in for a model that was grown up from the floor with overlapping discs.
 func _grown_slope() -> void:
 	var changes := {}
 	var material := VoxelFrame.material(Color.from_rgba8(40, 40, 40))
@@ -305,23 +247,14 @@ func _hover(world: Vector3) -> void:
 	_viewport.push_input(event)
 
 
-# Returns the ring node of the tool. The ring is the whole idle cursor, so a
-# posed ring is visible and an aborted hover leaves it hidden.
 func _ring() -> MeshInstance3D:
 	return _tool.get_node("Footprint")
 
 
-# The motion event is handled on the next viewport input flush, and the ring
-# poses on that event. One frame is enough, because the idle hover builds no
-# map. A Surface hover starts a surface read on the worker pool, so a pose that reads
-# the surface frame waits for that read.
 func _settle_hover() -> void:
 	await get_tree().process_frame
 
 
-# Waits for the idle surface read to finish. A Surface hover reads the surface on the worker pool,
-# so a test waits before it reads the ring pose. The controller owns the
-# surface read job, so its settled state is the wait condition.
 func _wait_ring_ready() -> void:
 	for _index in 1200:
 		if _tool._preview == null or _tool._preview.is_settled():
@@ -329,8 +262,6 @@ func _wait_ring_ready() -> void:
 		await get_tree().process_frame
 
 
-# Returns true when a pick has a target cell. A hit and a floor pick have one.
-# A horizontal ray that misses the model does not, so the ring hides.
 func _pick_has_target() -> bool:
 	return _tool._last_pick != null and _tool._last_pick.target != VoxelPicking.NONE
 
@@ -449,8 +380,6 @@ func _worst_case_hover() -> void:
 	)
 
 
-# A model of a few small islands in distinct chunks, so the read region holds
-# many missing chunks.
 func _sparse() -> void:
 	var changes := {}
 	var material := VoxelFrame.material(Color.from_rgba8(120, 90, 60))
@@ -462,13 +391,6 @@ func _sparse() -> void:
 	_frame.set_cells(changes)
 
 
-# The idle ring reads the surface on the worker pool and caches one read per
-# pose input. The cache key names the picked cell, so a same-cell hover keeps
-# the cached pose: a raw write to a neighbor column changes the surface but
-# not the pick, so the ring keeps the old pose. A new cell reads the live frame
-# again, so the neighbor write shows in that read. A signalled change drops the
-# cache, so the next pose reads the new surface. The surface frame is the
-# observable.
 func _hover_invalidation() -> void:
 	step("Given a settled hover on the grown slope top", func():
 		_grown_slope()
@@ -488,8 +410,6 @@ func _hover_invalidation() -> void:
 		expect(_tool._idle_pose_frame != null and _tool._idle_pose_frame.follows_surface, "the hover read the surface")
 	)
 	step("When a raw write raises the neighbor column and the pointer moves", func():
-		# The neighbor column top is y=2, so the empty cell above it is (5, 3, 0).
-		# The write is beside the pointer, so the pick keeps (4, 2, 0).
 		_frame.set_cell(Vector3i(5, 3, 0), VoxelFrame.material(Color.WHITE))
 		_hover(Vector3(4.1, 2.0, 0.0))
 	)
@@ -497,9 +417,6 @@ func _hover_invalidation() -> void:
 	await _wait_ring_ready()
 	step("Then the same cell keeps its center and reads the raw write", func():
 		expect(_tool._last_pick.hit == Vector3i(4, 2, 0), "the pick keeps the hovered cell")
-		# The write sits inside the surface watch, so the surface normal follows it.
-		# The cell does not change, so the ring stays centered on it. The center
-		# moves along the normal because the ring stays on the surface plane.
 		var ring_origin := _ring().global_transform.origin
 		var normal: Vector3 = _tool._idle_pose_frame.normal
 		var offset := ring_origin - Vector3(hit)
@@ -529,8 +446,6 @@ func _hover_invalidation() -> void:
 		expect(return_frame.normal != Vector3.UP, "the re-read tilts with the neighbor write")
 	)
 	step("When the model changes through the frame signal", func():
-		# The neighbor column now tops at y=3, so the empty cell above it is
-		# (5, 4, 0). The write steepens the slope the return read reads.
 		var bump := Vector3i(5, 4, 0)
 		_frame.set_cell(bump, VoxelFrame.material(Color.WHITE))
 		var cells: Array[Vector3i] = [bump]

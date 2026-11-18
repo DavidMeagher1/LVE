@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# The stamp tool places a frame from an LVE file or the current selection. The
-# frame panel stays open while stamping, and a frame switch replaces the stamp.
-# The source selection is not a destination mask.
 
 var plugin_node: Node
 var settings: StampToolSettings

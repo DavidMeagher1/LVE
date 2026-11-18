@@ -1,12 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused checks for the shared voxel brush size.
-#
-# The size is a voxel width in cells. The checks lock the shared sphere and cube
-# masks, the offset order, the reach, and the disk projection to the shipped
-# brush geometry. They also lock the common maximum of sixty-four across the
-# brush and the paint controls. The file reuses no live tool state for the pure
-# checks, so a mask regression reports here before it reaches a tool.
 
 const VoxelBrushSize := preload("res://Globals/State/Tools/VoxelBrushSize.gd")
 const StampPatternJob := preload("res://plugins/brush/StampPatternJob.gd")
@@ -42,16 +35,12 @@ func _ready() -> void:
 	test("the live spray search mask matches the brush sphere", _spray_mask, "size_spray_mask")
 
 
-# Each test owns its own settings. The live spray test restores the shared
-# settings, so a size check never depends on an earlier test.
 func after_test() -> void:
 	if _spray_tool != null:
 		_spray_tool._paint_settings.spray_size = 9
 		_spray_tool = null
 
 
-# The shipped stamp formula, kept as the independent ground truth. It is the
-# exact code that ran before the helper replaced it.
 func _ground_truth(size: int, sphere: bool) -> Array:
 	var offsets := []
 	var first := -floori(size * 0.5)

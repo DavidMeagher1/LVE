@@ -1,28 +1,15 @@
 extends Node
 
-## Renders frame thumbnails and document previews.
-##
-## The renderer owns one off-screen viewport. A frame request is debounced and
-## processed one at a time. [signal frame_rendered] carries the finished
-## texture. A headless run returns a one-pixel texture.
 
-## Emitted when a frame thumbnail finishes. [param frame_index] is the frame
-## index. [param texture] is the rendered image.
 signal frame_rendered(frame_index: int, texture: ImageTexture)
 
-## The off-screen viewport scene.
 const VIEWPORT_SCENE := preload("res://Globals/VoxelImageRenderer/RendererViewport.tscn")
 
-## The camera transform that a render uses before it frames the content.
 var parked_transform := Transform3D.IDENTITY
 
-## The thumbnail edge length in pixels.
 var resolution := 64
-## The camera yaw in degrees.
 var yaw_degrees := -45.0
-## The camera pitch in degrees.
 var pitch_degrees := 45.0
-## Whether the camera uses an orthographic projection.
 var orthographic := true
 
 var _thumbnail_viewport: SubViewport
@@ -32,7 +19,6 @@ var _pending_frames: Array[int] = []
 var _processing_queue := false
 var _render_due_ms: Dictionary = {}
 var _queue_revision := 0
-## The debounce delay for a frame request in milliseconds.
 const RENDER_DELAY_MS := 200
 
 
@@ -55,8 +41,6 @@ func _on_model_settings_changed() -> void:
 		request_frame_render(frame_index)
 
 
-## Requests a thumbnail for one frame. A repeated request refreshes the debounce
-## delay.
 func request_frame_render(frame_index: int) -> void:
 	_render_due_ms[frame_index] = Time.get_ticks_msec() + RENDER_DELAY_MS
 	if _pending_frames.has(frame_index):
@@ -103,8 +87,6 @@ func _render_frame(frame_index: int, render_revision: int) -> ImageTexture:
 	else:
 		_thumbnail_renderer.frame = frame_index
 	while not _thumbnail_renderer.is_settled():
-		# A tab switch or a new document makes this result useless. Stop before
-		# the camera update and the readback, so the next request starts sooner.
 		if render_revision != _queue_revision:
 			return null
 		await get_tree().process_frame
@@ -130,16 +112,10 @@ func _frame_camera(document_bounds: AABB) -> void:
 	apply_directional_shadow(_thumbnail_viewport.get_node("Node3D/Light"), _thumbnail_camera)
 
 
-# In orthographic projection, Godot derives the directional shadow depth range from the camera far plane.
-# Keep the far plane just past the content so orthographic shadows stay crisp.
-## Configures the light shadow mode for the camera projection. An orthographic
-## camera uses an orthogonal shadow.
 func apply_directional_shadow(light: DirectionalLight3D, camera: Camera3D) -> void:
 	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL if camera.projection == Camera3D.PROJECTION_ORTHOGONAL else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 
 
-## Frames one camera on the document bounds. It centers the camera and sets the
-## distance from the bounds size. An empty bounds frames a single cell.
 func frame_camera(camera: Camera3D, document_bounds: AABB, yaw: float, pitch: float, use_orthographic: bool) -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL if use_orthographic else Camera3D.PROJECTION_PERSPECTIVE
 	if not document_bounds.has_volume():
@@ -158,7 +134,6 @@ func frame_camera(camera: Camera3D, document_bounds: AABB, yaw: float, pitch: fl
 		camera.size = 2.0 * camera_distance * tan(deg_to_rad(camera.fov) / 2.0)
 
 
-## Applies one lighting settings dictionary to a light and an environment.
 func apply_lighting(light: DirectionalLight3D, environment: Environment, settings: Dictionary) -> void:
 	light.basis = settings.basis
 	light.light_color = settings.color
@@ -168,10 +143,6 @@ func apply_lighting(light: DirectionalLight3D, environment: Environment, setting
 	environment.ambient_light_energy = settings.ambient_energy
 
 
-## Applies the saved document lighting to a light and an environment. The saved
-## light color alpha is the light energy, and the ambient color alpha is the
-## ambient energy. The saved settings do not include shadows or the unshaded
-## state.
 func apply_saved_lighting(light: DirectionalLight3D, environment: Environment, settings: Dictionary) -> void:
 	light.basis = settings.get("basis", light.basis)
 	var color: Color = settings.get("color", light.light_color)
@@ -184,8 +155,6 @@ func apply_saved_lighting(light: DirectionalLight3D, environment: Environment, s
 	environment.ambient_light_color = ambient
 
 
-## Renders a 256 by 256 preview of the first frame. It uses the saved editor
-## lighting. Returns null in a headless run or when the document is replaced.
 func render_document_preview(document: VoxelDocument) -> Image:
 	if DisplayServer.get_name() == "headless":
 		return null

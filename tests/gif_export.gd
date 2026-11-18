@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# GIF export: the encoder stream, the palette, the export workspace path, the
-# animated preview, and cancellation. The encoder cases run headless. The
-# render cases need a visible window, like the sprite sheet cases.
 
 const GIF_ENCODER := preload("res://plugins/Export/GifEncoder.gd")
 const GIF_READER := preload("res://tests/gif_reader.gd")

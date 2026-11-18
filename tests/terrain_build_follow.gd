@@ -1,14 +1,5 @@
 extends "res://tests/test.gd"
 
-# Keep Build coverage on the frozen cursor plane. Keep the normal and input
-# spacing fixed at the press. Resolve each column's support with the bounded
-# height lookup, without moving the footprint onto the grown surface.
-#
-# The test drives the real production tool through the viewport. A thin probe
-# only records the observable stroke state after each dab. It never changes the
-# placement.
-#
-# Check the growth pattern and locked normal as the column heights change.
 
 const ProbeScript := preload("./terrain_build_follow_probe.gd")
 const ToolScript := preload("res://plugins/Terrain/TerrainTool.gd")
@@ -94,8 +85,6 @@ func after_test() -> void:
 	_tool = null
 
 
-# --- Fixtures -----------------------------------------------------------------
-
 func _install(changes: Dictionary) -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -120,7 +109,6 @@ func _column(changes: Dictionary, x: int, top: int) -> void:
 		changes[Vector3i(x, y, 0)] = material
 
 
-# A floor and three single columns of increasing height.
 func _level_fixture() -> void:
 	var changes := {}
 	_floor(changes, -8, 24, -8, 8)
@@ -130,7 +118,6 @@ func _level_fixture() -> void:
 	_view(AABB(Vector3(-14, -6, -14), Vector3(46, 50, 28)))
 
 
-# A floor and one column taller than the old bounded surface scan.
 func _tower_fixture() -> void:
 	var changes := {}
 	_floor(changes, -8, 24, -8, 8)
@@ -139,7 +126,6 @@ func _tower_fixture() -> void:
 	_view(AABB(Vector3(-14, -6, -14), Vector3(46, 62, 28)))
 
 
-# A floor and a wide block whose top is far above the old scan depth.
 func _plateau_fixture() -> void:
 	var changes := {}
 	_floor(changes, -10, 26, -8, 8)
@@ -152,7 +138,6 @@ func _plateau_fixture() -> void:
 	_view(AABB(Vector3(-14, -6, -14), Vector3(50, 50, 28)))
 
 
-# A rising staircase.
 func _ramp_fixture() -> void:
 	var changes := {}
 	var material := _material()
@@ -164,8 +149,6 @@ func _ramp_fixture() -> void:
 	_view(AABB(Vector3(-6, -6, -8), Vector3(26, 30, 16)))
 
 
-# A floor patch and a raised block. The area past the floor patch is empty, so a
-# ray there misses the model.
 func _gap_fixture() -> void:
 	var changes := {}
 	_floor(changes, -6, 2, -6, 6)
@@ -178,7 +161,6 @@ func _gap_fixture() -> void:
 	_view(AABB(Vector3(-12, -6, -12), Vector3(34, 22, 24)))
 
 
-# A floor and a mirrored pair of columns across the X plane at -0.5.
 func _mirror_fixture() -> void:
 	var changes := {}
 	_floor(changes, -12, 12, -8, 8)
@@ -187,8 +169,6 @@ func _mirror_fixture() -> void:
 	_install(changes)
 	_view(AABB(Vector3(-16, -6, -14), Vector3(36, 40, 28)))
 
-
-# --- Camera and input ---------------------------------------------------------
 
 func _view(box: AABB) -> void:
 	camera_rig().set_view("top")
@@ -228,9 +208,6 @@ func _wait_idle() -> void:
 		await get_tree().process_frame
 
 
-# Runs one Build stroke from a press at one world point through the given world
-# points. The whole stroke is one gesture. The locked operation plane is recorded
-# at the press, because the stroke closes its frame at the release.
 func _stroke(from: Vector3, path: Array) -> void:
 	_tool.reset_dabs()
 	_plane_frame = null
@@ -284,9 +261,6 @@ func _normal_constant() -> bool:
 	return true
 
 
-# Whether every dab center lies on the plane of its own dab. The ground recenters
-# after each dab, so the center must match the frame the dab used, not the press
-# frame.
 func _centers_on_plane() -> bool:
 	if (_tool.build_centers as Array).is_empty():
 		return false
@@ -299,7 +273,6 @@ func _centers_on_plane() -> bool:
 	return true
 
 
-# Whether the ground moved along the normal during the stroke.
 func _origin_moved() -> bool:
 	var origins: Array = _tool.build_origins
 	if origins.size() < 2:
@@ -311,7 +284,6 @@ func _origin_moved() -> bool:
 	return false
 
 
-# Whether every dab used the same ground.
 func _origin_flat() -> bool:
 	var origins: Array = _tool.build_origins
 	if origins.size() < 2:
@@ -323,12 +295,9 @@ func _origin_flat() -> bool:
 	return true
 
 
-# Whether the stroke grew any cell.
 func _stroke_grew() -> bool:
 	return _frame.count() > _grown_before
 
-
-# --- Cases --------------------------------------------------------------------
 
 func _follow_levels() -> void:
 	step("Given a floor and three columns of height 5, 12, and 20", func():
@@ -534,8 +503,6 @@ func _add_hit_then_floor_miss() -> void:
 	step("Then the block hit grew and the floor miss seeded the floor", func():
 		expect(_frame.has(Vector3i(0, 5, 0)), "the press grew the block top")
 		expect(_stroke_grew(), "the stroke grew the model")
-		# A model press no longer blocks a later floor seed, so the miss lays a
-		# cell on the captured floor instead of a canopy at the press height.
 		expect(_frame.has(Vector3i(10, 0, 0)), "the floor miss seeded on the floor")
 	)
 
@@ -747,9 +714,6 @@ func _ground_drops() -> void:
 	await _wait_idle()
 
 
-# A column can grow past the surface read depth. When the brush leaves it and
-# comes back, the read from the old plane cannot reach the top. The stroke cache
-# must return the tracked top instead of seeding the captured floor cell.
 func _revisit_keeps_top() -> void:
 	step("Given a plate above a low floor and a Build brush", func():
 		State.floor_index = -3
@@ -785,8 +749,6 @@ func _revisit_keeps_top() -> void:
 	)
 
 
-# The dab gate holds the anchor back for a move the user cannot see. The ring
-# must hold with it, or the ring jitters ahead of the dab.
 func _ring_waits_for_the_dab() -> void:
 	step("Given a plate seen at a grazing angle and a Build press", func():
 		var changes := {}

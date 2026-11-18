@@ -1,9 +1,5 @@
 extends "res://addons/test_kit/test_case.gd"
 
-# The LVE test adapter. The shared test kit owns the test lifecycle. This file
-# owns the editor fixture and the helpers that drive the real LVE interface.
-# Every LVE test scene inherits `res://tests/test_base.tscn` and puts one of
-# these scripts on its root node.
 
 const BRUSH_SETTINGS_PATH := "res://plugins/brush/BrushSettings.tres"
 const PRIMITIVE_SETTINGS_PATH := "res://plugins/Primitive/PrimitiveSettings.tres"
@@ -25,8 +21,6 @@ func _enter_tree() -> void:
 	main = get_node_or_null("Main")
 	if main == null or main.get_node_or_null("%Viewport") == null:
 		push_error("LVE test scene must inherit res://tests/test_base.tscn")
-		# A scene that never touches `main` would otherwise record its checks and
-		# pass with a broken fixture. Register a failing case as well.
 		test("the test scene inherits test_base.tscn", func():
 			expect(false, "the test scene must inherit res://tests/test_base.tscn")
 		, "fixture")
@@ -39,9 +33,6 @@ func _enter_tree() -> void:
 	_transform_settings_resource = load(TRANSFORM_SETTINGS_PATH)
 
 
-# The shared editor state survives a scene change. Reset the parts that every
-# suite assumes at startup: one tab, the first palette entry, no slice or
-# symmetry, no selection, the default brush, and the brush tool.
 func reset_environment() -> void:
 	State.stop()
 	State.set_tabs([State.new_document()], 0)
@@ -80,13 +71,11 @@ func reset_environment() -> void:
 		var center_button := stamp_plugin._options.get_node_or_null("Center") as Button
 		if center_button != null:
 			center_button.set_pressed_no_signal(false)
-	# The selection settings have no class name. BOX and REPLACE are both zero.
 	_selection_settings_resource.tool = 0
 	_selection_settings_resource.mode = 0
 	_selection_settings_resource.connected = true
 	_selection_settings_resource.include_empty = false
 	_selection_settings_resource.depth_test = true
-	# TransformToolSettings.Tools.MOVE is zero.
 	_transform_settings_resource.tool = 0
 	_transform_settings_resource.view_axis = true
 	_transform_settings_resource.snap = false
@@ -95,8 +84,6 @@ func reset_environment() -> void:
 
 
 func before_scene_free() -> void:
-	# The next scene starts in the same process. Let a fill or a wand finish
-	# before the plugins and their preview workers are removed.
 	var deadline := Time.get_ticks_msec() + 5000
 	while State.edit_busy() and Time.get_ticks_msec() < deadline:
 		await get_tree().process_frame
@@ -120,18 +107,18 @@ func pick_request(pos: Vector2) -> PickRequest:
 	var cam := camera_rig()
 	var req := PickRequest.new()
 	req.origin = cam.project_ray_origin(pos)
-	req.dir = cam.project_ray_normal(pos)
+	req.direction = cam.project_ray_normal(pos)
 	req.frame = State.get_current_voxel_frame()
 	req.forward = -cam.basis.z
 	return req
 
 func aim(pos: Vector2) -> PickResult:
 	var req := pick_request(pos)
-	return VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward)
+	return VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward)
 
 func drag(pos: Vector2, plane: StrokePlane) -> PickResult:
 	var req := pick_request(pos)
-	return VoxelPicking.drag_pick(req.origin, req.dir, req.frame, plane)
+	return VoxelPicking.drag_pick(req.origin, req.direction, req.frame, plane)
 
 func activate_tool(button_name: String) -> void:
 	for b in main.get_node("%ToolBar").get_children():
@@ -149,8 +136,6 @@ func select_toolbar_item(button_name: String, item_text: String) -> void:
 					return
 
 
-# A toolbar button carries the stable tool id in its metadata. The node name
-# stays as a fallback, so an older test argument still selects the button.
 func _toolbar_matches(control: Node, tool_name: String) -> bool:
 	return control.name == tool_name or str(control.get_meta("tool_id", control.name)) == tool_name
 

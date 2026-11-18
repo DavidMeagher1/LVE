@@ -1,20 +1,10 @@
 extends "res://tests/test.gd"
 
-# Focused safety tests for the streamed bucket fill. They cover the settings the
-# fill captures at the stroke start, the bounded main-thread apply of a streamed
-# search, the coalesced chunk notification, one undo per stroke, a cancel after a
-# partial result, and a tool switch.
-#
-#   godot --path . res://tests/progressive_fill_safety.tscn
-#   godot --path . res://tests/progressive_fill_safety.tscn -- connected_capture
 
 const REFERENCE := preload("res://tests/region_search_reference.gd")
 const FILL_TOOL := preload("res://plugins/paint/FillTool.gd")
 
 
-# A frame that counts the per-cell occupancy and material checks. The shared
-# search never calls these, so the count shows exactly the calls the edit-context
-# expansion makes. It proves the redundant filter is skipped or retained.
 class CountingFrame extends VoxelFrame:
 	var has_calls := 0
 	var matches_calls := 0
@@ -28,9 +18,6 @@ class CountingFrame extends VoxelFrame:
 		return super.matches(cell_position, cell_material)
 
 
-# Test-only A/B partner. It keeps the pre-change behavior: a streamed batch is
-# always expanded through the edit context, even when that filter is redundant.
-# The real job is compared against this path, not against itself.
 class OldFilterFillJob extends FILL_TOOL.FillJob:
 	func _expand_fill_batch(changes: Dictionary) -> Dictionary:
 		if edit_context:
@@ -38,9 +25,6 @@ class OldFilterFillJob extends FILL_TOOL.FillJob:
 		return changes
 
 
-# Test-only. It cancels at the pre-write checkpoint, which follows the search
-# progress checkpoint. It proves the identity atomic path still checks for a
-# cancel before it writes.
 class CancelOnApplyFillJob extends FILL_TOOL.FillJob:
 	var checkpoints := 0
 	var _saw_progress := false
@@ -52,24 +36,19 @@ class CancelOnApplyFillJob extends FILL_TOOL.FillJob:
 		elif _saw_progress:
 			return false
 		return super.checkpoint(completed)
-# A fill this size estimates above 4096, so the job streams its cells.
 const SIDE := 20
 const TOTAL := SIDE * SIDE * SIDE
-# A larger block, so the streamed fill lasts many frames and a partial surface can
-# install while the worker still runs.
 const BIG_SIDE := 24
 const BIG_TOTAL := BIG_SIDE * BIG_SIDE * BIG_SIDE
 const D := Vector3i(64, 0, 0)
 const E := Vector3i(68, 0, 0)
 const G := Vector3i(72, 0, 0)
-# Two disconnected large blocks for the stale-coroutine test.
 const BLOCK_A := Vector3i.ZERO
 const BLOCK_B := Vector3i(48, 0, 0)
 
 var frame: VoxelFrame
 var tool: Node
 var _settings := preload("res://plugins/paint/PaintSettings.tres")
-# Step lambdas capture locals by value, so the frames a later step needs are members.
 var _before: VoxelFrame
 var _expected_frame: VoxelFrame
 var _mask := {}
@@ -114,7 +93,6 @@ func _ready() -> void:
 	test("a cancelled fill job writes nothing", _cancel_before_write, "cancel_before_write")
 
 
-# Each test starts from a fresh document, the default symmetry, and connected on.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -127,7 +105,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Leave no worker or open stroke behind, so a test can run alone or in any order.
 func after_test() -> void:
 	if State.chunks_changed.is_connected(_on_first_notification):
 		State.chunks_changed.disconnect(_on_first_notification)
@@ -169,9 +146,6 @@ func _fill_tool() -> void:
 	State.undo_redo.clear_history()
 
 
-# Build a fresh document and frame, install the red block, and tell the renderer
-# to show it, so a later partial surface can be told from the start state. This
-# stays synchronous, because a step lambda must not await.
 func _stream_fixture(x_side: int, y_side: int, z_side: int, extra: Array[Vector3i] = []) -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
@@ -220,8 +194,6 @@ func _installed_vertices() -> int:
 	return total
 
 
-# The revision of every chunk surface the renderer has installed. A change while
-# the fill is partial means the renderer meshed a partial state of the fill.
 func _displayed_signature() -> String:
 	var renderer := viewport_scene().get_node_or_null("VoxelRenderer")
 	if renderer == null:
@@ -234,8 +206,6 @@ func _displayed_signature() -> String:
 	return "|".join(parts)
 
 
-# Watch a running fill frame by frame. Records the peak queue depth, the frames
-# that showed a partial result, and whether a partial surface installed.
 func _watch_fill(x_side: int, y_side: int, z_side: int, total: int) -> void:
 	_max_installed = 0
 	_partial_frames = 0
@@ -386,7 +356,6 @@ func _partial_surface() -> void:
 		_before = frame.copy_frame()
 		_expected_frame = _expected(_before, Vector3i.ZERO, true, {})
 	)
-	# Let the start surface install, so a later change proves a partial rebuild.
 	await _settle_renderer()
 	step("When the user fills the block", func():
 		tool._release_pending = true
@@ -482,9 +451,6 @@ func _cancel_then_new() -> void:
 	)
 
 
-# A rollback starts a new fill from a selection-changed handler. The old cancel
-# must finish only its own operation, so the replacement keeps its busy state and
-# its cancel capability.
 func _on_rollback_start_fill() -> void:
 	if _reentrant_started:
 		return
@@ -576,11 +542,6 @@ func _context_change() -> void:
 	)
 
 
-# On the first notification of a running fill, cancel it and start a second fill.
-# The cancelled coroutine still has to finish, and it must not clear the new fill's
-# pending slice or emit the new fill's chunks early. The notification fires from the
-# running fill's own drain, so the new fill registers its frame wait after the old
-# one, and the new fill resumes first with a partial pending slice.
 func _on_first_notification(_updated_frame: int, _chunks: Array[Vector3i]) -> void:
 	if _cancel_fired:
 		return
@@ -655,18 +616,10 @@ func _count_flush(_updated_frame: int, _chunks: Array[Vector3i]) -> void:
 	_flush_count += 1
 
 
-# A controlled interleaving of the stale-finalizer race. The running fill owns a
-# partial pending slice. It is cancelled, and the slice is handed to a newer
-# operation before the cancelled coroutine finishes. Headless frame timing does not
-# land a real new worker's first slice before the old coroutine finishes, so the
-# handoff is forced here. The stale finalizer must leave the newer slice and its
-# coalesced chunks alone.
 func _stale_guard() -> void:
 	step("Given a running fill that owns a partial pending slice", func():
 		_stream_fixture(BIG_SIDE, BIG_SIDE, BIG_SIDE)
 		_settings.connected = true
-		# A one-cell slice keeps the running fill on a partial batch across a frame,
-		# so the stale finalizer can be observed against it.
 		tool._slice_cells = 1
 		tool._release_pending = true
 		tool._queue_seed(Vector3i.ZERO)
@@ -698,8 +651,6 @@ func _stale_guard() -> void:
 	)
 
 
-# A clean wall-time measure: queue a large fill and wait for it to settle, with no
-# per-frame scan in between.
 func _bench_fill() -> void:
 	step("Given a large block and the fill tool", func():
 		_stream_fixture(BIG_SIDE, BIG_SIDE, BIG_SIDE)
@@ -819,7 +770,6 @@ func _unrelated_cancel() -> void:
 	)
 
 
-# A counting frame that holds the same uniform block as the shared fixture.
 func _counting_block(x_side: int, y_side: int, z_side: int) -> CountingFrame:
 	var counting := CountingFrame.new()
 	counting.set_cells(_block(x_side, y_side, z_side))
@@ -828,8 +778,6 @@ func _counting_block(x_side: int, y_side: int, z_side: int) -> CountingFrame:
 	return counting
 
 
-# The real fill job over the live fixture, run in one atomic step. The edit
-# context is the default: no symmetry axes and an empty selection.
 func _atomic_fill_frame(old_filter: bool) -> VoxelFrame:
 	var job: Variant = OldFilterFillJob.new() if old_filter else FILL_TOOL.FillJob.new()
 	job.source_frame = frame.copy_frame()
@@ -845,8 +793,6 @@ func _atomic_fill_frame(old_filter: bool) -> VoxelFrame:
 	return result
 
 
-# The identity atomic fill must still write the whole block, and the per-cell
-# filter must not run. The counting frame proves the second part.
 func _identity_skips_filter() -> void:
 	step("Given a counting frame and the fill job with an identity context", func():
 		var counting := _counting_block(SIDE, SIDE, SIDE)
@@ -869,9 +815,6 @@ func _identity_skips_filter() -> void:
 	)
 
 
-# One real streamed batch. The identity job returns the owned batch unchanged,
-# while the old-filter job checks each cell. The same batch content reaches the
-# queue in both cases.
 func _stream_identity_skips_filter() -> void:
 	step("Given a counting frame and one streamed batch with an identity context", func():
 		var counting := _counting_block(SIDE, SIDE, SIDE)
@@ -908,9 +851,6 @@ func _stream_identity_skips_filter() -> void:
 	)
 
 
-# The atomic and the streamed identity fills must equal the frozen reference,
-# and the old filter must give the same frame. This is the data check, not a
-# timing check.
 func _identity_matches_reference() -> void:
 	step("Given a red block and its frozen fill reference", func():
 		_stream_fixture(SIDE, SIDE, SIDE)
@@ -956,8 +896,6 @@ func _identity_matches_reference() -> void:
 	)
 
 
-# A non-empty selection keeps the expansion. The search adds its seed without a
-# mask test, so the context must drop a seed that the selection excludes.
 func _selection_keeps_filter() -> void:
 	step("Given a counting frame, a selection that excludes the seed, and the fill job", func():
 		var counting := _counting_block(SIDE, SIDE, SIDE)
@@ -988,8 +926,6 @@ func _selection_keeps_filter() -> void:
 	)
 
 
-# A nonzero axes keeps the expansion. A same-color mirror of a different full
-# material must be rejected by the reflected occupancy and material test.
 func _symmetry_keeps_filter() -> void:
 	step("Given a block, an X mirror, and a same-color voxel of a different material", func():
 		var counting := _counting_block(SIDE, SIDE, SIDE)
@@ -1019,8 +955,6 @@ func _symmetry_keeps_filter() -> void:
 	)
 
 
-# A cancel must stop the job before any write, at the search entry and at the
-# pre-write checkpoint that the identity path keeps.
 func _cancel_before_write() -> void:
 	step("Given a pre-cancelled fill job", func():
 		_stream_fixture(SIDE, SIDE, SIDE)

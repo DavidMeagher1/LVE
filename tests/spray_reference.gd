@@ -1,18 +1,5 @@
 extends RefCounted
 
-# Frozen copy of the spray sampling kernel, taken before the in-place partial
-# shuffle, the diameter-1 shortcut, and the identity-context fast path replaced
-# it. The frozen kernel owns the reach gather, the candidate pool, the partial
-# shuffle, the spot footprints, and the context expansion.
-#
-# This is not a fully independent implementation. It reuses production helpers
-# that this unit did not change: `VoxelFrame.chunk_position`,
-# `VoxelFrame.CHUNK_SIZE`, `VoxelFrame.EditContext.expand`,
-# `Chunk.world_cells`, and `StampPatternJob.build_pattern`. Re-read this file
-# when any of those helpers changes.
-#
-# The caches are per instance, so the reference keeps no static state. A static
-# cache kept the tool and the document scripts in use at exit.
 
 const StampPattern := preload("res://plugins/brush/StampPatternJob.gd")
 const StampSettings := preload("res://plugins/brush/StampToolSettings.gd")
@@ -21,16 +8,9 @@ const StampSettings := preload("res://plugins/brush/StampToolSettings.gd")
 var _spot_offsets_cache := {}
 var _spot_radius_cache := {}
 var _sphere_offsets_cache := {}
-# The frame of the current sample. The frozen candidate and footprint filters
-# read the six face neighbors from it, so they keep an independent view of the
-# exposed surface.
 var _frame: VoxelFrame
 
 
-# The old sample: gather the reach, filter the candidates, pick the distinct
-# centers with an index array, build the footprints, then expand through the
-# context with the existing-only filter. The candidate and footprint filters
-# keep only exposed voxels, which is the production surface rule.
 func sample(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.EditContext, spot_diameter: int, spray_radius: int, speed: int, rng: RandomNumberGenerator, material: PackedFloat32Array) -> Array[Vector3i]:
 	_frame = frame
 	var reach := spray_radius + _spot_radius(spot_diameter)
@@ -51,9 +31,6 @@ func sample(center: Vector3i, frame: VoxelFrame, context: VoxelFrame.EditContext
 		spots.append(candidates[indices[i]])
 	var changes := _footprints(spots, local, spot_diameter, material)
 	var cells: Array[Vector3i] = []
-	# The frozen expansion filters existing destinations only. The surface rule
-	# also drops a mirrored destination with no empty face neighbor, so the
-	# filter runs on the expanded result.
 	for cell: Vector3i in context.expand(changes, frame, true, null).keys():
 		if _exposed(cell):
 			cells.append(cell)
@@ -92,8 +69,6 @@ func _footprints(spots: Array[Vector3i], local: Array[Vector3i], spot_diameter: 
 	return changes
 
 
-# Returns true when the frame holds the cell and one of its six face neighbors
-# is empty. This is the independent oracle of the production surface mask.
 func _exposed(cell: Vector3i) -> bool:
 	if not _frame.has(cell):
 		return false

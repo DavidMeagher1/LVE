@@ -173,9 +173,6 @@ func _run() -> void:
 		expect(tool._settings.shape == BrushToolSettings.BrushShape.SPHERE, "the sphere shape is active")
 		target = aim(_position(Vector3.ZERO)).target
 	)
-	# A diameter of twenty is the first sphere past the per-cell cursor limit. Its
-	# pattern is built on a worker, so the first call only starts that build. The
-	# second call sees the cached pattern and builds the real preview.
 	tool._cursor_axis = -1
 	tool._show_brush_shape(0)
 	var cursor: MeshInstance3D = tool.get_node("Cursor")

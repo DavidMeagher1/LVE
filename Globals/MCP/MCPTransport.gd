@@ -1,37 +1,24 @@
 extends RefCounted
 
-## The loopback MCP transport.
-##
-## It owns the TCP listener, the HTTP and newline request framing, the SSE
-## stream, and the peer lifetime. The server supplies two callables: one for a
-## JSON-RPC request and one for the diagnostic log.
 
 const DEFAULT_PORT := 17373
-## The largest request line the transport accepts.
 const MAX_LINE_BYTES := 4 * 1024 * 1024
-## The largest number of simultaneous loopback clients.
 const MAX_PEERS := 8
-## How long a client may hold a partial request without sending bytes.
 const PEER_IDLE_MS := 30000
 
-## Runs one JSON-RPC request and returns its response. The server supplies it.
 var dispatch := Callable()
-## Writes one diagnostic line. The server supplies it.
-var log := Callable()
+var log_line := Callable()
 
 var _server := TCPServer.new()
 var _http_mode := false
 
 
-## One accepted bridge or HTTP client.
 class PeerState extends RefCounted:
 	var peer: StreamPeerTCP
 	var buffer := PackedByteArray()
 	var busy := false
 	var sse := false
 	var last_ping_ms := 0
-	## The last time this peer sent bytes. A partial request with no deadline
-	## would otherwise hold its buffer forever.
 	var last_read_ms := 0
 
 var _peers: Array[PeerState] = []
@@ -45,21 +32,19 @@ func start(port: int = DEFAULT_PORT, http_mode := false) -> Error:
 		push_warning("LVE MCP: cannot listen on 127.0.0.1:%d: %s" % [port, error_string(error)])
 		return error
 	print("LVE MCP: listening on 127.0.0.1:%d (%s)" % [_server.get_local_port(), "HTTP" if http_mode else "line"])
-	log.call("start %d %s" % [_server.get_local_port(), "http" if http_mode else "line"])
+	log_line.call("start %d %s" % [_server.get_local_port(), "http" if http_mode else "line"])
 	return OK
 
 
-## Stops the server and closes every client connection.
 func stop() -> void:
 	for state in _peers:
 		state.peer.disconnect_from_host()
 	_peers.clear()
 	if _server.is_listening():
 		_server.stop()
-	log.call("stop")
+	log_line.call("stop")
 
 
-## Returns the port that the server listens on, or zero when it is closed.
 func local_port() -> int:
 	return _server.get_local_port() if _server.is_listening() else 0
 
@@ -73,8 +58,6 @@ func poll() -> void:
 		if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
 			_remove_peer(state)
 			continue
-		# Only a partial request has a deadline. A connected client may stay
-		# idle between calls, and the bridge keeps one connection open.
 		if not state.sse and not state.busy and not state.buffer.is_empty() and now - state.last_read_ms > PEER_IDLE_MS:
 			_remove_peer(state)
 			continue
@@ -97,9 +80,7 @@ func _accept_all() -> void:
 		if peer == null:
 			return
 		if _peers.size() >= MAX_PEERS:
-			# The port is local, but any process can connect. Refuse the excess
-			# instead of keeping an unbounded peer list.
-			log.call("Refusing an MCP client: the peer limit is reached.")
+			log_line.call("Refusing an MCP client: the peer limit is reached.")
 			peer.disconnect_from_host()
 			continue
 		peer.set_no_delay(true)
@@ -126,8 +107,6 @@ func _read_peer_bytes(state: PeerState) -> bool:
 	state.last_read_ms = Time.get_ticks_msec()
 	state.buffer.append_array(bytes)
 	if state.buffer.size() > MAX_LINE_BYTES:
-		# Clear the request before the peer goes, so the same frame cannot
-		# dispatch the request that this limit just refused.
 		state.buffer.clear()
 		if _http_mode:
 			_send_http(state, 413, "Payload Too Large", "")
@@ -210,9 +189,6 @@ func _handle_http(state: PeerState, method: String, path: String, body: String, 
 			_send_http(state, 405, "Method Not Allowed", "")
 			state.busy = false
 			return
-	# A browser page can send a simple cross-origin POST without a preflight.
-	# Reject browser origins and require JSON, so a visited page cannot drive
-	# the editor tools.
 	if not origin.is_empty():
 		_send_http(state, 403, "Forbidden", _error_response(null, -32600, "Browser origins are not allowed."))
 		state.busy = false
@@ -269,8 +245,6 @@ func _send_http(state: PeerState, status: int, reason: String, body: Variant) ->
 func _drain_lines(state: PeerState) -> void:
 	if state.busy:
 		return
-	# Scan past empty lines in one pass. A recursive call per blank line could
-	# exhaust the stack, and slicing once per line copies the buffer each time.
 	var start := 0
 	while true:
 		var index := state.buffer.find(10, start)

@@ -1,13 +1,9 @@
 extends HBoxContainer
 
-## The deform option bar.
-##
-## It shows the shared size and falloff, and the pose connected and snap options.
 
 var _settings: DeformToolSettings = preload("./DeformSettings.tres")
 
 
-## Binds the shared deform settings. Call it before the bar enters the tree.
 func bind(settings: DeformToolSettings) -> void:
 	_settings = settings
 

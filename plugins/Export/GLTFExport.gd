@@ -1,11 +1,6 @@
 extends RefCounted
 
-## Exports the document as a glTF binary file.
-##
-## Each frame becomes one child mesh. A scale animation hides every other
-## frame, so the exporter writes a flipbook animation per tag.
 
-## The plugin node that owns this export. The export cancels with it.
 var host: Node
 var _export_job: ExportJob
 var _export_root: Node3D
@@ -16,35 +11,20 @@ func _init(owner_node: Node) -> void:
 	host = owner_node
 
 
-## One cancellable glTF mesh build job.
-##
-## The job builds and welds the mesh of every frame, then bakes one atlas per
-## frame. [method VoxelFrame.EditJob.run] is the worker body.
 class ExportJob extends VoxelFrame.EditJob:
-	## The position weld distance in world units.
 	const WELD_EPSILON := 0.00001
 	const ATLAS := preload("res://Globals/Rendering/VoxelAtlas.gd")
 	const SURFACE := preload("res://Globals/Rendering/VoxelSurface.gd")
-	## The frames to export.
 	var frames: Array[VoxelFrame] = []
-	## The tags to export.
 	var tags: Array[AnimationTag] = []
-	## The welded mesh arrays of every frame.
 	var frame_surfaces: Array[Array] = []
-	## The atlas of every frame.
 	var frame_atlases: Array[RefCounted] = []
-	## The export error code.
 	var error := OK
-	## Whether the export centers the model on the origin.
 	var center_origin := true
-	## Whether the mesh uses smooth normals.
 	var smooth_normals := false
-	## The ambient occlusion strength baked into vertex colors, from 0 to 1.
 	var ao_strength := 1.0
-	## Whether the exported material is unlit.
 	var unlit := false
 
-	## Builds and welds every frame mesh. This is the worker body.
 	func run() -> void:
 		var total := 0
 		for frame in frames:
@@ -161,9 +141,6 @@ class ExportJob extends VoxelFrame.EditJob:
 		return welded
 
 
-	# Returns the index of an already welded vertex that matches, or -1. The own
-	# bucket is tested first, because an exact duplicate is the common case. The
-	# neighbor set is unchanged, so the same candidates can match.
 	func _weld_match(positions: PackedVector3Array, normals: PackedVector3Array, colors: PackedColorArray, buckets: Dictionary, bucket: Vector3i, position: Vector3, normal: Vector3, color: Color) -> int:
 		var match_index := _bucket_match(positions, normals, colors, buckets, bucket, position, normal, color)
 		if match_index != -1:
@@ -179,8 +156,6 @@ class ExportJob extends VoxelFrame.EditJob:
 		return -1
 
 
-	# Returns one matching vertex of one bucket, or -1. A missing bucket costs no
-	# temporary array.
 	func _bucket_match(positions: PackedVector3Array, normals: PackedVector3Array, colors: PackedColorArray, buckets: Dictionary, key: Vector3i, position: Vector3, normal: Vector3, color: Color) -> int:
 		if not buckets.has(key):
 			return -1
@@ -196,7 +171,6 @@ class ExportJob extends VoxelFrame.EditJob:
 		return SURFACE.merge(arrays, checkpoint)
 
 
-## Cancels a running export and releases the export scene.
 func cancel() -> void:
 	if _export_job and _export_job.worker_task_id >= 0:
 		_export_job.cancel()
@@ -204,11 +178,6 @@ func cancel() -> void:
 	_finish_export()
 
 
-## Exports the document as a GLB file and returns the error code.
-## [param center_origin] centers the model on the origin. [param tag_index]
-## limits the export to one tag, or -1 for every tag. [param overrides] can set
-## [code]smooth_normals[/code], [code]ao[/code], and [code]unlit[/code] for this
-## call only. An absent [code]unlit[/code] exports lit materials.
 func export_gltf(path: String, center_origin := true, tag_index := -1, overrides := {}) -> Error:
 	if State.edit_busy() or _export_job:
 		return ERR_BUSY
@@ -231,9 +200,6 @@ func export_gltf(path: String, center_origin := true, tag_index := -1, overrides
 		tag.to -= first
 		job.tags.append(tag)
 	_export_job = job
-	# Register this instance's cancel, so the status button and Escape cancel a
-	# running GLB export through State. The owner stays the host plugin, and the
-	# pending request stays with State until cancel() finishes the operation.
 	_export_operation_id = State.begin_operation("Exporting", -1, true, host, cancel)
 	var operation_id := _export_operation_id
 	job.worker_task_id = WorkerThreadPool.add_task(job.run, false, "glTF export meshes")
@@ -268,14 +234,9 @@ func export_gltf(path: String, center_origin := true, tag_index := -1, overrides
 			if job.unlit:
 				material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			if job.ao_strength > 0.0:
-				# The glTF mesh carries COLOR_0. The material reads it as a
-				# multiplier on the atlas albedo, not as a second color.
 				material.vertex_color_use_as_albedo = true
 				material.vertex_color_is_srgb = false
 			var frame_mesh := ArrayMesh.new()
-			# Godot 4.7 reads the first primitive's colors after it configures the material.
-			# Two real surfaces enable vertex colors on their shared material during import.
-			# Textured exports no longer need that vertex-color workaround.
 			frame_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 			frame_mesh.surface_set_material(0, material)
 			var mesh_instance := MeshInstance3D.new()
@@ -285,7 +246,6 @@ func export_gltf(path: String, center_origin := true, tag_index := -1, overrides
 			frame_node = Node3D.new()
 		frame_node.name = "Frame_%d" % frame_index
 		if frame_index != 0:
-			# Keep the rest basis invertible. Scale animation keys use exact zero.
 			frame_node.scale = Vector3.ONE * 0.000001
 		_export_root.add_child(frame_node)
 		frame_node.owner = _export_root

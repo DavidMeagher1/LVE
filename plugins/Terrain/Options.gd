@@ -1,15 +1,9 @@
 extends HBoxContainer
 
-## The terrain option bar.
-##
-## It shows the options of the active terrain tool. The Build section selects the
-## add or the remove direction. Every tool shares the radius, the falloff, and
-## the radius bound of the shared settings.
 
 var _settings: TerrainToolSettings = preload("./TerrainSettings.tres")
 
 
-## Binds the shared terrain settings. Call it before the bar enters the tree.
 func bind(settings: TerrainToolSettings) -> void:
 	_settings = settings
 

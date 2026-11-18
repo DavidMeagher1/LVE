@@ -1,42 +1,23 @@
 class_name PalettePanel
 extends VBoxContainer
 
-## The palette panel.
-##
-## It shows one swatch per palette entry and edits the current material. It
-## also imports and exports a palette image and manages the default palette.
-## See `docs/DOCUMENT_FORMAT.md` for the palette PNG chunk.
 
 const Swatch := preload("./Swatch.tscn")
 const SwatchButtonGroup := preload("./SwatchButtonGroup.tres")
-## The edge length of one palette image swatch in pixels.
 const IMAGE_SWATCH_SIZE := 16
-## The private PNG chunk type that names the palette entry count.
 const PALETTE_PNG_CHUNK := "lvPL"
-## The default palette menu actions.
 enum PaletteAction { USE_DEFAULT, SAVE_DEFAULT, RESET_DEFAULT }
 
-## One cancellable palette import job.
-##
-## The job reads the palette colors from an image. It reads the named tile
-## count from an exported palette PNG. [method VoxelFrame.EditJob.run] is the
-## worker body.
 class ImportJob extends VoxelFrame.EditJob:
-	## The image file path.
 	var path := ""
-	## The imported colors.
 	var colors := PackedColorArray()
-	## The import error code.
 	var error: Error = OK
 
-	## Reads the palette colors. This is the worker body.
 	func run() -> void:
 		var image := Image.new()
 		error = State.load_image(path, image)
 		if error != OK:
 			return
-		# Exported palettes name their tile count. Read transparent entries without
-		# confusing them with padding or an arbitrary tiled image.
 		if _read_tiles(image):
 			return
 		stage("Reading palette colors", image.get_width() * image.get_height())
@@ -124,7 +105,7 @@ func _ready() -> void:
 	_palette_menu.set_item_tooltip(1, "Use this palette at startup and in new documents.")
 	_palette_menu.id_pressed.connect(_on_palette_action)
 	_sync_default_menu()
-	
+
 	_color_picker_button.pressed.connect(_begin_control_edit)
 	_color_picker_button.popup_closed.connect(_on_color_popup_closed)
 	for field in [%EmissionStrength, %Metallic, %Roughness]:
@@ -135,7 +116,6 @@ func _ready() -> void:
 
 
 func _on_material_changed() -> void:
-	# An outside change replaces the edit target. Close stale number entry only then.
 	if _value_edit_control and not _applying_control and (_value_edit_document != State.document or _value_edit_index != State.current_palette_index):
 		_reset_value_edit()
 	_syncing = true
@@ -159,14 +139,13 @@ func _on_document_changed() -> void:
 	_editing_drag = false
 	_control_edit_revision += 1
 	_on_material_changed()
-	# The palette signal of the new document rebuilds the swatches.
 
 
 func _rebuild_swatches() -> void:
 	for swatch in _swatch_grid.get_children():
 		_swatch_grid.remove_child(swatch)
 		swatch.queue_free()
-	
+
 	var palette := State.get_palette()
 	for i in palette.size():
 		var swatch = Swatch.instantiate()
@@ -225,7 +204,6 @@ func _on_roughness_changed(value: float) -> void:
 
 
 func _apply_control_material(material: PackedFloat32Array) -> void:
-	# Mark own edits, so a live change does not close the entry that makes it.
 	_applying_control = true
 	State.edit_material(material)
 	_applying_control = false
@@ -239,7 +217,6 @@ func _input(event: InputEvent) -> void:
 				_begin_control_edit()
 		elif _editing_drag:
 			_editing_drag = false
-			# The control handles its final value after this input callback.
 			_finish_control_edit.call_deferred(_control_edit_revision)
 
 
@@ -365,8 +342,6 @@ func _on_palette_action(id: int) -> void:
 		push_error("LVE: default palette change failed: %s" % error_string(error))
 
 
-## Imports a palette image and returns the error code. The image replaces the
-## document palette as one history action.
 func import_palette(path: String) -> Error:
 	if State.edit_busy() or _import_job:
 		return ERR_BUSY
@@ -391,8 +366,6 @@ func import_palette(path: String) -> Error:
 	return OK
 
 
-## Exports the palette as a PNG image and returns the error code. The image
-## stores the colors only and names its entry count.
 func export_palette(path: String) -> Error:
 	if State.edit_busy():
 		return ERR_BUSY
@@ -439,4 +412,3 @@ func _exit_tree() -> void:
 	if _import_job:
 		_import_job.cancel()
 		_import_job.wait_for_worker()
-	

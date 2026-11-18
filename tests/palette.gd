@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# Palette marking, reorder, and image import and export share the PalettePanel
-# fixture. One process runs all three, so the scene carries their names.
 
 var panel: PalettePanel = null
 var grid: Node = null
@@ -24,8 +22,6 @@ func _ready() -> void:
 	test("image palettes preserve unique colors, swatch order, undo, and document contents", _images_run, "palette_images")
 
 
-# Each case starts from a clean document and history. The cases share one
-# process, so no case may inherit another case's palette or undo stack.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()

@@ -1,8 +1,5 @@
 extends RefCounted
 
-# Test-only copy of the legacy String surface key. It is the equality reference
-# for the packed key, so the two must agree for every state. Keep its neighbor
-# order and content in step with `VoxelRenderer._signature`.
 
 static func legacy_signature(active_frame: VoxelFrame, chunk_location: Vector3i, smooth_normals: bool) -> String:
 	var surface_key := "smooth/" if smooth_normals else "flat/"
@@ -12,7 +9,6 @@ static func legacy_signature(active_frame: VoxelFrame, chunk_location: Vector3i,
 	return surface_key
 
 
-# Decode a packed key into the legacy text, so a test compares the two forms.
 static func decode(key: PackedInt64Array, smooth_normals: bool) -> String:
 	var text := "smooth/" if smooth_normals else "flat/"
 	var index := 1

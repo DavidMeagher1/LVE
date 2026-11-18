@@ -1,25 +1,14 @@
 class_name AnimationPlayback
 extends RefCounted
 
-## Advances the current frame for animation playback.
-##
-## The playback owns the current frame index, the playing flag, and the active
-## tag. It reads the frame durations from a [VoxelDocument].
 
-## Emitted before the current frame changes.
 signal frame_changing()
-## Emitted after the current frame changes.
 signal frame_changed()
-## Emitted when playback starts or stops.
 signal is_playing_toggled(playing: bool)
-## Emitted when the active tag changes.
 signal tag_changed()
 
-## The document that supplies the frames and the tags.
 var document := VoxelDocument.new()
 
-## The current frame index. It is stored on the document, so a tab switch
-## restores it. A write clamps to the frame range.
 var current_frame: int:
 	get:
 		return document.edit_frame
@@ -31,8 +20,6 @@ var current_frame: int:
 		document.edit_frame = value
 		frame_changed.emit()
 
-## Whether playback runs. It is stored on the document, so a saved document
-## opens playing. Setting it to [code]true[/code] restarts the range.
 var is_playing: bool:
 	get:
 		return document.edit_playing
@@ -42,12 +29,8 @@ var is_playing: bool:
 		document.edit_playing = value
 		if value:
 			_restart()
-		# A handler on the frame change can stop playback. Emit the state that
-		# exists now, not the requested one.
 		is_playing_toggled.emit(document.edit_playing)
 
-## The active tag index, or -1 when no tag is active. It is stored on the
-## document, so a tab switch restores it.
 var active_tag: int:
 	get:
 		return document.edit_tag
@@ -60,9 +43,6 @@ var active_tag: int:
 			_restart()
 		tag_changed.emit()
 
-## The maximum playback steps one [method update] applies. A long frame or a
-## paused process catches up in order, but a very long stall drops the excess
-## time instead of running an unbounded loop.
 const MAX_STEPS_PER_UPDATE := 256
 
 var _play_dir := 1
@@ -70,9 +50,6 @@ var _play_passes := 0
 var _play_elapsed := 0.0
 
 
-## Advances the playback by one time step. Call it once per frame. It applies
-## every frame duration that the elapsed time covers, so the playback speed does
-## not depend on the render frame rate. It keeps the remainder for the next call.
 func update(delta: float) -> void:
 	if not is_playing:
 		return
@@ -83,8 +60,6 @@ func update(delta: float) -> void:
 		advance()
 		steps += 1
 		if steps >= MAX_STEPS_PER_UPDATE:
-			# A stall this long cannot be caught up within one frame. Drop the
-			# excess instead of growing the backlog forever.
 			_play_elapsed = 0.0
 			break
 
@@ -98,15 +73,12 @@ func _restart() -> void:
 		_play_dir = -1
 
 
-## Restores the active document's saved playback state after a document switch.
-## A saved playing document restarts its range.
 func restore_playback() -> void:
 	if document.edit_playing:
 		_restart()
 	is_playing_toggled.emit(document.edit_playing)
 
 
-## Returns the first frame of the active tag, or frame zero.
 func first_frame() -> int:
 	var tag := document.get_tag(active_tag)
 	if tag:
@@ -114,7 +86,6 @@ func first_frame() -> int:
 	return 0
 
 
-## Returns the last frame of the active tag, or the last frame of the document.
 func last_frame() -> int:
 	var tag := document.get_tag(active_tag)
 	if tag:
@@ -132,15 +103,11 @@ func _play_repeats() -> int:
 	return tag.repeats if tag else 0
 
 
-## Advances to the next frame for the active loop mode. It stops playback when
-## the repeat count finishes.
 func advance() -> void:
 	if current_frame < first_frame() or current_frame > last_frame():
 		_restart()
 		return
 	if first_frame() == last_frame():
-		# A one-frame tag still completes one pass per frame duration. Without
-		# this count a finite repeat never finishes and the playback stays on.
 		_play_passes += 1
 		if _finished():
 			is_playing = false
@@ -193,8 +160,6 @@ func _finished() -> bool:
 	return _play_repeats() > 0 and _play_passes >= _play_repeats()
 
 
-## Resets the completed pass count after the active tag's loop settings change.
-## The current frame and the direction do not move.
 func reset_passes() -> void:
 	_play_passes = 0
 

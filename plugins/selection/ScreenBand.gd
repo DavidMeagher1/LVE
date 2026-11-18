@@ -1,17 +1,10 @@
 extends Line2D
 
-## Draws the screen selection shape over the viewport with marching ants.
-##
-## The ants material marches the dashes along UV.x, which runs along the line.
-
-# Draw the screen selection shape over the viewport with marching ants.
-# The ants material marches the dashes along UV.x, which runs along the line.
 
 func _ready() -> void:
 	visible = false
 
 
-## Shows a rectangle band.
 func show_rectangle(rectangle: Rect2) -> void:
 	points = PackedVector2Array([
 		rectangle.position,
@@ -23,14 +16,12 @@ func show_rectangle(rectangle: Rect2) -> void:
 	visible = true
 
 
-## Shows a polygon band. It hides the band for fewer than two points.
 func show_polygon(sampled: PackedVector2Array) -> void:
 	points = sampled
 	closed = true
 	visible = sampled.size() >= 2
 
 
-## Hides the band.
 func hide_band() -> void:
 	points = PackedVector2Array()
 	closed = false

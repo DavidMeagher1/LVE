@@ -1,11 +1,5 @@
 extends "res://tests/test.gd"
 
-# Exercise the normal source option end to end.
-#
-# The tests drive the real pointer input through the viewport. A test-only probe
-# counts the frames that follow the surface. The hover poses the cheap face or
-# floor frame, so it never calls the pick frame function. A press calls it once,
-# so the Face source proves that no surface frame reaches the tool on the press.
 
 const ProbeScript := preload("./terrain_normals_probe.gd")
 
@@ -63,8 +57,6 @@ func after_test() -> void:
 		_tool.free()
 	_tool = null
 
-
-# --- The cases ----------------------------------------------------------------
 
 func _surface_gradient() -> void:
 	step("Given a two-level step and the Surface source", func():
@@ -137,7 +129,6 @@ func _wait_idle() -> void:
 		await get_tree().process_frame
 
 
-# A two-level step. The surface normal across the step is not cardinal.
 func _stair() -> void:
 	var changes := {}
 	for x in range(-4, 1):
@@ -151,7 +142,6 @@ func _stair() -> void:
 	sync_viewport()
 
 
-# A wide flat plate, so a maximum radius disc stays on the model.
 func _flat_plate() -> void:
 	var changes := {}
 	for x in range(-34, 35):
@@ -186,7 +176,6 @@ func _spike() -> void:
 	sync_viewport()
 
 
-# The cell on the near face of the solid block for one view.
 func _near_cell(view: String) -> Vector3i:
 	match view:
 		"top":

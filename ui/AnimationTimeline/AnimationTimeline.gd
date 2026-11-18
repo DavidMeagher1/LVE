@@ -1,9 +1,5 @@
 extends VBoxContainer
 
-## The animation timeline strip.
-##
-## It shows one cell per frame and a tag range row. The strip follows the frame
-## list and the active tag.
 
 const PLAY_ICON := preload("res://icons/play.svg")
 const PAUSE_ICON := preload("res://icons/pause.svg")
@@ -70,10 +66,7 @@ func _on_to_end_pressed() -> void:
 	_focus_current_frame()
 
 
-# Moves the keyboard focus to the current frame cell. The scroll container
-# follows the focus, so a step shortcut keeps the selected frame visible.
 func _focus_current_frame() -> void:
-	# A tag row puts one range cell before every frame cell.
 	var offset := State.document.frames.size() if _has_tag_row else 0
 	var index := offset + State.current_frame
 	if index < 0 or index >= %FrameGrid.get_child_count():

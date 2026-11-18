@@ -1,18 +1,5 @@
 extends "res://tests/test.gd"
 
-# A rendered search-scaling benchmark for the spray can.
-#
-# The spot stays at one cell and the speed stays at eight. Only the search width
-# changes. The benchmark drives the real Main scene viewport with real mouse
-# events and a real windowed renderer, so it shows the input cost and the visible
-# preview install of the production path.
-#
-#   godot --path . --screen 0 res://tests/benchmarks/spray_search_scaling.tscn
-#   godot --path . --screen 0 res://tests/benchmarks/spray_search_scaling.tscn -- dense64
-#
-# The headless A/B in `tests/spray_search_scaling.gd` proves the kernel cost and
-# the frozen-reference parity. This benchmark proves the rendered path keeps the
-# input frame short and the preview installs while the search grows.
 
 const ProbeScript := preload("./spray_latency_tool.gd")
 const PreviewProbeScript := preload("./spray_latency_preview.gd")
@@ -56,9 +43,6 @@ func _run(spec: Dictionary) -> void:
 			spec["name"], _frame.count(), _frame.chunks.size(), str(_frame.get_bounds()), _fixture_us,
 		])
 	)
-	# Warm the shader, the material, and the preview pipeline once. This hover is
-	# not measured, and every cold row below rebuilds the fixture, so the row
-	# index is still cold.
 	_tool._invalidate_batch()
 	_hover(_screen_of(_middle_cell(spec)))
 	await _settle_all()
@@ -147,10 +131,6 @@ func _run(spec: Dictionary) -> void:
 			spec["name"], width, sweep["input_us"], sweep["input_max_us"], sweep["worker_samples"],
 			sweep["requests"], sweep["installs"], sweep["discards"], sweep["work_estimate"], sweep["capture_chunks"], sweep["index_builds"],
 		])
-	# Repaint and occupancy phases on the widest search. The material change must
-	# keep the chunk rows; the erase must invalidate the queried chunk. The erase
-	# cell sits beside the picked pivot in the same chunk, so the pivot stays the
-	# ray hit and the erased chunk stays inside the measured query.
 	_settings.spray_size = 64
 	_settings.spot_diameter = 1
 	_settings.speed = 8
@@ -212,8 +192,6 @@ func _run(spec: Dictionary) -> void:
 	)
 	step("Then the still hover samples nothing and requests nothing", func():
 		expect(int(rows[rows.size() - 1]["width"]) == 64, "the last measured width is 64")
-		# The same-hover row is the last width row. A held batch never resamples
-		# and never resubmits a preview.
 		expect(int(_last_same.get("samples", -1)) == 0 and int(_last_same.get("requests", -1)) == 0, "the still hover samples and requests nothing")
 	)
 	step("Then the widest search still installs a visible preview", func():
@@ -231,11 +209,6 @@ func _run(spec: Dictionary) -> void:
 	)
 
 
-# --- Fixture and setup -------------------------------------------------------
-
-# Rebuilds the fixture for one cold width. A fresh frame gives fresh chunks, so
-# the occupancy rows are cold, while the process, the shader, and the material
-# stay warm.
 func _reset_cold_fixture(spec: Dictionary) -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -357,8 +330,6 @@ func _build_fixture(spec: Dictionary) -> void:
 			for cy in 4:
 				for cz in 16:
 					hollow[Vector3i(cx * VoxelFrame.CHUNK_SIZE + 8, cy * VoxelFrame.CHUNK_SIZE + 8, cz * VoxelFrame.CHUNK_SIZE + 8)] = cell_material
-		# One neighbor keeps the middle chunk alive when the occupancy phase
-		# erases the middle cell, so the phase really rebuilds a row index.
 		hollow[Vector3i(8 * VoxelFrame.CHUNK_SIZE + 9, 1 * VoxelFrame.CHUNK_SIZE + 8, 8 * VoxelFrame.CHUNK_SIZE + 8)] = cell_material
 		_frame.set_cells(hollow)
 	else:
@@ -443,8 +414,6 @@ func _path_cells(spec: Dictionary, count: int) -> Array[Vector3i]:
 		cells.append(Vector3i(start + index, y, size / 2 + (index % 3) - 1))
 	return cells
 
-
-# --- Input and settling ------------------------------------------------------
 
 func _hover(pos: Vector2) -> void:
 	var event := InputEventMouseMotion.new()

@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the eraser tests. Each test keeps the steps and checks of its
-# original scene. The user arguments after `--` name the tests to run, so an old
-# scene name still selects its own test.
 
 var viewport: SubViewport
 var center := Vector2.ZERO
@@ -17,13 +14,11 @@ func _ready() -> void:
 	test("the eraser highlight follows the voxel being erased", _erase_drag_visual, "erase_drag_visual")
 
 
-# Each test starts from a fresh document. Every test selects the eraser itself.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
 
 
-# Shared viewport setup. Every test uses the same view and center.
 func _view_setup() -> void:
 	viewport = editor_viewport()
 	viewport.get_parent().stretch = false
@@ -31,7 +26,6 @@ func _view_setup() -> void:
 	center = Vector2(400.0, 250.0)
 
 
-# Shared input helpers. Every test drives the real viewport input path.
 func _press(pos: Vector2) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
@@ -102,7 +96,7 @@ func _erase_hover() -> void:
 	step("Then the highlight is visible at the cursor cell", func():
 		var v: Node3D = active_tool_node("BrushPlugin")
 		var req := pick_request(center)
-		var target := VoxelPicking.start_pick(req.origin, req.dir, req.frame, req.forward).target
+		var target := VoxelPicking.start_pick(req.origin, req.direction, req.frame, req.forward).target
 		expect(v.visible, "the highlight is visible")
 		expect(v.get_node("Cursor").mesh.surface_get_primitive_type(0) == Mesh.PRIMITIVE_LINES, "the eraser preview uses an outline mesh")
 		expect(v.position == Vector3(target), "the highlight is at the cursor cell")

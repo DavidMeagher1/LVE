@@ -1,36 +1,19 @@
 extends RefCounted
 
-## Pure signed-distance helpers for the primitive tools.
-##
-## A primitive is a field in cell units. Cell c has its center at Vector3(c),
-## so a field value of zero or less marks a cell for the shape. The script reads
-## no State and no Node, so a worker can call it. It holds no static state.
 
-## The box primitive kind.
 const KIND_BOX := 0
-## The ellipsoid primitive kind.
 const KIND_ELLIPSOID := 1
-## The cone primitive kind.
 const KIND_CONE := 2
 
-## Add the primitive field to the frame.
 const OP_ADD := 0
-## Remove the primitive field from the frame.
 const OP_SUBTRACT := 1
-## Keep only the frame cells inside the primitive field and the shape box.
 const OP_INTERSECT := 2
 
-## The largest primitive count in one request.
 const MAX_PRIMITIVES := 64
-## The largest evaluated cell count in one request.
 const MAX_PRIMITIVE_CELLS := 1_048_576
-## The largest local cell box for an existing-geometry blend.
 const MAX_BLEND_CELLS := 2_000_000
-## The smallest guard for a division.
 const EPSILON := 1e-6
-## The distance that means no opposite cell was found in the local box.
 const FAR_DISTANCE := 1.0e9
-## The forward chamfer neighbors and their costs.
 const CHAMFER_FORWARD := [
 	[Vector3i(-1, 0, 0), 1.0],
 	[Vector3i(0, -1, 0), 1.0],
@@ -48,7 +31,6 @@ const CHAMFER_FORWARD := [
 ]
 
 
-## Returns the box field for one point.
 static func sdf_box(point: Vector3, center: Vector3, half_size: Vector3) -> float:
 	var q := point - center
 	q = Vector3(absf(q.x) - half_size.x, absf(q.y) - half_size.y, absf(q.z) - half_size.z)
@@ -56,8 +38,6 @@ static func sdf_box(point: Vector3, center: Vector3, half_size: Vector3) -> floa
 	return outside.length() + minf(maxf(q.x, maxf(q.y, q.z)), 0.0)
 
 
-## Returns a box field with rounded edges and corners. A roundness of 0 is the
-## exact box. A roundness of 1 rounds the smallest half extent.
 static func sdf_round_box(point: Vector3, center: Vector3, half_size: Vector3, roundness: float) -> float:
 	var radius := clampf(roundness, 0.0, 1.0) * minf(half_size.x, minf(half_size.y, half_size.z))
 	var inner := Vector3(
@@ -68,15 +48,12 @@ static func sdf_round_box(point: Vector3, center: Vector3, half_size: Vector3, r
 	return sdf_box(point, center, inner) - radius
 
 
-## Returns the approximate ellipsoid field for one point. It is exact on the
-## surface and good for placement.
 static func sdf_ellipsoid(point: Vector3, center: Vector3, radii: Vector3) -> float:
 	var safe := Vector3(maxf(radii.x, EPSILON), maxf(radii.y, EPSILON), maxf(radii.z, EPSILON))
 	var scaled := (point - center) / safe
 	return (scaled.length() - 1.0) * minf(safe.x, minf(safe.y, safe.z))
 
 
-## Returns the exact round-cone field for one point.
 static func sdf_cone_round(point: Vector3, a: Vector3, b: Vector3, r1: float, r2: float) -> float:
 	var ba := b - a
 	var l2 := ba.length_squared()
@@ -102,7 +79,6 @@ static func sdf_cone_round(point: Vector3, a: Vector3, b: Vector3, r1: float, r2
 	return (sqrt(x2 * a2 * il2) + y * rr) * il2 - r1
 
 
-## Returns the exact capped-cone field for one point. The caps are flat.
 static func sdf_cone_flat(point: Vector3, a: Vector3, b: Vector3, r1: float, r2: float) -> float:
 	var ba := b - a
 	var l2 := ba.length_squared()
@@ -118,7 +94,6 @@ static func sdf_cone_flat(point: Vector3, a: Vector3, b: Vector3, r1: float, r2:
 	return _sdf_capped_cone(radial, y, half_length, r1, r2)
 
 
-## Returns the smooth minimum of two fields.
 static func smin(first: float, second: float, blur: float) -> float:
 	if blur <= 0.0:
 		return minf(first, second)
@@ -126,14 +101,11 @@ static func smin(first: float, second: float, blur: float) -> float:
 	return minf(first, second) - h * h * blur * 0.25
 
 
-## Returns the rotation of one primitive around its center. It is identity when
-## the primitive has no rotation.
 static func primitive_rotation(primitive: Dictionary) -> Quaternion:
 	var value: Variant = primitive.get("rotation", null)
 	return value if value is Quaternion else Quaternion.IDENTITY
 
 
-## Returns the field of one primitive at one point.
 static func primitive_distance(primitive: Dictionary, point: Vector3) -> float:
 	var kind := int(primitive.get("kind", KIND_BOX))
 	var rotation := primitive_rotation(primitive)
@@ -168,7 +140,6 @@ static func primitive_distance(primitive: Dictionary, point: Vector3) -> float:
 			return sdf_round_box(local, Vector3.ZERO, half_size, roundness)
 
 
-## Returns the combined field of a request at one point.
 static func field_distance(request: Dictionary, point: Vector3) -> float:
 	var primitives_value: Variant = request.get("primitives", [])
 	if not (primitives_value is Array):
@@ -187,7 +158,6 @@ static func field_distance(request: Dictionary, point: Vector3) -> float:
 	return distance
 
 
-## Returns the smooth blend that a request uses after the extent clamp.
 static func effective_smooth(request: Dictionary) -> float:
 	var requested := maxf(float(request.get("smooth", 0.0)), 0.0)
 	if requested <= 0.0 or int(request.get("op", OP_ADD)) != OP_ADD:
@@ -198,7 +168,6 @@ static func effective_smooth(request: Dictionary) -> float:
 	return minf(requested, extent * 0.5)
 
 
-## Returns the smallest full extent of the primitives in a request.
 static func smallest_extent(request: Dictionary) -> float:
 	var primitives_value: Variant = request.get("primitives", [])
 	if not (primitives_value is Array):
@@ -227,8 +196,6 @@ static func smallest_extent(request: Dictionary) -> float:
 	return 0.0 if result == INF else result
 
 
-## Returns the bounds of one primitive. The cone uses the union of its endpoint
-## spheres, which is tight for the round cone and safe for the flat cone.
 static func primitive_bounds(primitive: Dictionary) -> AABB:
 	var kind := int(primitive.get("kind", KIND_BOX))
 	var rotation := primitive_rotation(primitive)
@@ -256,7 +223,6 @@ static func primitive_bounds(primitive: Dictionary) -> AABB:
 			return AABB(center - extent, extent * 2.0)
 
 
-## Returns the world extent of a local box or radius vector after a rotation.
 static func _rotated_extent(rotation: Quaternion, extent: Vector3) -> Vector3:
 	var basis := Basis(rotation)
 	return Vector3(
@@ -266,7 +232,6 @@ static func _rotated_extent(rotation: Quaternion, extent: Vector3) -> Vector3:
 	)
 
 
-## Returns the continuous shape bounds of a request after smooth and shell.
 static func shape_bounds(request: Dictionary) -> AABB:
 	var primitives_value: Variant = request.get("primitives", [])
 	if not (primitives_value is Array):
@@ -284,7 +249,6 @@ static func shape_bounds(request: Dictionary) -> AABB:
 	return AABB(bounds.position - Vector3.ONE * padding, bounds.size + Vector3.ONE * padding * 2.0)
 
 
-## Returns the integer cell bounds of the shape, without the scan padding.
 static func shape_cell_bounds(request: Dictionary) -> Array:
 	var bounds := shape_bounds(request)
 	if not bounds.has_volume():
@@ -307,8 +271,6 @@ static func shape_cell_bounds(request: Dictionary) -> Array:
 	return [min_cell, max_cell]
 
 
-## Returns the continuous scan bounds of a request. The scan adds one cell and
-## the block step to the shape bounds.
 static func field_bounds(request: Dictionary) -> AABB:
 	var bounds := shape_bounds(request)
 	if not bounds.has_volume():
@@ -317,8 +279,6 @@ static func field_bounds(request: Dictionary) -> AABB:
 	return AABB(bounds.position - Vector3.ONE * padding, bounds.size + Vector3.ONE * padding * 2.0)
 
 
-## Returns the integer scan bounds of a request as [min_cell, max_cell]. An
-## empty request returns an empty array.
 static func scan_bounds(request: Dictionary) -> Array:
 	var bounds := field_bounds(request)
 	if not bounds.has_volume():
@@ -341,7 +301,6 @@ static func scan_bounds(request: Dictionary) -> Array:
 	return [min_cell, max_cell]
 
 
-## Returns the cell count inside the scan bounds.
 static func estimated_cells(request: Dictionary) -> int:
 	var value := scan_bounds(request)
 	if value.is_empty():
@@ -352,9 +311,6 @@ static func estimated_cells(request: Dictionary) -> int:
 	return extent.x * extent.y * extent.z
 
 
-## Returns an error string for an invalid request. An empty string means valid.
-## [param allow_large] lets the mouse tool commit a shape that the preview
-## already showed. The MCP path keeps the cell limit.
 static func validate_request(request: Dictionary, allow_large := false) -> String:
 	var primitives_value: Variant = request.get("primitives", null)
 	if not (primitives_value is Array):
@@ -454,7 +410,6 @@ static func validate_request(request: Dictionary, allow_large := false) -> Strin
 	return ""
 
 
-## Returns the warnings for one valid request.
 static func warnings(request: Dictionary) -> Array[String]:
 	var result: Array[String] = []
 	var step := clampi(int(request.get("step", 1)), 1, 4)
@@ -483,9 +438,6 @@ static func warnings(request: Dictionary) -> Array[String]:
 	return result
 
 
-## Builds the changes for one request. Returns the changes and their bounds. The
-## caller supplies the frame snapshot that the job edits. A [param job] supplies
-## the cancel checkpoints.
 static func rasterize(request: Dictionary, frame: VoxelFrame, job: VoxelFrame.EditJob = null) -> Dictionary:
 	var value := scan_bounds(request)
 	if value.is_empty():
@@ -529,9 +481,6 @@ static func rasterize(request: Dictionary, frame: VoxelFrame, job: VoxelFrame.Ed
 	}
 
 
-## Returns the capped cone field in a local frame. [param radial] is the
-## distance from the axis, [param y] runs along the axis, and [param half_length]
-## is half the distance between the caps.
 static func _sdf_capped_cone(radial: float, y: float, half_length: float, r1: float, r2: float) -> float:
 	var qx := radial
 	var qy := y
@@ -575,9 +524,6 @@ static func _rasterize_add(request: Dictionary, frame: VoxelFrame, min_cell: Vec
 							for dz in range(first_offset, last_offset + 1):
 								var cell := Vector3i(x + dx, y + dy, z + dz)
 								if frame.has(cell):
-									# A blend keeps the committed cells and their
-									# materials. It only adds the new fillet and the
-									# empty part of the primitive.
 									if blend_active or frame.matches(cell, material):
 										continue
 								changes[cell] = material
@@ -588,9 +534,6 @@ static func _rasterize_add(request: Dictionary, frame: VoxelFrame, min_cell: Vec
 
 
 static func _rasterize_remove(request: Dictionary, frame: VoxelFrame, min_cell: Vector3i, max_cell: Vector3i, op: int, changes: Dictionary, job: VoxelFrame.EditJob) -> void:
-	# A keep operation must see every occupied cell, because the cells outside
-	# the shape are the cells that it removes. A subtract only tests the shape
-	# box, because a cell outside the field cannot change.
 	var cells := _occupied_cells(frame, job) if op == OP_INTERSECT else _occupied_cells_in_box(frame, min_cell, max_cell, job)
 	var erased := VoxelFrame.material(Color.TRANSPARENT)
 	var completed := 0
@@ -604,12 +547,7 @@ static func _rasterize_remove(request: Dictionary, frame: VoxelFrame, min_cell: 
 			return
 
 
-## Returns a bounded signed distance field for the committed cells near a
-## request. The result holds [code]min[/code], [code]size[/code], and
-## [code]values[/code]. Empty cells are positive and occupied cells are negative.
 static func _existing_field(frame: VoxelFrame, min_cell: Vector3i, max_cell: Vector3i, smooth: float, job: VoxelFrame.EditJob) -> Dictionary:
-	# The scan bounds already include the shape, smooth, and step padding. One
-	# extra cell keeps the nearest opposite cell available at the edge.
 	var padding := 1
 	var limit := VoxelFrame.MAX_CHUNK_COORDINATE * VoxelFrame.CHUNK_SIZE
 	var blend_min := min_cell - Vector3i.ONE * padding
@@ -678,8 +616,6 @@ static func _existing_field(frame: VoxelFrame, min_cell: Vector3i, max_cell: Vec
 	return {"min": blend_min, "size": size, "values": values}
 
 
-## Runs one chamfer pass over a distance grid. [param forward] selects the
-## first or the second pass.
 static func _chamfer(values: PackedFloat32Array, size: Vector3i, forward: bool, job: VoxelFrame.EditJob) -> bool:
 	var z_start := 0
 	var z_end := size.z

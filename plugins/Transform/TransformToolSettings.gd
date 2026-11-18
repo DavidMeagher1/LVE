@@ -1,19 +1,10 @@
 extends Resource
 
-## The shared transform tool settings.
-##
-## The resource holds the transform tool and its options. It is shared by the
-## transform toolbar, the option bar, and the tools.
 
-## Emitted when [member tool] changes.
 signal tool_changed(tool: Tools)
-## Emitted when the option bar requests a commit.
 signal commit_requested()
-## Emitted when the option bar requests a cancel.
 signal cancel_requested()
 
-## Whether a transform drag is in progress. The option bar enables the commit
-## and cancel buttons from it.
 var transforming: bool = false :
 	set(value):
 		if value == transforming:
@@ -21,17 +12,12 @@ var transforming: bool = false :
 		transforming = value
 		emit_changed()
 
-## The transform tool.
 enum Tools {
-	## Move the selection.
 	MOVE,
-	## Rotate the selection.
 	ROTATE,
-	## Scale the selection.
 	SCALE,
 }
 
-## The active transform tool.
 @export var tool: Tools = Tools.MOVE :
 	set(value):
 		if value == tool:
@@ -40,8 +26,6 @@ enum Tools {
 		tool_changed.emit(tool)
 		emit_changed()
 
-## Whether a drag follows the camera plane. When it is off, a drag follows the
-## nearest world axis plane. It starts on, so a drag follows the screen.
 @export var view_axis: bool = true :
 	set(value):
 		if value == view_axis:
@@ -49,9 +33,6 @@ enum Tools {
 		view_axis = value
 		emit_changed()
 
-## Whether a rotate drag snaps every angle to a 90 degree step. When it is off,
-## the drag snaps to one degree and pulls to a nearby cardinal angle. It starts
-## off, so a plain drag is free.
 @export var snap: bool = false :
 	set(value):
 		if value == snap:
@@ -59,7 +40,6 @@ enum Tools {
 		snap = value
 		emit_changed()
 
-## Whether a scale drag keeps one factor on every axis.
 @export var uniform: bool = true :
 	set(value):
 		if value == uniform:
@@ -68,11 +48,9 @@ enum Tools {
 		emit_changed()
 
 
-## Emits [signal commit_requested].
 func commit() -> void:
 	commit_requested.emit()
 
 
-## Emits [signal cancel_requested].
 func cancel() -> void:
 	cancel_requested.emit()

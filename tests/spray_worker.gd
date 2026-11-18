@@ -1,16 +1,5 @@
 extends "res://tests/test.gd"
 
-# Focused checks for the spray worker sample pipeline.
-#
-# The checks cover the parts that a synchronous sampler cannot show: a large
-# batch computing on the worker pool, the install of its exact cells, the first
-# click while a sample waits, the accepted stroke cells that a release, a switch,
-# and a cancel must keep or drop, and the stale results that must never install.
-#
-# The checks drive the real viewport input path, so the picked cell and the
-# painted cells go through the production event handling. The large sizes place
-# the occupied reach estimate above the inline limit, so the worker path is the
-# only path these tests exercise.
 
 const SEED := 20261023
 const BLOCK := 8
@@ -45,9 +34,6 @@ func _ready() -> void:
 	test("the worker builds a prepared preview payload the install path submits", _worker_prepared_payload, "worker_prepared")
 
 
-# Each check starts from a fresh document, the default symmetry, and the default
-# spray options. A previous check may have switched the active tool, so the spray
-# can is selected again.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -76,8 +62,6 @@ func before_test() -> void:
 	tool._hover_installed_epoch = 0
 
 
-# A solid block around the origin, so the search sphere and the spot sphere are
-# fully occupied and the reach estimate passes the inline limit.
 func _block(half: int) -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
@@ -87,7 +71,6 @@ func _block(half: int) -> void:
 				frame.set_cell(Vector3i(x, y, z), VoxelFrame.material(Color.BLUE))
 	camera_rig().center_on(frame.get_bounds())
 	_block_cells = frame.count()
-	# A new document drops the preview surface of the previous fixture.
 	tool._clear_cursor_preview()
 
 
@@ -158,8 +141,6 @@ func _key(code: Key) -> void:
 	get_tree().root.push_input(event)
 
 
-# Waits until the samples, the write jobs, and the cursor settle. A worker sample
-# installs from `_process`, so the check must let the frames run.
 func _settle() -> void:
 	for i in 600:
 		if tool.is_sample_settled() and tool._job == null and tool._pending_centers.is_empty():
@@ -168,8 +149,6 @@ func _settle() -> void:
 		await get_tree().process_frame
 
 
-# The large sizes of every worker check. The solid half-width block keeps the
-# occupied reach estimate well above the inline limit at search 33.
 func _use_large() -> void:
 	_block(BLOCK)
 	_settings.spot_diameter = 4
@@ -373,10 +352,6 @@ func _worker_stale() -> void:
 	)
 
 
-# The worker builds the prepared preview payload off the main thread, and the
-# install path submits it without rebuilding the color dictionary. The cursor
-# then installs the payload dictionary itself, so a click validates the visible
-# surface by identity.
 func _worker_prepared_payload() -> void:
 	step("Given a dense block and a large sample job", func():
 		_use_large()
@@ -392,8 +367,6 @@ func _worker_prepared_payload() -> void:
 		expect(_same_cell_set(job.cells, _payload_cells(_payload)), "the payload keys are the sampled cells")
 	)
 	step("When the finished sample installs through the prepared path", func():
-		# Clear the mesh cache, so the install really builds and the install records
-		# the payload dictionary itself.
 		VoxelPreview._mesh_cache.clear()
 		var job: VoxelFrame.EditJob = tool._build_sample_job(frame, Vector3i(0, BLOCK, 0), State.drawing_context(), State.current_material, 5000)
 		job.request_epoch = 1
@@ -411,7 +384,6 @@ func _worker_prepared_payload() -> void:
 	)
 
 
-# Waits for the cursor's preview worker, so the install is observed.
 func _settle_cursor() -> void:
 	var cursor := tool.get_node("Cursor")
 	for i in 600:

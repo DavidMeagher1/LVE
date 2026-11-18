@@ -1,39 +1,16 @@
 extends RefCounted
 
-## Triangulates planar voxel regions with a seam-preserving cleanup.
-##
-## A region is a set of occupied cells on one plane. The class follows the
-## outline loops, splits a pinched outline, cuts holes, and triangulates the
-## result. The cleanup never moves a protected seam corner.
 
-## The four edge directions in the loop walk order.
 const DIRECTIONS := [Vector2i.RIGHT, Vector2i.DOWN, Vector2i.LEFT, Vector2i.UP]
-# Keep the left turn first. It separates regions that touch at one corner.
-## The turn order that keeps the occupied cells on the left.
 const TURNS: Array[int] = [1, 0, 3, 2]
-# One row mask holds at most 64 cells. Wider or taller regions, and sparse
-# regions, use the dictionary path.
-## The maximum compact box width in cells.
 const BOX_LIMIT := 64
 
 
-# A compact cell box. One row mask per row and one edge bitfield per lattice
-# corner replace dictionary hashing. An empty box or a box outside the limit
-# returns null, and the caller keeps the dictionary path.
-## A compact cell box for a dense region.
-##
-## One row mask per row replaces dictionary hashing. A region that is too wide
-## or too sparse keeps the dictionary path.
 class Cells:
-	## The first cell of the box.
 	var origin := Vector2i.ZERO
-	## The box width in cells.
 	var width := 0
-	## The box height in cells.
 	var height := 0
-	## One row mask per row.
 	var rows: PackedInt64Array = []
-	## The occupied cell count.
 	var count := 0
 
 
@@ -45,13 +22,9 @@ static func _compact(cells: Dictionary) -> Cells:
 	for cell: Vector2i in cells:
 		origin = Vector2i(mini(origin.x, cell.x), mini(origin.y, cell.y))
 		extent = Vector2i(maxi(extent.x, cell.x), maxi(extent.y, cell.y))
-	# The width is a row mask, so it cannot exceed the word size. The height is only
-	# an array length, and the density test below already bounds the scan by area.
 	if extent.x - origin.x >= BOX_LIMIT:
 		return null
 	var area := (extent.x - origin.x + 1) * (extent.y - origin.y + 1)
-	# A box only pays for a dense region. Fragmented regions cost less in the
-	# dictionary path, because the box scan reads every cell of its rectangle.
 	if area > maxi(cells.size() * 4, 16):
 		return null
 	var box := Cells.new()
@@ -66,8 +39,6 @@ static func _compact(cells: Dictionary) -> Cells:
 	return box
 
 
-# Latch the caller's checkpoint. After the first rejection every later check
-# fails, so no path restarts after cancellation.
 static func _latch(checkpoint: Callable, state: Dictionary) -> Callable:
 	return func(progress: int) -> bool:
 		if not state.cancelled and checkpoint.is_valid():
@@ -75,10 +46,6 @@ static func _latch(checkpoint: Callable, state: Dictionary) -> Callable:
 		return not state.cancelled
 
 
-# The unsimplified boundary loops of one region. A caller that needs both the
-# turns and the triangulation prepares them once instead of twice.
-## Returns the unsimplified boundary loops of one region. A caller that needs
-## both the turns and the triangulation prepares them once.
 static func raw_loops(cells: Dictionary, checkpoint := Callable()) -> Array[PackedVector2Array]:
 	var state := {"cancelled": false}
 	var check := _latch(checkpoint, state)
@@ -90,7 +57,6 @@ static func raw_loops(cells: Dictionary, checkpoint := Callable()) -> Array[Pack
 	return _box_loops(box, check)
 
 
-## Returns the simplified boundary loops of one region.
 static func contours(cells: Dictionary, checkpoint := Callable()) -> Array[PackedVector2Array]:
 	var state := {"cancelled": false}
 	var check := _latch(checkpoint, state)
@@ -112,19 +78,11 @@ static func contours(cells: Dictionary, checkpoint := Callable()) -> Array[Packe
 	return result
 
 
-## Returns one polygon record per triangle region. Each record holds
-## [code]points[/code] and [code]indices[/code]. [param protected] lists the
-## seam corners that must stay. [param prepared] supplies the loops from
-## [method raw_loops]. Returns an empty array on a cancel.
 static func triangulate(cells: Dictionary, protected: Dictionary = {}, checkpoint := Callable(), prepared: Array = []) -> Array:
-	# Remember cancellation even when the caller rejects only one checkpoint.
 	var state := {"cancelled": false}
 	var check := _latch(checkpoint, state)
 	if not check.call(0) or cells.is_empty():
 		return []
-	# A prepared region whose every loop is one unit square needs no compaction,
-	# splitting, hole detection, simplification, or triangulation. Emit the same
-	# loops, points, and indices the general path would produce, in the same order.
 	if not prepared.is_empty() and _all_unit_squares(prepared):
 		return _unit_square_faces(cells, prepared, check)
 	var box := _compact(cells)
@@ -152,9 +110,6 @@ static func triangulate(cells: Dictionary, protected: Dictionary = {}, checkpoin
 			return []
 		if loops.is_empty():
 			return _unit_faces(cells, check)
-		# An outline that pinches at a corner visits that corner twice. Split it
-		# there so every piece is a simple polygon. A hole that touches the
-		# outline at a corner becomes a negative piece, and opens below.
 		var parts: Array[PackedVector2Array] = []
 		for loop in loops:
 			parts.append_array(_split_loops(loop))
@@ -169,7 +124,6 @@ static func triangulate(cells: Dictionary, protected: Dictionary = {}, checkpoin
 				for point in loop:
 					bottom = mini(bottom, int(point.y))
 					top = maxi(top, int(point.y))
-				# A one-cell hole opens at its lower edge instead of its interior.
 				cut = bottom + 1 if top - bottom > 1 else bottom
 				has_hole = true
 				break
@@ -198,7 +152,6 @@ static func triangulate(cells: Dictionary, protected: Dictionary = {}, checkpoin
 			queue_boxes.append(below_box)
 			queue_boxes.append(above_box)
 			continue
-		# Collect every cut corner before simplifying either side of a cut.
 		for loop in parts:
 			for point in _simplify(loop, {}):
 				retained[Vector2i(point)] = true
@@ -221,7 +174,6 @@ static func triangulate(cells: Dictionary, protected: Dictionary = {}, checkpoin
 	return result
 
 
-# Cut a compact box at one world row. Keep the rows below or above the cut.
 static func _split_box(box: Cells, cut: int, upper := false) -> Cells:
 	var local_cut := clampi(cut - box.origin.y, 0, box.height)
 	var out := Cells.new()
@@ -243,10 +195,6 @@ static func _split_box(box: Cells, cut: int, upper := false) -> Cells:
 	return out
 
 
-# Boundary edges of one compact box, in the order the dictionary path emits
-# them: cells by row and column, and the up, right, down, left side of each
-# cell. Corner 0 of a cell is its own corner. The other sides start one step
-# along the edge direction.
 static func _box_edge_starts(box: Cells) -> Array[Vector3i]:
 	var starts: Array[Vector3i] = []
 	for y in box.height:
@@ -274,14 +222,10 @@ static func _box_edge_starts(box: Cells) -> Array[Vector3i]:
 	return starts
 
 
-# Follow the boundary loops of one compact box. The edge state is one bitfield
-# per lattice corner, so the walk never hashes a key. The turn order keeps the
-# occupied cells on the left, which separates regions that touch at a corner.
 static func _box_loops(box: Cells, check: Callable) -> Array[PackedVector2Array]:
 	var starts := _box_edge_starts(box)
 	if starts.is_empty():
 		return []
-	# Edge start corners cover the (width + 1) by (height + 1) corner grid.
 	var grid_w := box.width + 1
 	var grid_h := box.height + 1
 	var ox := box.origin.x
@@ -322,9 +266,6 @@ static func _box_loops(box: Cells, check: Callable) -> Array[PackedVector2Array]
 	return result
 
 
-# A region whose outline pinches at a corner returns one loop that visits that
-# corner twice. Split it there so every piece is a simple polygon. The pinch
-# contributes no area, so the pieces still cover the occupied cells exactly.
 static func _split_loops(loop: PackedVector2Array) -> Array[PackedVector2Array]:
 	var result: Array[PackedVector2Array] = []
 	var pending: Array[PackedVector2Array] = [loop]
@@ -389,7 +330,6 @@ static func _contours(cells: Dictionary, protected: Dictionary, checkpoint: Call
 			loop.append(Vector2(edge.x, edge.y))
 			var end: Vector2i = Vector2i(edge.x, edge.y) + DIRECTIONS[edge.z]
 			var found := false
-			# Keep occupied cells on the left. Separate diagonal contacts with a left turn.
 			for turn in [1, 0, 3, 2]:
 				var next := Vector3i(end.x, end.y, (edge.z + turn) % 4)
 				if next == first or edges.has(next):
@@ -416,11 +356,8 @@ static func _simplify(loop: PackedVector2Array, protected: Dictionary) -> Packed
 
 
 static func _triangles(points: PackedVector2Array, checkpoint: Callable) -> PackedInt32Array:
-	# A unit square needs no triangulation, no collinear insertion, and no
-	# improvement. Geometry2D fans a four-point polygon from its last vertex.
 	if _unit_square(points):
 		return PackedInt32Array([3, 0, 1, 1, 2, 3])
-	# Triangulate only turns. Insert collinear seam points by splitting boundary triangles.
 	var turns := _simplify(points, {})
 	var source := Geometry2D.triangulate_polygon(turns)
 	var lookup := {}
@@ -469,7 +406,6 @@ static func _triangles(points: PackedVector2Array, checkpoint: Callable) -> Pack
 		if not inserted:
 			return PackedInt32Array()
 	indices = _improve(points, indices, checkpoint)
-	# Require the exact directed polygon boundary, not only the expected total area.
 	var boundary := {}
 	var area := 0.0
 	for offset in range(0, indices.size(), 3):
@@ -499,9 +435,6 @@ static func _triangles(points: PackedVector2Array, checkpoint: Callable) -> Pack
 	return indices
 
 
-# A loop of four points is a unit square when it is one cell wide, one cell
-# tall, and wound counterclockwise. Clockwise loops fall through, because the
-# full path rejects them.
 static func _unit_square(points: PackedVector2Array) -> bool:
 	if points.size() != 4:
 		return false
@@ -521,9 +454,6 @@ static func _unit_square(points: PackedVector2Array) -> bool:
 	return area == 2.0
 
 
-# True when the prepared loops are all counterclockwise unit squares. Such a
-# region holds only isolated cells, so no loop needs a split, a hole cut, or a
-# triangle.
 static func _all_unit_squares(loops: Array) -> bool:
 	for loop: PackedVector2Array in loops:
 		if not _unit_square(loop):
@@ -531,9 +461,6 @@ static func _all_unit_squares(loops: Array) -> bool:
 	return true
 
 
-# Emit one polygon per prepared unit square. The points are the loop itself, and
-# the indices are the fan `_triangles` gives a unit square. The loop count must
-# equal the input cells, or the region falls back to one quad per cell.
 static func _unit_square_faces(cells: Dictionary, loops: Array, check: Callable) -> Array:
 	var result := []
 	for loop: PackedVector2Array in loops:
@@ -546,7 +473,6 @@ static func _unit_square_faces(cells: Dictionary, loops: Array, check: Callable)
 
 
 static func _improve(points: PackedVector2Array, indices: PackedInt32Array, checkpoint: Callable) -> PackedInt32Array:
-	# Bound partial Lawson improvement to eight flips per triangle. Never move seam edges.
 	var adjacency := {}
 	var queue: Array[Vector2i] = []
 	var pending := {}
@@ -577,7 +503,6 @@ static func _improve(points: PackedVector2Array, indices: PackedInt32Array, chec
 		var b := edge.y
 		var c := indices[first_base + (first % 3 + 2) % 3]
 		var d := indices[second_base + (second % 3 + 2) % 3]
-		# Both replacement triangles must be strictly CCW. Reject concave quadrilaterals.
 		if _orientation(points[c], points[d], points[b]) <= 0.0 or _orientation(points[d], points[c], points[a]) <= 0.0:
 			continue
 		if not _inside_circle(points[a], points[b], points[c], points[d]):
@@ -618,7 +543,6 @@ static func _orientation(a: Vector2, b: Vector2, c: Vector2) -> float:
 
 
 static func _inside_circle(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> bool:
-	# Use translated scalar doubles, not float32 Vector2 dot products or squared lengths.
 	var ax: float = a.x - d.x
 	var ay: float = a.y - d.y
 	var bx: float = b.x - d.x
@@ -628,7 +552,6 @@ static func _inside_circle(a: Vector2, b: Vector2, c: Vector2, d: Vector2) -> bo
 	var first := (ax * ax + ay * ay) * (bx * cy - by * cx)
 	var second := (bx * bx + by * by) * (cx * ay - cy * ax)
 	var third := (cx * cx + cy * cy) * (ax * by - ay * bx)
-	# Keep cocircular and numerically uncertain edges unchanged to prevent oscillation.
 	return first + second + third > (absf(first) + absf(second) + absf(third)) * 1.0e-12
 
 

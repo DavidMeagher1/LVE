@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# A later registration must not extend an earlier test's watchdog.
-
 
 func _ready() -> void:
 	timeout = 0.05

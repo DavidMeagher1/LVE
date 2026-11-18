@@ -1,12 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the screen-selection tests. Each test keeps the steps and
-# checks of its original scene. The user arguments after `--` name the tests to
-# run, so an old scene name still selects its own test.
-
-# A screen drag selects the volume behind the shape.
-# The empty cell option adds the empty grid cells inside the frame bounds.
-# The depth test keeps the voxels that the camera sees.
 
 const RAY_DEPTHS := [4.0, 7.0, 10.0]
 const PLATE_SIZE := 5
@@ -36,9 +29,6 @@ func _ready() -> void:
 	test("a click away from the voxel center selects that voxel", _click_off_center, "click_off_center")
 
 
-# Each test starts from a fresh document, the default selection options, and the
-# default camera. The selection options and the camera view live outside the
-# document, so they are restored here.
 func before_test() -> void:
 	if not _defaults_ready:
 		_default_mode = _selection_settings.mode
@@ -56,7 +46,6 @@ func before_test() -> void:
 	camera_rig().set_view("default")
 
 
-# Shared viewport setup. Every test uses the same view, center, and tool.
 func _view_setup() -> void:
 	viewport = editor_viewport()
 	viewport.get_parent().stretch = false
@@ -65,7 +54,6 @@ func _view_setup() -> void:
 	activate_tool("selection")
 
 
-# Shared input helpers. Every test drives the real viewport input path.
 func _press(pos: Vector2) -> void:
 	var event := InputEventMouseButton.new()
 	event.button_index = MOUSE_BUTTON_LEFT
@@ -94,7 +82,6 @@ func _click(pos: Vector2) -> void:
 	_release(pos)
 
 
-# Shared option and screen helpers.
 func _options_box() -> HBoxContainer:
 	var option_bar := main.get_node("%OptionBar")
 	for container in option_bar.get_children():
@@ -261,7 +248,6 @@ func _inside_bounds(cells: Array) -> bool:
 	return true
 
 
-# Place one voxel on the view ray at each depth. Every one projects onto the center.
 func _place_ray_voxels() -> Array[Vector3i]:
 	var frame := _frame()
 	frame.clear()
@@ -512,12 +498,10 @@ func _plate_bounds() -> AABB:
 	return AABB(Vector3(-0.5, -0.5, -0.5), Vector3(PLATE_SIZE, 1, PLATE_SIZE))
 
 
-# The four cells of a two-by-two block on the plate layer.
 func _block(low: Vector3i) -> Array:
 	return [low, low + Vector3i(1, 0, 0), low + Vector3i(0, 0, 1), low + Vector3i(1, 0, 1)]
 
 
-# Draw a rectangular outline around the block with a margin below half a cell.
 func _lasso_around(cells: Array) -> void:
 	var low := Vector2(INF, INF)
 	var high := Vector2(-INF, -INF)

@@ -1,10 +1,5 @@
 extends "res://tests/test.gd"
 
-# The broad rounding tests drive the pure 3D occupancy rounding module at the
-# broad radius. The base radius keeps its own tests in `terrain_smooth.gd`. These
-# tests cover the rounding depth, the bounded fixed point, the thin-feature
-# protection, the deterministic result, and the cancellation contract. They
-# never touch the tool, the settings, or the editor state.
 
 const SmoothOperation := preload("res://plugins/Terrain/SmoothOperation.gd")
 
@@ -40,7 +35,6 @@ func _ready() -> void:
 	test("no pass leaves a voxel without a face neighbor", _no_isolated_remnant, "broad_isolated")
 
 
-# Resets the fixtures. Each test builds its own set in a step.
 func before_test() -> void:
 	_occupied = {}
 	_cells = []
@@ -49,9 +43,6 @@ func before_test() -> void:
 	_weights = {}
 
 
-# --- Helpers ----------------------------------------------------------------
-
-# Fills the inclusive box from lo to hi into _occupied.
 func _fill(lo: Vector3i, hi: Vector3i) -> void:
 	for x in range(lo.x, hi.x + 1):
 		for y in range(lo.y, hi.y + 1):
@@ -59,7 +50,6 @@ func _fill(lo: Vector3i, hi: Vector3i) -> void:
 				_occupied[Vector3i(x, y, z)] = true
 
 
-# Returns every cell of the inclusive box.
 func _box(lo: Vector3i, hi: Vector3i) -> Array:
 	var cells := []
 	for x in range(lo.x, hi.x + 1):
@@ -69,7 +59,6 @@ func _box(lo: Vector3i, hi: Vector3i) -> Array:
 	return cells
 
 
-# A convex edge along z. The solid is the quadrant x <= 0 and y <= 0.
 func _quadrant_edge() -> void:
 	_occupied = {}
 	for x in range(-10, 1):
@@ -79,8 +68,6 @@ func _quadrant_edge() -> void:
 	_cells = _box(Vector3i(-6, -6, -6), Vector3i(6, 6, 6))
 
 
-# The removed depth of the edge along x = 0. The value is the first occupied
-# cell from the corner toward -y.
 func _edge_depth(occupied: Dictionary) -> int:
 	var depth := 0
 	while not occupied.has(Vector3i(0, -depth, 0)):
@@ -95,8 +82,6 @@ func _has_remove(cell: Vector3i) -> bool:
 func _has_add(cell: Vector3i) -> bool:
 	return (_result["add"] as Array).has(cell)
 
-
-# --- Shape rules ------------------------------------------------------------
 
 func _broad_edge_rounds() -> void:
 	step("Given a convex edge and the broad radius", func():
@@ -350,7 +335,6 @@ func _broad_cancel() -> void:
 func _broad_patch_boundary() -> void:
 	step("Given a convex edge with a small patch and a read-only neighbor", func():
 		_quadrant_edge()
-		# Only the corner region is writable. The cells outside stay read only.
 		_cells = _box(Vector3i(-2, -2, -1), Vector3i(2, 2, 1))
 		_other = _occupied.duplicate()
 	)
@@ -381,8 +365,6 @@ func _base_bevel() -> void:
 		expect(_edge_depth(_result["occupied"]) == 1, "the base radius removes one cell only")
 	)
 
-
-# --- Read halo contract -----------------------------------------------------
 
 func _halo_contract() -> void:
 	step("Given the base and the broad radius", func():
@@ -481,9 +463,6 @@ func _no_isolated_remnant() -> void:
 	)
 
 
-# --- Helpers for the compound fixtures --------------------------------------
-
-# A thick block with a convex ridge, an inside corner, and a two-cell fin.
 func _compound() -> void:
 	_occupied = {}
 	for x in range(-8, 9):
@@ -511,8 +490,6 @@ func _compound_candidates() -> Array:
 	return cells
 
 
-# Returns the occupancy a candidate reads, gathered through the declared halo of
-# every candidate. A sparse gather reads the exact read set.
 func _gather_reads(solid: Dictionary, cells: Array, radius: int) -> Dictionary:
 	var offsets: Array = SmoothOperation.read_offsets(radius)
 	var out := {}
@@ -524,7 +501,6 @@ func _gather_reads(solid: Dictionary, cells: Array, radius: int) -> Dictionary:
 	return out
 
 
-# True when any occupied cell has no face neighbor.
 func _has_isolated(occupied: Dictionary) -> bool:
 	for cell: Vector3i in occupied:
 		var alone := true

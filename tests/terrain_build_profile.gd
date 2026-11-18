@@ -1,22 +1,5 @@
 extends "res://tests/test.gd"
 
-# The original Build profile.
-#
-# A long stroke keeps one fixed operation plane, so the footprint kernel is
-# constant along the stroke. Every column at a fixed lateral offset from the path
-# receives the same credited influence, and the heights form coherent nested
-# bands. A footprint that re-projects onto the grown height under perspective
-# walks sideways as the model rises, so the columns receive different dab counts
-# and the bands turn into waves.
-#
-# The test predicts every column height from the recorded canonical dab list and
-# the shipped kernel. The reference is the explicit fixed-plane accumulation: one
-# disc of weights per dab, summed per logical column. A reset credit, a dropped
-# dab, or a moved plane fails the prediction.
-#
-# The stroke runs in isometric perspective, which is the view where a
-# re-projected center walks sideways. The floor is flat, so the surface normal is
-# exactly up and the reference needs no surface scan.
 
 const ProbeScript := preload("./terrain_build_profile_probe.gd")
 const VoxelFalloff := preload("res://Globals/State/Tools/VoxelFalloff.gd")
@@ -78,9 +61,6 @@ func after_test() -> void:
 	_tool = null
 
 
-# --- Fixtures and input -------------------------------------------------------
-
-# A flat floor wide enough for the stroke and the footprint disc.
 func _floor() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -93,8 +73,6 @@ func _floor() -> void:
 	sync_viewport()
 
 
-# A flat floor with one 30 high column that the old bounded walk could not
-# resolve from the plane.
 func _floor_and_tower() -> void:
 	State.document = VoxelDocument.new()
 	_frame = State.get_current_voxel_frame()
@@ -140,9 +118,6 @@ func _wait_idle() -> void:
 		await get_tree().process_frame
 
 
-# Runs one straight Build stroke along +X from the world origin. It records the
-# locked operation plane and whether the plane moved during the stroke, because
-# the stroke closes its frame at the release.
 func _run_straight_stroke(steps: int) -> void:
 	_tool.reset_profile()
 	_plane_drift = false
@@ -157,10 +132,6 @@ func _run_straight_stroke(steps: int) -> void:
 	await _wait_idle()
 
 
-# The explicit fixed-plane steps. One dab adds the strength scaled by the falloff
-# weight of each column, rounded to whole layers. The weight depends only on the
-# distance from the dab anchor, so the tangent orientation of the frame cannot
-# change it.
 func _reference_credit(anchors: Array, falloff: float) -> Dictionary:
 	var radius: int = _settings.radius
 	var credit := {}
@@ -174,12 +145,10 @@ func _reference_credit(anchors: Array, falloff: float) -> Dictionary:
 	return credit
 
 
-# The whole steps the dab steps apply on top of the support height.
 func _credited_steps(credit: Dictionary, column: Vector2i) -> int:
 	return int(credit.get(column, 0))
 
 
-# The height of one column, counted up from the floor plane.
 func _column_height(x: int, z: int) -> int:
 	var cell := Vector3i(x, 0, z)
 	var count := 0
@@ -189,7 +158,6 @@ func _column_height(x: int, z: int) -> int:
 	return count
 
 
-# The mismatched columns between the actual heights and the prediction.
 func _prediction_mismatches(credit: Dictionary, base: int) -> int:
 	var mismatched := 0
 	for column in credit:
@@ -197,8 +165,6 @@ func _prediction_mismatches(credit: Dictionary, base: int) -> int:
 			mismatched += 1
 	return mismatched
 
-
-# --- Cases --------------------------------------------------------------------
 
 func _straight_profile() -> void:
 	step("Given a flat floor seen in isometric perspective and the default brush", func():

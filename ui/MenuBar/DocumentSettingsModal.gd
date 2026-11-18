@@ -1,10 +1,5 @@
 extends ConfirmationDialog
 
-## Edits the document settings.
-##
-## The modal holds the normals mode and the centered document size.
-## A size of zero on an axis means that axis is infinite. Changes preview live
-## and commit as one history action when the user confirms.
 
 @onready var _flat: Button = $Margin/Layout/NormalsRow/Flat
 @onready var _smooth: Button = $Margin/Layout/NormalsRow/Smooth
@@ -32,7 +27,6 @@ func _ready() -> void:
 	canceled.connect(_on_canceled)
 
 
-## Shows the modal with the current values.
 func open(current_size: Vector3i, smooth_normals: bool, ao_strength := 1.0) -> void:
 	_before_smooth = smooth_normals
 	_before_ao = ao_strength

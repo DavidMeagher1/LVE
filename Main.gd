@@ -1,34 +1,19 @@
 extends Control
 
-## The application main scene.
-##
-## It restores the last document, tracks the window title, and applies the UI
-## scale. It also disables the inactive tab, so only the current tab processes.
 
-## The MCP server started or stopped.
 signal mcp_changed(enabled: bool, port: int)
 
-## The splash document that opens when no document exists or a version is new.
 const SPLASH_DOCUMENT := "res://splash.lve"
-## The settings section and key that hold the last used application version.
 const VERSION_SECTION := "application"
 const VERSION_KEY := "version"
-## The MCP server and bridge scripts.
 const MCP_SERVER_SCRIPT := preload("res://Globals/MCP/MCPServer.gd")
 const MCP_BRIDGE_SCRIPT := preload("res://Globals/MCP/MCPBridge.gd")
 const AUTOSAVE_SCRIPT := preload("res://Globals/Autosave/Autosave.gd")
-## The default loopback MCP port.
 const MCP_PORT := 17373
-## The settings file override. Tests set a temporary file. An empty value uses
-## [member State.settings_path].
 var settings_path := ""
-## The MCP port. Tests set zero to take a free port.
 var mcp_port := MCP_PORT
-## Tests turn this off, so a saved state cannot bind a port in the test process.
 @export var restore_saved_agent := true
-## Tests turn this off, so a quit signal cannot end the test process.
 @export var quit_on_confirmed := true
-## Tests turn this off, so recovery files are not written in the test process.
 @export var autosave_enabled := true
 var _ui_scale := 0.0
 var _scale_check_elapsed := 0.0
@@ -40,10 +25,7 @@ var autosave = null
 
 func _enter_tree() -> void:
 	add_to_group("main")
-	# The close request must wait for the save prompts. The SceneTree accepts a
-	# close request by default, so the dialog appears and the app still quits.
 	get_tree().auto_accept_quit = false
-	# Seed the port before the status bar reads it in its own _ready.
 	mcp_port = _mcp_port_setting()
 	_mcp_http_mode = not _has_user_arg("--mcp-line")
 	State.document_changed.connect(_on_document_changed)
@@ -127,10 +109,6 @@ func _ready() -> void:
 	context.workspace = %EditorWorkspace
 	State.set_context(context)
 	State.reset_plugins()
-	# Godot coalesces pointer motion to one event per render frame by default. A
-	# long frame then turns a curved drag into a chord between two far samples,
-	# and every tool paints that chord. Take each event instead, so a stroke
-	# follows the pointer even when a frame runs long.
 	Input.use_accumulated_input = false
 	var settings := _read_interface_settings()
 	var saved_scale := float(settings.get_value("interface", "scale", 0.0))
@@ -207,22 +185,18 @@ func _restore_startup_document(force: bool = false, session_path: String = "") -
 		_write_setting(VERSION_SECTION, VERSION_KEY, version)
 
 
-## Returns the settings file. Tests can set a temporary override.
 func _settings_file() -> String:
 	return State.settings_path if settings_path.is_empty() else settings_path
 
 
-## Returns the application version from the project settings.
 func _current_version() -> String:
 	return str(ProjectSettings.get_setting("application/config/version", ""))
 
 
-## Returns the last version that stored settings, or an empty string.
 func _stored_version() -> String:
 	return str(_read_interface_settings().get_value(VERSION_SECTION, VERSION_KEY, ""))
 
 
-## Makes the splash the first and active tab. It reuses an open splash tab.
 func _open_splash() -> bool:
 	for index in State.tabs.size():
 		if State.tabs[index].file_path == SPLASH_DOCUMENT:
@@ -244,8 +218,6 @@ func _open_splash() -> bool:
 	return true
 
 
-## Sets the UI scale. A zero value uses the automatic scale. When [param save]
-## is true, it writes the value to the interface settings.
 func set_ui_scale(value: float, save: bool = true) -> void:
 	_ui_scale = 0.0 if value == 0.0 else clampf(value, 1.0, 3.0)
 	_apply_ui_scale()
@@ -253,15 +225,12 @@ func set_ui_scale(value: float, save: bool = true) -> void:
 		_write_setting("interface", "scale", _ui_scale)
 
 
-## Reads the interface settings. A missing file gives default values.
 func _read_interface_settings() -> ConfigFile:
 	var settings := ConfigFile.new()
 	settings.load(_settings_file())
 	return settings
 
 
-## Writes one setting and keeps the other sections. A settings file that
-## cannot be read is not overwritten.
 func _write_setting(section: String, key: String, value: Variant) -> void:
 	var settings := ConfigFile.new()
 	var error := settings.load(_settings_file())
@@ -313,12 +282,10 @@ func _on_tab_changed(_index: int) -> void:
 		State.stop()
 
 
-## Returns [code]true[/code] when the user passed [param argument] after `--`.
 func _has_user_arg(argument: String) -> bool:
 	return OS.get_cmdline_user_args().has(argument)
 
 
-## Returns the MCP port from `--mcp-port=N`, or the default port.
 func _mcp_port_setting() -> int:
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--mcp-port="):
@@ -328,9 +295,6 @@ func _mcp_port_setting() -> int:
 	return MCP_PORT
 
 
-## Starts or stops the in-app MCP server. The state is saved only when
-## [param persist] is true. A failed start returns the listen error and keeps
-## the server off.
 func set_mcp_enabled(value: bool, persist := false) -> Error:
 	if value == is_mcp_enabled():
 		if persist:
@@ -353,18 +317,14 @@ func set_mcp_enabled(value: bool, persist := false) -> Error:
 	return OK
 
 
-## Returns [code]true[/code] while the MCP server listens.
 func is_mcp_enabled() -> bool:
 	return _mcp != null and int(_mcp.call("local_port")) > 0
 
 
-## Returns the port that the MCP server listens on, or zero when it is off.
 func mcp_local_port() -> int:
 	return int(_mcp.call("local_port")) if _mcp != null else 0
 
 
-## Returns the HTTP endpoint, or an empty string in line mode or before a
-## free-port start.
 func mcp_url() -> String:
 	if not _mcp_http_mode:
 		return ""
@@ -376,12 +336,10 @@ func mcp_url() -> String:
 	return "http://127.0.0.1:%d/mcp" % port
 
 
-## Starts the in-app MCP server for the command line flags.
 func _start_mcp() -> void:
 	set_mcp_enabled(true, false)
 
 
-## Runs the stdio bridge until stdin closes, then quits.
 func _run_bridge() -> void:
 	var bridge: RefCounted = MCP_BRIDGE_SCRIPT.new()
 	var code_value: Variant = bridge.call("run", mcp_port)

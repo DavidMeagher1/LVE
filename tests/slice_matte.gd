@@ -130,8 +130,6 @@ func _idle() -> void:
 		await get_tree().process_frame
 
 
-# The X slice uses its own chunk scan. A chunk row entirely above or below the
-# slab must keep its side and its near cell.
 func _run_x_axis() -> void:
 	var below := Vector3i(-1, 0, 0)
 	var above := Vector3i(30, 0, 5)

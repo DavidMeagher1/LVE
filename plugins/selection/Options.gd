@@ -1,9 +1,5 @@
 extends HBoxContainer
 
-## The selection option bar.
-##
-## It edits the selection mode and the selection options. It also clears the
-## selection. The visible options follow the active selection tool.
 
 var _settings := preload("./SelectionSettings.tres")
 
@@ -14,8 +10,6 @@ func _enter_tree() -> void:
 		State.activity_changed.connect(_sync)
 	if not State.edit_state_changed.is_connected(_sync):
 		State.edit_state_changed.connect(_sync)
-	# A stored mode can change while the options are hidden. Show it again on
-	# the next entry; `_ready` runs only once.
 	_sync()
 
 
@@ -40,12 +34,10 @@ func _sync() -> void:
 	$Connected.visible = _settings.tool == _settings.Tools.WAND
 	$Sep.visible = $Connected.visible
 	$Empty.set_pressed_no_signal(_settings.include_empty)
-	# The wand picks a voxel. It has no empty cell option.
 	var show_empty := _settings.tool != _settings.Tools.WAND
 	for control in [$EmptySep, $Empty]:
 		control.visible = show_empty
 	$Depth.set_pressed_no_signal(_settings.depth_test)
-	# The depth test reads the screen shape. The wand picks a voxel.
 	$Depth.visible = show_empty
 
 
@@ -62,8 +54,6 @@ func _on_connected_toggled(toggled_on: bool) -> void:
 
 
 func _on_clear_pressed() -> void:
-	# A running selection job restores its result after this call. Refuse the
-	# clear instead of letting the job overwrite it.
 	if State.edit_busy():
 		return
 	State.clear_selection()

@@ -1,8 +1,5 @@
 extends ColorPickerButton
 
-## The palette color picker button.
-##
-## It hides the picker options that the material controls do not use.
 
 func _ready() -> void:
 	var color_picker = get_picker()

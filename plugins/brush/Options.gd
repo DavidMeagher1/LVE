@@ -1,8 +1,5 @@
 extends HBoxContainer
 
-## The brush option bar.
-##
-## It edits the brush diameter, the shape, and the pixel-perfect flag.
 
 var _settings := preload("./BrushSettings.tres")
 

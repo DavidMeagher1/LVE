@@ -1,15 +1,5 @@
 extends "res://tests/test.gd"
 
-# Differential and performance test for selection deletion.
-#
-# `tests/erase_reference.gd` freezes the erase path that ran before the shared
-# sentinel, the whole-chunk removal, and the deferred compaction. Every fixture
-# is erased by the live `State.EraseJob` and by the reference, then compared as
-# encoded chunk records, voxel counts, bounds, chunk sets, and changed-chunk
-# coverage. The A/B alternates the two paths in one process and reports medians
-# with their sample counts.
-#
-#   godot --path . res://tests/erase_parity.tscn
 
 const REFERENCE := preload("res://tests/erase_reference.gd")
 const STATE_SCRIPT := preload("res://Globals/State/State.gd")
@@ -18,7 +8,6 @@ const CANCEL_JOB := preload("res://tests/erase_cancel_job.gd")
 const AB_SAMPLES := 9
 const AB_WARMUPS := 2
 const CHUNK := VoxelFrame.CHUNK_SIZE
-# The chunk that holds the cell at (CHUNK, 0, 0).
 const NEIGHBOUR_CHUNK := Vector3i(1, 0, 0)
 const CROSSTALK := [Vector3i(-1, -1, -1), Vector3i(-1, -1, 0), Vector3i(-1, -1, 1), Vector3i(-1, 0, -1), Vector3i(-1, 0, 0), Vector3i(-1, 0, 1), Vector3i(-1, 1, -1), Vector3i(-1, 1, 0), Vector3i(-1, 1, 1), Vector3i(0, -1, -1), Vector3i(0, -1, 0), Vector3i(0, -1, 1), Vector3i(0, 0, -1), Vector3i(0, 0, 1), Vector3i(0, 1, -1), Vector3i(0, 1, 0), Vector3i(0, 1, 1), Vector3i(1, -1, -1), Vector3i(1, -1, 0), Vector3i(1, -1, 1), Vector3i(1, 0, -1), Vector3i(1, 0, 0), Vector3i(1, 0, 1), Vector3i(1, 1, -1), Vector3i(1, 1, 0), Vector3i(1, 1, 1)]
 
@@ -117,8 +106,6 @@ func _run() -> void:
 
 func _expect_frozen_reference() -> void:
 	var source := FileAccess.get_file_as_string("res://tests/erase_reference.gd")
-	# The frozen algorithm must not call the methods this unit changed. The
-	# helpers it does reuse are listed in its header.
 	for forbidden in ["State.gd", "State.erase_selection", "._compact(", "._fill_chunk(", ".apply_changes(", ".set_cells("]:
 		expect(not source.contains(forbidden), "the frozen reference never calls %s" % forbidden)
 	var frame := VoxelFrame.new()
@@ -128,7 +115,6 @@ func _expect_frozen_reference() -> void:
 	expect(source.contains("VoxelFrame._touched_neighbors"), "the reference declares the helpers it reuses")
 
 
-# Compare the live job with the reference on the same starting cells.
 func _compare(label: String, cells: Dictionary, mask: Dictionary) -> void:
 	var production_frame := _frame_of(cells)
 	var reference_frame := _frame_of(cells)
@@ -187,7 +173,6 @@ func _measure_ab() -> void:
 		var fixture: Dictionary = _fixtures[label]
 		var cells: Dictionary = fixture["cells"]
 		var mask: Dictionary = fixture["mask"]
-		# Prepare every sample frame outside the timed region.
 		var source := _frame_of(cells)
 		var old_frames: Array[VoxelFrame] = []
 		var new_frames: Array[VoxelFrame] = []
@@ -228,9 +213,6 @@ func _time_new(target: VoxelFrame, mask: Dictionary) -> int:
 	return Time.get_ticks_usec() - started
 
 
-# The same cells are erased from two chunks that differ only in their material
-# table: one holds an entry per cell, the other one shared entry. The erase loop
-# never reads the table, so the difference between the two rows is the compaction.
 func _measure_compaction() -> void:
 	var percell := VoxelFrame.new()
 	var material := VoxelFrame.material(Color.RED)
@@ -266,18 +248,12 @@ func _sample_new(source: VoxelFrame, mask: Dictionary) -> int:
 	return _median(samples)
 
 
-# Cancellation is driven by a checkpoint counter on a real EraseJob subclass, so
-# the stop lands at a known point in the prep loop, the chunk bucketing, or the
-# per-chunk write.
 func _expect_cancellation() -> void:
-	# Three partly filled chunks. The mask selects every occupied cell, so each
-	# batch takes the per-cell write path and the loop reaches several checkpoints.
 	var cells := _three_partial_chunks()
 	var mask := cells.duplicate()
 	var source := _frame_of(cells)
 	expect(mask.size() > 4096, "the cancellation fixture reaches a prep checkpoint")
 
-	# Cancelled before any work: the prep loop stops at its first checkpoint.
 	var entry_job: Variant = CANCEL_JOB.new()
 	entry_job.cancel_after = 0
 	entry_job.edited_frame = source.copy_frame()
@@ -287,7 +263,6 @@ func _expect_cancellation() -> void:
 	expect(entry_job.changed_chunks.is_empty(), "the entry job reports no changed chunks")
 	expect(entry_job.edited_frame.count() == source.count(), "the entry job leaves its frame untouched")
 
-	# Cancelled during the prep loop, before the write starts.
 	var prep_job: Variant = CANCEL_JOB.new()
 	prep_job.cancel_after = 1
 	prep_job.edited_frame = source.copy_frame()
@@ -297,7 +272,6 @@ func _expect_cancellation() -> void:
 	expect(prep_job.changed_chunks.is_empty(), "the prep job reports no changed chunks")
 	expect(prep_job.edited_frame.count() == source.count(), "the prep job leaves its frame untouched")
 
-	# Cancelled during the write, after the first chunk was already applied.
 	var write_job: Variant = CANCEL_JOB.new()
 	write_job.cancel_after = 5
 	write_job.edited_frame = source.copy_frame()
@@ -308,7 +282,6 @@ func _expect_cancellation() -> void:
 	expect(write_job.edited_frame.count() < source.count(), "the write job stopped partway through its copy")
 	expect(source.count() == cells.size(), "the cancelled jobs leave the source frame untouched")
 
-	# A later job with no cancellation completes and reports its chunks.
 	var done_job: Variant = CANCEL_JOB.new()
 	done_job.cancel_after = 1000
 	done_job.edited_frame = source.copy_frame()
@@ -319,9 +292,6 @@ func _expect_cancellation() -> void:
 	expect(source.count() == cells.size(), "the uncancelled job also leaves the source frame untouched")
 
 
-# A capture marks every chunk shared. Removing a whole chunk must drop its shared
-# marker with it, keep the snapshot's own chunk intact, and stay independent of a
-# later write into the freed location.
 func _expect_captured_removal() -> void:
 	var cells := _full_chunk_cells(Vector3i.ZERO)
 	cells[Vector3i(CHUNK, 0, 0)] = VoxelFrame.material(Color.BLUE)
@@ -366,8 +336,6 @@ func _three_partial_chunks() -> Dictionary:
 	return cells
 
 
-# Production `set_cells` handles a batch that mixes erases and writes. The erase
-# reference rejects those, so the single-cell oracle in the reference covers them.
 func _compare_mixed_batches() -> void:
 	_compare_batch("mixed_below", _percell_frame, _mixed_batch(1000, 5))
 	_compare_batch("mixed_at_threshold", _percell_frame, _mixed_batch(2048, 5))
@@ -399,9 +367,6 @@ func _compare_batch(label: String, builder: Callable, changes: Dictionary) -> vo
 			_mixed_first = "%s bounds" % label
 
 
-# A chunk that holds one table entry per cell, which an erase past half its cells
-# compacts. A cell dictionary cannot build one, because a full-slot batch takes
-# the bulk path and shares one entry.
 func _percell_frame() -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	var material := VoxelFrame.material(Color.RED)
@@ -560,7 +525,6 @@ func _expect_cancel_then_new() -> void:
 	_erase_started_us = 0
 	State.erase_selection()
 	State._interrupt_erase()
-	# A second erase over the marker voxel alone must still publish.
 	State.selection.clear()
 	State.selection.add(Vector3i(CHUNK * 2, 0, 0))
 	State.erase_selection()
@@ -575,24 +539,16 @@ func _two_chunk_cells() -> Dictionary:
 
 func _build_fixtures() -> void:
 	_fixtures = {}
-	# Every slot of a full chunk is selected, and the chunk is full.
 	var full_full := _full_chunk_cells(Vector3i.ZERO)
 	full_full[Vector3i(CHUNK, 0, 0)] = VoxelFrame.material(Color.RED)
 	_fixtures["full_slots_full_chunk"] = {"cells": full_full, "mask": _slots_of(Vector3i.ZERO)}
-	# Every slot is selected, but only half the chunk holds a voxel.
 	var full_partial := _slab_cells(Vector3i.ZERO, 0, 0, 7)
 	full_partial[Vector3i(CHUNK, 0, 0)] = VoxelFrame.material(Color.RED)
 	_fixtures["full_slots_partial_chunk"] = {"cells": full_partial, "mask": _slots_of(Vector3i.ZERO)}
-	# Only the occupied half is selected, so the batch is partial.
 	_fixtures["all_occupied_partial_chunk"] = {"cells": _slab_cells(Vector3i.ZERO, 0, 0, 7), "mask": _slab_cells(Vector3i.ZERO, 0, 0, 7)}
-	# A full chunk, half erased.
 	_fixtures["half_slab"] = {"cells": _full_chunk_cells(Vector3i.ZERO), "mask": _slab_cells(Vector3i.ZERO, 0, 0, 7)}
-	# A full chunk, a quarter erased.
 	_fixtures["quarter_slab"] = {"cells": _full_chunk_cells(Vector3i.ZERO), "mask": _slab_cells(Vector3i.ZERO, 0, 0, 3)}
-	# Many distinct materials in one chunk. The chunk holds one table entry per
-	# cell, so an erase past half the cells crosses the compaction threshold.
 	_fixtures["mixed_materials"] = {"cells": _mixed_chunk_cells(Vector3i.ZERO, 64), "mask": _slab_cells(Vector3i.ZERO, 0, 0, 11)}
-	# Sixty-four chunks that each hold one voxel.
 	var single := {}
 	var single_mask := {}
 	for index in 64:
@@ -601,12 +557,10 @@ func _build_fixtures() -> void:
 		single[cell] = VoxelFrame.material(Color.RED)
 		single_mask[cell] = true
 	_fixtures["one_cell_chunks"] = {"cells": single, "mask": single_mask}
-	# A few cells in one chunk.
 	var small := {}
 	for x in 8:
 		small[Vector3i(x, 0, 0)] = VoxelFrame.material(Color.RED)
 	_fixtures["ordinary_small"] = {"cells": small, "mask": small}
-	# A box selection over a mostly empty chunk.
 	var sparse := {}
 	var sparse_mask := {}
 	for index in 20:
@@ -616,10 +570,8 @@ func _build_fixtures() -> void:
 			for x in 8:
 				sparse_mask[Vector3i(x, y, z)] = true
 	_fixtures["sparse_empty_partial"] = {"cells": sparse, "mask": sparse_mask}
-	# Negative coordinates.
 	var negative := _slab_cells(Vector3i(-CHUNK, -CHUNK, -CHUNK), 0, 0, 7)
 	_fixtures["negative_cells"] = {"cells": negative, "mask": negative}
-	# Three chunks with different occupancy.
 	var multi := _slab_cells(Vector3i.ZERO, 0, 0, 15)
 	for cell_position: Vector3i in _slab_cells(Vector3i(CHUNK, 0, 0), 0, 0, 7):
 		multi[cell_position] = VoxelFrame.material(Color.GREEN)

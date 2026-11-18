@@ -1,16 +1,6 @@
 extends Node
 
-## The per-document editor workspace state.
-##
-## The tool settings resources are shared by every consumer. This node snapshots
-## their exported scalar values into the active document, then applies the saved
-## values when a document becomes active. It also owns the active tool, the
-## active material, and the editing aids. See `docs/DOCUMENT_FORMAT.md`.
 
-# The accepted range of each exported enum. A value outside its range is ignored,
-# so a damaged document cannot select an unknown tool.
-## Persisted active-tool keys that changed when the brush and symmetry toolbars
-## received stable ids. A document saved before that change still restores.
 const LEGACY_TOOL_IDS := {
 	"BrushPlugin/Toolbar": "BrushPlugin/brush",
 	"SymmetryPlugin/Symmetry": "SymmetryPlugin/symmetry",
@@ -26,17 +16,10 @@ const ENUM_RANGES := {
 	"TerrainPlugin": {"tool": Vector2i(0, 2), "build_mode": Vector2i(0, 1)},
 }
 
-## The registered toolbar buttons, keyed by plugin and toolbar name.
 var _tool_buttons: Dictionary[String, BaseButton] = {}
-## The registered settings resources, keyed by plugin name.
 var _settings_resources: Dictionary[String, Resource] = {}
-# The document that owns the captured values. It is the previous document while
-# an adoption runs, so a live write cannot hit the replacement.
 var _state_document: VoxelDocument
 var _applying := false
-# A plugin registers during its own _ready. Activating its toolbar there can
-# reach a tool node that the plugin has not created yet, so the press waits one
-# idle frame.
 var _pending_active_tool := ""
 var _pending_apply_scheduled := false
 
@@ -79,8 +62,6 @@ func _exit_tree() -> void:
 			button.toggled.disconnect(toggle_callback)
 
 
-## Registers one plugin toolbar and its optional settings resource. The id is
-## `PluginName/ToolbarName`.
 func register_tool(id: String, button: BaseButton, settings: Resource) -> void:
 	if _tool_buttons.get(id) != button:
 		_tool_buttons[id] = button
@@ -95,7 +76,6 @@ func register_tool(id: String, button: BaseButton, settings: Resource) -> void:
 				previous.changed.disconnect(old_callback)
 		_settings_resources[plugin] = settings
 		settings.changed.connect(_on_settings_changed.bind(plugin))
-	# A plugin can register after a document with saved state is active.
 	if _state_document != null:
 		var saved: Variant = _state_document.tool_settings.get(plugin)
 		if saved is Dictionary:
@@ -115,8 +95,6 @@ func _prune() -> void:
 			_tool_buttons.erase(id)
 
 
-## Removes one registered toolbar. A later press of its button no longer writes
-## the active tool.
 func unregister_tool(id: String) -> void:
 	var button: BaseButton = _tool_buttons.get(id)
 	if button == null:
@@ -158,8 +136,6 @@ func _can_save() -> bool:
 	return _state_document != null and State.document == _state_document
 
 
-# Writes one top-level tool key and keeps the others. Unknown keys from another
-# build stay in the document when they use a supported value type.
 func _save_key(key: String, value: Variant) -> void:
 	if not _can_save():
 		return
@@ -271,7 +247,6 @@ func _apply_resource(plugin: String, data: Variant) -> void:
 		var stamp: StampToolSettings = settings
 		if stamp.shape == StampToolSettings.BrushShape.STAMP and stamp.stamp_pattern.is_empty():
 			stamp.shape = StampToolSettings.BrushShape.CUBE
-			# Keep a later save honest about the fallback.
 			if _state_document != null:
 				var fallback: Dictionary = _state_document.tool_settings.duplicate()
 				var entry: Variant = fallback.get(plugin)

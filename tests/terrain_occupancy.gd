@@ -1,19 +1,5 @@
 extends "res://tests/test.gd"
 
-# Differential and performance test for the Smooth occupancy gather.
-#
-# `tests/terrain_occupancy_reference.gd` freezes the per-candidate gather that ran
-# before the bounded local box scan. Every fixture is gathered by the live job
-# and by the reference, then compared as an occupancy superset, the decisions,
-# the materials, and the changed chunks. The A/B
-# alternates the two paths in one warmed process and reports medians with their
-# sample counts.
-#
-#   godot --path . res://tests/terrain_occupancy.tscn
-#   godot --path . res://tests/terrain_occupancy.tscn -- occupancy_benchmark
-#
-# The benchmark is opt-in. It runs the maximum patch many times, so the suite
-# never pays for it.
 
 const REFERENCE := preload("res://tests/terrain_occupancy_reference.gd")
 const VoxelFalloff := preload("res://Globals/State/Tools/VoxelFalloff.gd")
@@ -21,24 +7,16 @@ const TERRAIN := preload("res://plugins/Terrain/TerrainTool.gd")
 const SmoothOperation := preload("res://plugins/Terrain/SmoothOperation.gd")
 const TerrainGeometry := preload("res://plugins/Terrain/TerrainGeometry.gd")
 
-## The measured samples per path. The median ignores one slow outlier.
 const AB_SAMPLES := 5
-## The warmed samples that run before the measured ones.
 const AB_WARMUPS := 2
-## The cells above and below a surface cell that a Smooth patch reaches. The
-## value matches the tool.
 const REACH := 2
-## The benchmark names that opt in to the long measurement.
 const BENCHMARK_NAMES := ["occupancy_benchmark"]
-## The benchmark deadline. It runs the maximum patch many times.
 const BENCHMARK_TIMEOUT := 900.0
 
 var _fixtures := {}
 var _order: Array[String] = []
 var _materials := {}
 var _sink := 0
-# The parity counters. A step lambda captures a local by value, so state shared
-# between steps lives on the instance.
 var _superset_misses := 0
 var _decision_misses := 0
 var _published := 0
@@ -67,12 +45,10 @@ func _benchmark_requested() -> bool:
 
 func _expect_frozen_reference() -> void:
 	var source := FileAccess.get_file_as_string("res://tests/terrain_occupancy_reference.gd")
-	# The frozen loop must not call a helper of the new path.
 	for forbidden in ["_occupancy_box", "_occupancy_cells", "_box_volume", "gather_reads"]:
 		expect(not source.contains(forbidden), "the frozen reference never calls %s" % forbidden)
 	expect(source.contains("edited_frame.has(point)"), "the frozen reference keeps the per-candidate lookup")
 	expect(source.contains("completed % 256 == 0"), "the frozen reference keeps its candidate checkpoint")
-	# The reference job gathers the old way on a real patch.
 	var fixture: Dictionary = _fixture("small_flat")
 	var job: Variant = _job("reference", fixture["frame"], fixture)
 	var cells: Array = fixture["cells"]
@@ -81,10 +57,6 @@ func _expect_frozen_reference() -> void:
 	expect(job.lookups == cells.size() * 27, "the reference job makes one kernel of lookups per candidate")
 
 
-# --- Fixtures ---------------------------------------------------------------
-
-# Builds the measured fixtures once. Each fixture holds a frame, the candidate
-# cells of a real Smooth patch, their weights, and the tick inputs.
 func _build_fixtures() -> void:
 	if not _fixtures.is_empty():
 		return
@@ -115,9 +87,6 @@ func _fixture(label: String) -> Dictionary:
 	return _fixtures[label]
 
 
-# Returns a solid plate from -size to size in x and z. The plate is [param
-# layers] cells thick and ends one cell below the origin. A rough plate lowers
-# the top of one column in three, so a candidate set follows a stepped surface.
 func _plate(center: Vector3i, size: int, layers: int, rough: bool) -> VoxelFrame:
 	var cells := {}
 	for x in range(center.x - size, center.x + size + 1):
@@ -130,8 +99,6 @@ func _plate(center: Vector3i, size: int, layers: int, rough: bool) -> VoxelFrame
 	return _frame_of(cells)
 
 
-# Returns a solid half-space that ends at the origin plane in x, so the patch
-# sits on a vertical wall and reads the surface along the x axis.
 func _wall(center: Vector3i, size: int, layers: int) -> VoxelFrame:
 	var cells := {}
 	for x in range(center.x - layers + 1, center.x + 1):
@@ -141,9 +108,6 @@ func _wall(center: Vector3i, size: int, layers: int) -> VoxelFrame:
 	return _frame_of(cells)
 
 
-# Returns nine isolated columns inside a radius-16 disc. The columns never touch
-# a neighbor kernel, so the candidate set is scattered and the box between them
-# holds many empty cells.
 func _columns() -> VoxelFrame:
 	var cells := {}
 	for entry: Vector3i in [Vector3i(0, 0, 0), Vector3i(12, 0, 0), Vector3i(-12, 0, 0), Vector3i(0, 0, 12), Vector3i(0, 0, -12), Vector3i(9, 0, 9), Vector3i(-9, 0, -9), Vector3i(9, 0, -9), Vector3i(-9, 0, 9)]:
@@ -158,8 +122,6 @@ func _frame_of(cells: Dictionary) -> VoxelFrame:
 	return frame
 
 
-# A small set of distinct materials, so a filled cell inherits a real local
-# material and the parity check covers the material lookup.
 func _material_for(x: int, z: int) -> PackedFloat32Array:
 	var key := Vector2i(x % 7, z % 5)
 	if not _materials.has(key):
@@ -167,10 +129,6 @@ func _material_for(x: int, z: int) -> PackedFloat32Array:
 	return _materials[key]
 
 
-# Returns the candidate cells and the weights of one Smooth patch. The rule is
-# the tool's: a disc footprint, the top surface along the signed layer axis, and
-# the two cells above and below each surface cell. The strongest weight wins when
-# two columns reach one cell.
 func _patch(frame: VoxelFrame, center: Vector3, radius: int, falloff: float, normal: Vector3) -> Dictionary:
 	var axis := TerrainGeometry.dominant_axis(normal)
 	var cardinal := Vector3.ZERO
@@ -202,8 +160,6 @@ func _patch(frame: VoxelFrame, center: Vector3, radius: int, falloff: float, nor
 	return {"cells": cells, "weights": weights}
 
 
-# --- Parity -----------------------------------------------------------------
-
 func _expect_parity() -> void:
 	_build_fixtures()
 	expect(_fixtures.size() == 8, "the fixture set holds every measured shape")
@@ -225,7 +181,6 @@ func _expect_parity() -> void:
 			for point: Vector3i in reference_occupied:
 				if not (production_occupied as Dictionary).has(point):
 					_superset_misses += 1
-			# Run both jobs on their own snapshot and compare the published work.
 			reference_job.edited_frame = (fixture["frame"] as VoxelFrame).copy_frame()
 			production_job.edited_frame = (fixture["frame"] as VoxelFrame).copy_frame()
 			reference_job.run()
@@ -257,8 +212,6 @@ func _expect_parity() -> void:
 	)
 
 
-# The published cell count of every fixture, so the report shows that the
-# decision parity covers a real change and not only a no-op.
 func _changed_counts() -> Array:
 	var counts := []
 	for label: String in _order:
@@ -266,8 +219,6 @@ func _changed_counts() -> Array:
 	return counts
 
 
-# Returns a description of the first difference between two finished jobs, or an
-# empty string when they agree.
 func _job_mismatch(reference_job: Variant, production_job: Variant) -> String:
 	if reference_job.cancelled or production_job.cancelled:
 		return "a job cancelled"
@@ -338,8 +289,6 @@ func _expect_halo_bounds() -> void:
 	)
 
 
-# --- Query counts -----------------------------------------------------------
-
 func _ensure_stats() -> void:
 	_build_fixtures()
 	for label: String in _order:
@@ -360,8 +309,6 @@ func _ensure_stats() -> void:
 		fixture["stats"] = stats
 
 
-# The unique read positions and the box volume of one fixture, both computed from
-# the candidate set alone.
 func _query_stats(fixture: Dictionary) -> Dictionary:
 	var cells: Array = fixture["cells"]
 	var offsets: Array = SmoothOperation.kernel_offsets(SmoothOperation.KERNEL_RADIUS)
@@ -379,9 +326,6 @@ func _query_stats(fixture: Dictionary) -> Dictionary:
 	return {"cells": cells.size(), "unique": unique.size(), "volume": volume}
 
 
-# --- Cancellation -----------------------------------------------------------
-
-# One production job that cancels itself at a named checkpoint.
 class CancelJob extends TERRAIN.SmoothJob:
 	var stops_after := 0
 	var checks := 0
@@ -399,16 +343,13 @@ func _expect_cancellation() -> void:
 	var cells: Array = fixture["cells"]
 	var source: VoxelFrame = fixture["frame"]
 	var before := source.count()
-	# The candidate scan checks once per OCCUPANCY_READ_CHECKPOINT candidates and
-	# the box scan checks once per chunk. The stop lands two chunk checks into the
-	# box scan.
 	var candidate_checks := cells.size() / TERRAIN.OCCUPANCY_READ_CHECKPOINT
 	var stops_after := candidate_checks + 2
 	var job := CancelJob.new()
 	job.edited_frame = source.copy_frame()
 	job.fields = _fields(fixture)
 	job.passes = int(fixture["passes"])
-	
+
 	job.radius = SmoothOperation.KERNEL_RADIUS
 	job.stops_after = stops_after
 	var started := Time.get_ticks_usec()
@@ -418,7 +359,7 @@ func _expect_cancellation() -> void:
 	full.edited_frame = source.copy_frame()
 	full.fields = _fields(fixture)
 	full.passes = int(fixture["passes"])
-	
+
 	full.radius = SmoothOperation.KERNEL_RADIUS
 	full.stops_after = 100000
 	started = Time.get_ticks_usec()
@@ -441,7 +382,7 @@ func _expect_cancellation() -> void:
 		entry.edited_frame = source.copy_frame()
 		entry.fields = _fields(fixture)
 		entry.passes = int(fixture["passes"])
-		
+
 		entry.radius = SmoothOperation.KERNEL_RADIUS
 		entry.stops_after = 0
 		entry.run()
@@ -454,7 +395,7 @@ func _expect_cancellation() -> void:
 		done.edited_frame = source.copy_frame()
 		done.fields = _fields(fixture)
 		done.passes = int(fixture["passes"])
-		
+
 		done.radius = SmoothOperation.KERNEL_RADIUS
 		done.stops_after = 100000
 		done.run()
@@ -464,8 +405,6 @@ func _expect_cancellation() -> void:
 		expect(source.count() == before, "a cancelled gather writes no cell")
 	)
 
-
-# --- Benchmark --------------------------------------------------------------
 
 func _benchmark() -> void:
 	_ensure_stats()
@@ -549,8 +488,6 @@ func _measure_fixture(label: String) -> Dictionary:
 	return medians
 
 
-# --- Shared helpers ---------------------------------------------------------
-
 func _fields(fixture: Dictionary) -> Array:
 	return [{
 		"cells": fixture["cells"],
@@ -563,7 +500,7 @@ func _job(path: String, frame: VoxelFrame, fixture: Dictionary) -> Variant:
 	job.edited_frame = frame
 	job.fields = _fields(fixture)
 	job.passes = int(fixture["passes"])
-	
+
 	job.radius = SmoothOperation.KERNEL_RADIUS
 	job.remove_threshold = SmoothOperation.REMOVE_THRESHOLD
 	job.add_threshold = SmoothOperation.ADD_THRESHOLD

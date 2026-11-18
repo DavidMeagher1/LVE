@@ -1,23 +1,12 @@
 class_name VoxelTool
 extends Node3D
 
-## Base class for an interactive voxel tool.
-##
-## A tool handles pointer input in the 3D viewport and writes to the current
-## frame. It owns one edit at a time through [VoxelEditTransaction]. A subclass
-## overrides [method apply] to change cells. It can override [method pick_start],
-## [method pick_drag], and [method update_visual] to change the pick and cursor.
-##
-## The base class opens an edit on a left press and closes it on release. It
-## refuses input while another edit is active.
 
 var _plane: StrokePlane = null
 var _last_target := VoxelPicking.NONE
 var _stroke_active := false
 var _cells_dirty := false
 var _affected: Array[Vector3i] = []
-# The tool's owned edit handle, or null. The handle stays with the tool for the
-# whole edit, so a cancel can only roll back this tool's own edit.
 var _edit: VoxelEditTransaction
 
 
@@ -28,8 +17,6 @@ func _unhandled_input(event: InputEvent) -> void:
 	if input_viewport == null:
 		return
 	if State.edit_busy(self):
-		# Another owner's foreground operation is running. Do not consume the
-		# event: the owning tool may still need the release, a key, or a motion.
 		return
 	var pos := Vector2.ZERO
 	if event is InputEventMouse:
@@ -56,8 +43,6 @@ func _accepts(event: InputEvent) -> bool:
 	return event is InputEventMouseButton or event is InputEventMouseMotion or event is InputEventKey
 
 
-## Handles one input event for this tool. Returns [code]true[/code] when the
-## tool consumes the event.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	var r := _ray(pos)
 	var origin: Vector3 = r[0]
@@ -95,8 +80,6 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 			update_visual(pick)
 			return true
 		if mm.button_mask == 0:
-			# A release outside the window sends no button event. A motion with
-			# no button ends the stroke the same way a release does.
 			if _stroke_active:
 				_end()
 			update_visual(_pick_start(origin, dir))
@@ -106,7 +89,6 @@ func handle_input(event: InputEvent, pos: Vector2) -> bool:
 
 
 func _apply_pick(target: Vector3i, hit: Vector3i) -> void:
-	# A tool that reports no change changes no cells, so it publishes nothing.
 	if not apply(target, hit):
 		return
 	for c in applied_cells(target, hit):
@@ -127,8 +109,6 @@ func _hit_at(c: Vector3i) -> Vector3i:
 	return VoxelPicking.NONE
 
 
-## Returns [code]true[/code] when the two colors match. An epsilon above zero
-## allows that much difference on each channel.
 func colors_equal(a: Color, b: Color, epsilon:float = 0.0) -> bool:
 	if epsilon <= 0.0:
 		return a == b
@@ -137,14 +117,10 @@ func colors_equal(a: Color, b: Color, epsilon:float = 0.0) -> bool:
 		absf(a.b - b.b) <= epsilon and absf(a.a - b.a) <= epsilon
 	)
 
-## Applies the tool to one cell. Returns [code]true[/code] when the tool
-## changed the model. The base version does nothing.
 func apply(_target: Vector3i, _hit: Vector3i) -> bool:
 	return false
 
 
-## Returns the cells that [method apply] can change for this pick. The base
-## version returns the target cell and the hit cell.
 func applied_cells(target: Vector3i, hit: Vector3i) -> Array[Vector3i]:
 	var out: Array[Vector3i] = []
 	if target != VoxelPicking.NONE:
@@ -156,8 +132,6 @@ func applied_cells(target: Vector3i, hit: Vector3i) -> Array[Vector3i]:
 
 func _end() -> void:
 	_flush_cells()
-	# Clear the input state before the close signals, so a handler that opens a new
-	# stroke keeps its own input state.
 	_plane = null
 	_last_target = VoxelPicking.NONE
 	_stroke_active = false
@@ -179,13 +153,6 @@ func _do_flush() -> void:
 	_affected.clear()
 
 
-# Open this tool's owned edit. Returns null when an edit is already active or the
-# current frame is missing. The caller must not mutate the model or mark a stroke
-# active until this returns non-null. A retained handle that a document reset
-# closed is dropped, so the tool acquires a fresh edit when State allows.
-## Opens this tool's owned edit. Returns null while another edit is active or
-## the current frame is missing. The caller must check the result before it
-## mutates the model.
 func open_stroke() -> VoxelEditTransaction:
 	if _edit != null and _edit.is_closed():
 		_edit = null
@@ -194,11 +161,6 @@ func open_stroke() -> VoxelEditTransaction:
 	return _edit
 
 
-# Close this tool's edit and record it as one history action. The tool handle is
-# cleared before the call, so a handler that opens a new stroke during the history
-# signal keeps its own handle.
-## Closes this tool's edit and records one history action. The default action is
-## [code]Stroke[/code]. Does nothing when the tool holds no edit.
 func close_stroke(action: String = "Stroke") -> void:
 	var tx := _edit
 	if tx == null:
@@ -207,10 +169,6 @@ func close_stroke(action: String = "Stroke") -> void:
 	State.finish_edit(tx, action)
 
 
-# Roll this tool's edit back. Does nothing when the tool holds no edit. The tool
-# handle is cleared before the call, so a handler that opens a new stroke during
-# the restore signal keeps its own handle.
-## Rolls this tool's edit back. Does nothing when the tool holds no edit.
 func abort_stroke() -> void:
 	var tx := _edit
 	if tx == null:
@@ -219,8 +177,6 @@ func abort_stroke() -> void:
 	State.cancel_edit(tx)
 
 
-## Cancels the open stroke and clears the pointer state. A tool that is removed
-## while a button is held calls this, so its edit cannot outlive the tool.
 func cancel_stroke() -> void:
 	_plane = null
 	_last_target = VoxelPicking.NONE
@@ -241,7 +197,7 @@ func _pick_drag(origin: Vector3, dir: Vector3) -> PickResult:
 func _request(origin: Vector3, dir: Vector3, plane: StrokePlane) -> PickRequest:
 	var req := PickRequest.new()
 	req.origin = origin
-	req.dir = dir
+	req.direction = dir
 	req.frame = State.get_current_voxel_frame()
 	req.plane = plane
 	req.forward = _forward()
@@ -249,18 +205,14 @@ func _request(origin: Vector3, dir: Vector3, plane: StrokePlane) -> PickRequest:
 	return req
 
 
-## Returns the press pick for this request. Override it to change the pick.
 func pick_start(request: PickRequest) -> PickResult:
-	return VoxelPicking.start_pick(request.origin, request.dir, request.frame, request.forward, request.slice)
+	return VoxelPicking.start_pick(request.origin, request.direction, request.frame, request.forward, request.slice)
 
 
-## Returns the drag pick for this request. Override it to change the pick.
 func pick_drag(request: PickRequest) -> PickResult:
-	return VoxelPicking.drag_pick(request.origin, request.dir, request.frame, request.plane)
+	return VoxelPicking.drag_pick(request.origin, request.direction, request.frame, request.plane)
 
 
-## Updates the tool cursor for one pick. The base version moves the node to the
-## picked cell and hides it when the pick misses.
 func update_visual(pick: PickResult) -> void:
 	if pick.target == VoxelPicking.NONE:
 		visible = false
@@ -269,12 +221,6 @@ func update_visual(pick: PickResult) -> void:
 	visible = true
 
 
-# --- External driver --------------------------------------------------------
-# These methods let a remote driver feed a cell-space gesture into the real
-# tool. They use the same pick, write, and close paths as pointer input, so the
-# tool keeps its pattern, symmetry, selection, slice, and undo rules.
-
-## Returns a cursor plane that faces the view for one cell.
 func driver_plane(cell: Vector3i) -> StrokePlane:
 	var axis := 1
 	var view := get_viewport()
@@ -289,14 +235,13 @@ func driver_plane(cell: Vector3i) -> StrokePlane:
 				axis = 2
 	var plane := StrokePlane.new()
 	plane.axis = axis
-	plane.idx = cell[axis]
+	plane.cell_index = cell[axis]
 	plane.point = Vector3(cell)
 	plane.normal = Vector3.ZERO
 	plane.normal[axis] = 1.0
 	return plane
 
 
-## Moves the tool cursor to one cell without changing the model.
 func driver_show_cursor(cell: Vector3i, hit: Vector3i) -> void:
 	if cell == VoxelPicking.NONE:
 		visible = false
@@ -308,9 +253,6 @@ func driver_show_cursor(cell: Vector3i, hit: Vector3i) -> void:
 	update_visual(pick)
 
 
-## Opens this tool's stroke at one cell. [param hit] is the occupied cell under
-## the pointer, or [constant VoxelPicking.NONE] for an add target. Returns
-## [code]false[/code] while another edit is active.
 func driver_begin_stroke(cell: Vector3i, hit: Vector3i) -> bool:
 	if open_stroke() == null:
 		return false
@@ -322,7 +264,6 @@ func driver_begin_stroke(cell: Vector3i, hit: Vector3i) -> bool:
 	return true
 
 
-## Extends the open stroke to one cell. It uses the tool's own stroke path.
 func driver_stroke_to(cell: Vector3i) -> void:
 	if _edit == null:
 		return
@@ -331,20 +272,15 @@ func driver_stroke_to(cell: Vector3i) -> void:
 	driver_show_cursor(cell, cell if _paints_existing() else VoxelPicking.NONE)
 
 
-## Ends the open stroke like a pointer release.
 func driver_end_stroke() -> void:
 	if _edit == null:
 		return
 	_end()
 
 
-## Returns [code]true[/code] while the tool holds an edit or publishes a stroke.
 func driver_is_busy() -> bool:
 	return _edit != null
 
 
-## Returns [code]true[/code] when the tool changes only cells that already exist.
 func _paints_existing() -> bool:
 	return false
-
-

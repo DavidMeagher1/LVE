@@ -1,20 +1,5 @@
 extends "res://tests/test.gd"
 
-# A staged measurement of the spray pipeline at the maximum canonical sizes.
-#
-# The measurement reports what the latency benchmark cannot separate: the model
-# size, the gathered and candidate cell counts, the painted count, the pure
-# kernel cost, the frame snapshot cost, the input cost of one hover and one
-# press, the sample-to-preview install lag, and the press-to-visible-model-draw
-# lag. The fixture build and the renderer settle stay outside every timed value.
-#
-#   godot --headless --path . res://tests/benchmarks/spray_max64.tscn
-#   godot --path . --screen 0 res://tests/benchmarks/spray_max64.tscn
-#
-# A spec names its canonical sizes explicitly: `spot` and `search` are widths in
-# cells and `speed` is the sampled spot center count. An optional `mixed` value
-# writes two alternating materials, and an optional `symmetry` value turns on
-# that many symmetry axes about the model center.
 
 const ProbeScript := preload("./spray_latency_tool.gd")
 const PreviewProbeScript := preload("./spray_latency_preview.gd")
@@ -22,7 +7,6 @@ const SPRAY_SCENE := "res://plugins/paint/SprayTool.tscn"
 const SEED := 20261024
 const VIEWPORT_SIZE := Vector2i(800, 500)
 const SPARSE_VOXELS := 48
-## The warmup count and the measured count of one repeated value.
 const WARMUPS := 1
 const SAMPLES := 3
 
@@ -93,9 +77,6 @@ func _run(spec: Dictionary) -> void:
 		])
 		expect(cells.size() > 0, "the maximum batch paints cells")
 	)
-	# The hover event is deferred to the next frame, so the request cost is read
-	# from the tool probe and the install lag from the test body. A wait inside a
-	# step callable is not awaited by this harness.
 	step("When the kernel phases are timed separately", func():
 		var context := State.drawing_context()
 		var reach := VoxelBrushSize.reach(search) + VoxelBrushSize.reach(spot)
@@ -152,9 +133,6 @@ func _run(spec: Dictionary) -> void:
 		expect(hover_input_us < 50000, "the hover keeps the input frame short")
 	)
 	step("When the installed batch is shown to the cursor again", func():
-		# The tool builds one dict for the cursor and the shared preview hashes it
-		# and dedupes it. This measures both halves of one cursor request for a
-		# maximum batch.
 		_tool._preview_version = -1
 		_cursor.reset_probe()
 		var started := Time.get_ticks_usec()
@@ -165,7 +143,6 @@ func _run(spec: Dictionary) -> void:
 		])
 		expect(_tool._batch_cells.size() > 0, "the cursor request holds the installed batch")
 	)
-	# The press and the visible draw are measured the same way.
 	step("When the user presses the same voxel", func():
 		_watch = _watch_around([_middle], VoxelBrushSize.reach(search) + VoxelBrushSize.reach(spot))
 		_snapshot_displayed()
@@ -201,7 +178,6 @@ func _run(spec: Dictionary) -> void:
 	)
 
 
-# Samples the batch through the pure kernel with the explicit spec inputs.
 func _kernel(spec: Dictionary, report: Dictionary) -> Array[Vector3i]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SEED
@@ -209,9 +185,6 @@ func _kernel(spec: Dictionary, report: Dictionary) -> Array[Vector3i]:
 
 
 func _prepare(spec: Dictionary) -> void:
-	# The Main scene adds its editor and its plugins with a deferred call, so the
-	# first frames still reconfigure the editor. Wait them out before the tool is
-	# installed, or a startup rebuild would replace the measured tool.
 	for i in 4:
 		await get_tree().process_frame
 	State.stop()
@@ -307,7 +280,6 @@ func _middle_cell(spec: Dictionary) -> Vector3i:
 	return Vector3i(size / 2, 0, size / 2)
 
 
-# Fills one world box. A chunk the box covers whole uses one bulk grid fill.
 func _fill_box(min_cell: Vector3i, max_cell: Vector3i, mixed: bool) -> void:
 	var material_a := VoxelFrame.material(Color.from_rgba8(90, 160, 220))
 	var material_b := VoxelFrame.material(Color.from_rgba8(220, 120, 70))
@@ -338,8 +310,6 @@ func _fill_box(min_cell: Vector3i, max_cell: Vector3i, mixed: bool) -> void:
 					chunk.materials = material_a.duplicate()
 					chunk.shared_materials = true
 				else:
-					# Two alternating materials. The ids and the table are real, so
-					# the batch writes a non-uniform model.
 					chunk.materials = material_a.duplicate()
 					chunk.materials.append_array(material_b)
 					for lz in range(lo.z, hi.z + 1):

@@ -1,51 +1,26 @@
 extends MeshInstance3D
 
-## The camera-facing transform pivot gizmo.
-##
-## Move draws four axis arrows. Scale draws the same arrows on two opposite
-## diagonals and a line to the pointer during a drag. Rotate draws a joint square
-## with two quarter-turn arrows at the pivot and a bone to the pointer during a
-## drag. The fixed handles keep a constant screen size. The gizmo draws over
-## geometry.
 
 const VoxelLineMesh := preload("res://Globals/Rendering/VoxelLineMesh.gd")
 
-## The shape that the gizmo draws.
 enum Kind {
-	## Four view-plane arrows.
 	MOVE,
-	## A bone from the pivot to the pointer.
 	ROTATE,
-	## Two diagonal arrows on opposite corners.
 	SCALE,
 }
 
-## The handle radius in screen pixels.
 const RADIUS_PX := 64.0
-## The half size of the Rotate joint square in screen pixels.
 const JOINT_HALF_PX := 7.0
-## The local half size of a center square that matches the joint square.
 const CENTER_HALF := JOINT_HALF_PX / RADIUS_PX
-## The arrow reach as a fraction of the handle radius.
 const ARROW_REACH := 0.325
-## The arrow shaft start as a fraction of the handle radius.
 const ARROW_INNER := 0.06
-## The arrowhead length as a fraction of the handle radius.
 const ARROW_HEAD := 0.07
-## The arrowhead half width as a fraction of the handle radius. Equal to the
-## head length, so each arrowhead closes at a right angle.
 const ARROW_SIDE := ARROW_HEAD
-## The Rotate mark corner offset in screen pixels.
 const ROTATE_OFFSET_PX := 8.0
-## The straight run before and after the Rotate mark corner, in screen pixels.
 const ROTATE_RUN_PX := 13.0
-## The Rotate mark arrowhead length in screen pixels.
 const ROTATE_HEAD_PX := 3.5
-## The Rotate mark arrowhead half width in screen pixels. Equal to the head
-## length, so each arrowhead closes at a right angle.
 const ROTATE_SIDE_PX := ROTATE_HEAD_PX
 
-## The shape to draw.
 @export var kind: Kind = Kind.MOVE
 
 var _pivot := Vector3.ZERO
@@ -88,7 +63,6 @@ func _exit_tree() -> void:
 	_size_viewport = null
 
 
-## Shows the gizmo at one pivot.
 func show_at(pivot: Vector3) -> void:
 	if not _has_pivot or not _pivot.is_equal_approx(pivot):
 		_has_tip = false
@@ -97,14 +71,11 @@ func show_at(pivot: Vector3) -> void:
 	_pose()
 
 
-## Hides the gizmo.
 func hide_gizmo() -> void:
 	_has_pivot = false
 	visible = false
 
 
-## Sets the pointer that the Rotate bone and the Scale line follow. A nonzero
-## plane normal uses the plane that the drag captured.
 func set_pointer(screen_pos: Vector2, plane_normal := Vector3.ZERO) -> void:
 	if screen_pos == _pointer and plane_normal == _plane_normal:
 		return
@@ -114,7 +85,6 @@ func set_pointer(screen_pos: Vector2, plane_normal := Vector3.ZERO) -> void:
 		_pose()
 
 
-## Shows or hides the line to the pointer. The fixed marks stay visible.
 func set_dragging(dragging: bool) -> void:
 	if dragging == _dragging:
 		return
@@ -123,7 +93,6 @@ func set_dragging(dragging: bool) -> void:
 		_pose()
 
 
-## Poses the gizmo again after a camera or viewport change.
 func refresh_pose() -> void:
 	if _has_pivot:
 		_pose()
@@ -171,8 +140,6 @@ func _pose_fixed(camera: Camera3D) -> void:
 	visible = true
 
 
-# Returns the pointer point on the drag plane. Returns Vector3.INF when the
-# pointer ray misses the plane.
 func _pointer_tip(camera: Camera3D) -> Vector3:
 	var pointer := _pointer
 	if pointer == Vector2.INF:
@@ -216,7 +183,6 @@ func _pose_rotate(camera: Camera3D) -> void:
 	visible = true
 
 
-# Returns the world distance that one screen pixel covers at one point.
 func _world_per_pixel(camera: Camera3D, point: Vector3) -> float:
 	if camera.is_position_behind(point):
 		return 0.0
@@ -292,9 +258,6 @@ func _append_rotate_marks(vertices: PackedVector3Array, half: float, world_px: f
 	_append_turn_arrow(vertices, Vector2(-half - offset, -half - offset), Vector2.LEFT, up, run, head, side)
 
 
-# Draws one arrow that runs along a straight [param across] arm, turns a right
-# angle at [param corner], then runs along [param along] to a right-angle head.
-# Each arm is [param run] long from the corner.
 func _append_turn_arrow(vertices: PackedVector3Array, corner: Vector2, across: Vector2, along: Vector2, run: float, head: float, side: float) -> void:
 	var tip := corner + along * run
 	_append_line(vertices, _plane_point(corner - across * run), _plane_point(corner))

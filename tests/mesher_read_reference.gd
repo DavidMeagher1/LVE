@@ -1,21 +1,11 @@
 extends RefCounted
 
-## The frozen read path of one chunk, kept for a differential test.
-##
-## This is a verbatim copy of the padded snapshot, the face scan, and the face
-## group collection that [VoxelMeshBuilder] used before the strided index and
-## overlap-only rewrites. The parity test builds every case twice, once through
-## the production builder and once through this file, and compares the arrays,
-## the atlas, and the geometry bytes. Do not change this code to follow a
-## production change. It is the reference, and its answers are frozen.
 
 const CHUNK_SIZE := 16
 const PADDED_CHUNK_SIZE := 18
 const SURFACE := preload("res://Globals/Rendering/VoxelSurface.gd")
 
 
-## Builds one chunk through the frozen body. Returns
-## [code]{arrays, atlas_size, geometry_bytes}[/code].
 static func build(frame: VoxelFrame, location: Vector3i, smooth: bool, texture_materials: bool) -> Dictionary:
 	var snapshot := snapshot(frame, location, smooth)
 	var padded_cell_colors: PackedColorArray = snapshot[0]
@@ -40,7 +30,6 @@ static func build(frame: VoxelFrame, location: Vector3i, smooth: bool, texture_m
 	}
 
 
-# The frozen padded snapshot of one chunk plus its neighbor border.
 static func snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals: bool) -> Array:
 	var padded_cell_colors := PackedColorArray()
 	padded_cell_colors.resize(PADDED_CHUNK_SIZE * PADDED_CHUNK_SIZE * PADDED_CHUNK_SIZE)
@@ -93,7 +82,6 @@ static func snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals: 
 	return [padded_cell_colors, padded_cell_materials, materials, occupied_planes]
 
 
-# The frozen exposed-face scan. Returns the greedy face material cells.
 static func _greedy(padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array, smooth_normals: bool) -> Array:
 	var vertex_positions := PackedVector3Array()
 	var vertex_normals := PackedVector3Array()
@@ -184,7 +172,6 @@ static func _greedy(padded_cell_colors: PackedColorArray, padded_cell_materials:
 	return [arrays, vertex_positions.size() * 40 + triangle_indices.size() * 4]
 
 
-# The frozen exposed-face group collection.
 static func groups(padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array) -> Dictionary:
 	var groups := {}
 	var material_cache := {}

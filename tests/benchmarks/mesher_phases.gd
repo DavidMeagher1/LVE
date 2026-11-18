@@ -1,18 +1,7 @@
 extends "res://tests/test.gd"
 
-# Attributes one surface-chunk build to its phases, in one warm process.
-#
-# A 48-cube block holds three by three by three chunks, so one pass builds
-# twenty-seven chunks on the same frame. The pass shows the repeated neighbor
-# reads of the padded snapshot, the face scan, and the cleanup with the atlas
-# bake. Every configuration runs on every pass, the first two passes warm, and
-# the reported number is the median of the next five. A best-of-five is not used,
-# because it hides the run to run spread.
-#
-#   godot --headless --path . res://tests/benchmarks/mesher_phases.tscn
 
 const REF := preload("res://tests/mesher_read_reference.gd")
-## The configurations of the frozen-versus-production A/B.
 const AB_CONFIGS := [
 	{"fixture": "uniform", "smooth": false, "atlas": false},
 	{"fixture": "uniform", "smooth": false, "atlas": true},
@@ -21,15 +10,10 @@ const AB_CONFIGS := [
 ]
 
 const CHUNK := VoxelFrame.CHUNK_SIZE
-## The chunk span on each axis. Three spans give a 48-cube block.
 const SPAN := 3
-## The full chunk count of one pass.
 const CHUNKS := SPAN * SPAN * SPAN
-## The sample pairs a full chunk's face scan tests.
 const FULL_SCAN_QUERIES := 3 * 2 * CHUNK * CHUNK * CHUNK
-## The number of warm passes before the measured passes.
 const WARMUP_PASSES := 2
-## The number of measured passes. The report takes their median.
 const MEASURE_PASSES := 5
 
 var _fixtures := {}
@@ -71,8 +55,6 @@ func _attribute() -> void:
 	)
 
 
-# A/B one configuration against the frozen old body, alternating the two paths
-# inside one process and comparing their medians.
 func _check_ab(config: Dictionary) -> void:
 	var frame: VoxelFrame = _fixtures[config["fixture"]]
 	var smooth: bool = config["smooth"]
@@ -102,8 +84,6 @@ func _time_production(frame: VoxelFrame, smooth: bool, atlas: bool) -> int:
 	var started := Time.get_ticks_usec()
 	for location: Vector3i in frame.chunks:
 		var builder := VoxelMeshBuilder.new()
-		# The frozen body has no shortcut, so the production side turns it off for
-		# a like-for-like read path comparison.
 		builder.enclosed_shortcut = false
 		builder.source_frame = frame
 		builder.chunk_location = location
@@ -113,7 +93,6 @@ func _time_production(frame: VoxelFrame, smooth: bool, atlas: bool) -> int:
 	return Time.get_ticks_usec() - started
 
 
-# One full pass over every chunk of one configuration.
 func _run_pass(name: String, row: Dictionary) -> void:
 	var frame: VoxelFrame = _fixtures[row["fixture"]]
 	var smooth: bool = row["smooth"]
@@ -152,7 +131,6 @@ func _run_pass(name: String, row: Dictionary) -> void:
 	row["passes"].append(totals)
 
 
-# Reports the median of the measured passes, and checks the attribution holds.
 func _check(name: String, row: Dictionary) -> void:
 	var medians := {}
 	for key in row["passes"][0]:
@@ -175,14 +153,8 @@ func _check(name: String, row: Dictionary) -> void:
 		medians["queries"], medians["atlas_bytes"],
 	])
 	expect(medians["triangles"] > 0, "%s builds triangles" % name)
-	# Each key takes its own median, so the phase medians may sit a little above
-	# the median of the whole pass. The tolerance covers that and the timer calls.
 	expect(phases <= total + maxi(1000, total / 20), "%s attributes every phase inside the measured pass" % name)
 	if name == "uniform_flat_atlas":
-		# The center chunk is the only enclosed one, so it never runs the scan.
-		# Every other chunk reads its own grid once (26 times 4096) and each
-		# present face neighbor's overlap once (102 directed face reads of one
-		# plane, 256 cells).
 		expect(medians["culled"] == 1, "the uniform block culls only its center chunk")
 		expect(medians["queries"] == (CHUNKS - 1) * FULL_SCAN_QUERIES, "every built full chunk tests every padded sample pair")
 		expect(medians["chunks_read"] == 26 + 102, "the flat snapshot reads one grid per built chunk and face neighbor")
@@ -192,8 +164,6 @@ func _check(name: String, row: Dictionary) -> void:
 		expect(medians["chunks_read"] == 27 + 108, "the mixed flat snapshot reads every chunk and face neighbor")
 
 
-# Build one 48-cube block. A mixed block holds four full materials, one of them
-# translucent, so its own cells emit internal faces and its atlas holds patches.
 func _build_fixture(mixed: bool) -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	var flat := VoxelFrame.material(Color.from_rgba8(90, 160, 220))

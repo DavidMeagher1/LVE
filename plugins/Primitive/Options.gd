@@ -1,10 +1,5 @@
 extends HBoxContainer
 
-## The primitive option bar.
-##
-## It selects the operation, edits the smooth blend and the shell, edits the
-## cylinder options, and commits or cancels the pending primitives. The shape is
-## selected from the primitive toolbar.
 
 var _settings := preload("./PrimitiveSettings.tres")
 

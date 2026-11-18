@@ -1,11 +1,5 @@
 extends "res://tests/test.gd"
 
-# The owned edit transaction. These tests prove the contract: one edit at a time,
-# an identity-checked commit and cancel, a frozen context, and a clean release on
-# a document reset.
-#
-#   godot --path . res://tests/edit_transaction.tscn
-#   godot --path . res://tests/edit_transaction.tscn -- noop
 
 var _brush_settings := preload("res://plugins/brush/BrushSettings.tres")
 const BRUSH_SCENE := preload("res://plugins/brush/BrushTool.tscn")
@@ -81,8 +75,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Cancel only the handles this file created. The document reset above already
-# releases any transaction that a failed test left open.
 func after_test() -> void:
 	if is_instance_valid(tool):
 		tool.free()
@@ -178,7 +170,6 @@ func _selection_masks() -> void:
 	)
 
 
-# True when the live masks agree with the masks of a fresh rebuild.
 func _masks_match_cells() -> bool:
 	var rebuilt := VoxelSelection.new()
 	rebuilt.cells = State.selection.all_cells().duplicate()
@@ -415,8 +406,6 @@ func _captured_context() -> void:
 	)
 
 
-# One frozen scope holds every writable-cell rule. The write gate applies it to
-# any job that carries it, and a job without one writes everything.
 func _scope_filter() -> void:
 	step("Given a scope with a Y slice and one selected cell", func():
 		scope = VoxelFrame.EditContext.new()
@@ -481,9 +470,6 @@ func _open_transform_on_selection() -> void:
 	reentrant = transform_tool.open_stroke()
 
 
-# A real transform tool cancels and a selection handler opens a new stroke on the
-# same tool. The cancel must reset the input state before the callback and must not
-# close the replacement stroke.
 func _same_tool_reentrant_transform_cancel() -> void:
 	step("Given a real move tool with an open stroke", func():
 		transform_tool = MOVE_SCENE.instantiate()
@@ -510,8 +496,6 @@ func _same_tool_reentrant_transform_cancel() -> void:
 	)
 
 
-# A freed tool cannot finish its open stroke, so it must roll the stroke back.
-# Without that rollback, every later edit stays blocked.
 func _transform_predelete() -> void:
 	step("Given a real move tool with an open stroke", func():
 		transform_tool = MOVE_SCENE.instantiate()
@@ -532,8 +516,6 @@ func _transform_predelete() -> void:
 	)
 
 
-# A real brush commits and a history handler opens a new stroke on the same tool.
-# The new stroke must survive the close, with its own context and source frame.
 func _same_tool_reentrant_commit() -> void:
 	step("Given a real brush with an open stroke", func():
 		tool = BRUSH_SCENE.instantiate()
@@ -563,8 +545,6 @@ func _same_tool_reentrant_commit() -> void:
 	)
 
 
-# A real brush cancels and a selection handler opens a new stroke on the same
-# tool. The cancel must restore the frame without clearing the new stroke.
 func _same_tool_reentrant_cancel() -> void:
 	step("Given a real brush with an open stroke", func():
 		tool = BRUSH_SCENE.instantiate()
@@ -588,8 +568,6 @@ func _same_tool_reentrant_cancel() -> void:
 	)
 
 
-# A document reset closes the tool's retained handle. The next open drops the
-# closed handle and acquires a fresh edit.
 func _tool_reacquire_after_document() -> void:
 	step("Given a real brush with an open stroke", func():
 		tool = BRUSH_SCENE.instantiate()
@@ -598,7 +576,6 @@ func _tool_reacquire_after_document() -> void:
 		old_context = committed.edit_context
 	)
 	step("When the document is replaced while the tool holds the handle", func():
-		# A manual tool that does not react to the context change keeps its handle.
 		State.edit_context_changing.disconnect(tool._cancel_edit)
 		State.document = VoxelDocument.new()
 		expect(tool._edit == committed and committed.is_closed(), "the tool holds the closed handle")
@@ -614,8 +591,6 @@ func _tool_reacquire_after_document() -> void:
 	)
 
 
-# A closed transaction releases the live document and selection, while the undo
-# history keeps the frozen frame on purpose.
 func _transaction_release() -> void:
 	step("Given a commit, a cancel, and a no-op edit", func():
 		refs.clear()

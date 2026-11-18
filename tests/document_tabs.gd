@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-## Checks the per-document tab state, the tab strip, and the runtime fields that
-## must stay out of the file format.
 
 const TABS_SCENE := preload("res://ui/MenuBar/DocumentTabs.tscn")
 const SAMPLE_DOCUMENT := "res://splash.lve"
@@ -345,8 +343,6 @@ func _on_test_quit() -> void:
 	_quit_seen = true
 
 
-# A quit can start while a close Save As is open. Cancelling the shared dialog
-# must clear the close target too, or the next Save As closes a stale tab.
 func _close_target() -> void:
 	var menu := main.get_node("%MenuBar")
 	step("Given a pending close Save As and a quit that interrupts it", func():

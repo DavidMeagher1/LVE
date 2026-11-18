@@ -1,21 +1,9 @@
 class_name VoxelFrame
 extends Resource
 
-## One animation frame of voxel cells.
-##
-## A frame stores cells in 16-cube chunks. Each chunk holds a dense grid of
-## material ids and a material table. The frame also stores the frame duration
-## and the serialized octree storage.
-##
-## [method capture] returns a shared snapshot. The next write copies a chunk
-## before it mutates, so a snapshot stays frozen.
 
-## The frame duration in milliseconds.
 @export_range(1, 1000, 1) var delay_ms := 100
 
-# Version 3 stores sparse chunk roots, one material table per chunk, and flattened octree nodes.
-## The serialized voxel storage. A read encodes the frame. A write decodes the
-## bytes. The setter ignores an empty value.
 @export_storage var voxel_data: PackedByteArray:
 	get:
 		return _encode()
@@ -23,47 +11,24 @@ extends Resource
 		if not value.is_empty():
 			_decode(value)
 
-## The chunk edge length in cells.
 const CHUNK_SIZE := 16
-# `chunk_position` shifts by this, because a right shift floors toward negative
-# infinity the way floor division does. It must stay `log2(CHUNK_SIZE)`, and
-# `chunk_storage` fails if the two drift apart.
-## The bit shift from a cell coordinate to a chunk coordinate.
 const CHUNK_SHIFT := 4
-## The current voxel storage version.
 const STORAGE_VERSION := 3
-## The current serialized record field count.
 const STORAGE_RECORD_SIZE := 3
-## The version 2 serialized record field count.
 const VERSION_2_RECORD_SIZE := 5
-## The version 1 serialized record field count.
 const VERSION_1_RECORD_SIZE := 3
-# One material holds nine floats. The color alpha stays live for the mesher and the export.
-## The float count of one material.
 const MATERIAL_STRIDE := 9
-## The offset of the color in one material.
 const MATERIAL_COLOR := 0
-## The offset of the emission color in one material.
 const MATERIAL_EMISSION := 4
-## The offset of the metallic value in one material.
 const MATERIAL_METALLIC := 7
-## The offset of the roughness value in one material.
 const MATERIAL_ROUGHNESS := 8
-## The default emission color.
 const DEFAULT_EMISSION := Color.BLACK
-## The default metallic value.
 const DEFAULT_METALLIC := 0.0
-## The default roughness value.
 const DEFAULT_ROUGHNESS := 1.0
-## The six face directions in the chunk face bit order.
 const DIRECTIONS := [Vector3i.RIGHT, Vector3i.LEFT, Vector3i.UP, Vector3i.DOWN, Vector3i.BACK, Vector3i.FORWARD]
 
-# One lock for the lazy occupancy row index. A build runs off the lock, so two
-# readers can build the same rows at once. The lock covers only the install.
 static var _occupancy_lock := Mutex.new()
 
-# Phase counters of the terrain benchmark. Plain integers stay safe for the
-# worker pool and the suite. The benchmark resets them by direct static write.
 static var _profile_capture_calls := 0
 static var _profile_capture_us := 0
 static var _profile_restore_calls := 0
@@ -79,53 +44,29 @@ static var _profile_bounds_rescan_calls := 0
 static var _profile_bounds_rescan_us := 0
 
 
-# Build one material. A transparent color erases the voxel.
-## Builds one nine-float material. A transparent color erases the voxel.
 static func material(color: Color, emission: Color = DEFAULT_EMISSION, metallic: float = DEFAULT_METALLIC, roughness: float = DEFAULT_ROUGHNESS) -> PackedFloat32Array:
 	return PackedFloat32Array([color.r, color.g, color.b, color.a, emission.r, emission.g, emission.b, metallic, roughness])
 
 
-## Returns [code]true[/code] when the material erases a cell.
 static func is_empty(cell_material: PackedFloat32Array) -> bool:
 	return material_color(cell_material) == Color.TRANSPARENT
 
 
-## Returns the color of one material.
 static func material_color(cell_material: PackedFloat32Array) -> Color:
 	return Color(cell_material[MATERIAL_COLOR], cell_material[MATERIAL_COLOR + 1], cell_material[MATERIAL_COLOR + 2], cell_material[MATERIAL_COLOR + 3])
 
 
-## The frozen edit inputs of one operation.
-##
-## It holds the symmetry axes, the symmetry origin, the selected cells, and the
-## writable slice. It expands a set of changes through the symmetry and filters
-## them through the selection and the slice.
 class EditContext extends RefCounted:
-	## The symmetry axes as a bit mask. Bit 0 is X, bit 1 is Y, and bit 2 is Z.
 	var axes := 0
-	## Twice the symmetry origin in cell units.
 	var origin_twice := Vector3i.ZERO
-	## The selected cells as a dictionary keyed by cell position. An empty
-	## dictionary allows every cell.
 	var selection := {}
-	## The world axis of the writable slice, or -1 when every layer is writable.
 	var slice_axis := -1
-	## The first writable layer along [member slice_axis].
 	var slice_index := 0
-	## The number of writable layers from [member slice_index]. It is 1 or more
-	## when the slice is on.
 	var slice_count := 1
-	## The axes that the centered document size limits. Bit 0 is X, bit 1 is Y,
-	## and bit 2 is Z. An axis with a size of zero is infinite.
 	var bounded_axes := 0
-	## The first writable cell on each bounded axis.
 	var bounds_min := Vector3i.ZERO
-	## The first cell after the last writable cell on each bounded axis.
 	var bounds_max := Vector3i.ZERO
 
-	## Returns [code]true[/code] when this context permits a write to
-	## [param cell]. The slice and the document size are spatial limits. An
-	## empty selection allows every cell.
 	func allows(cell: Vector3i) -> bool:
 		if slice_axis >= 0 and (cell[slice_axis] < slice_index or cell[slice_axis] >= slice_index + slice_count):
 			return false
@@ -135,8 +76,6 @@ class EditContext extends RefCounted:
 					return false
 		return selection.is_empty() or selection.has(cell)
 
-	# The selection snapshot is read-only, so a copy shares it.
-	## Returns a copy of this context. The selection snapshot is shared.
 	func duplicate() -> EditContext:
 		var copy := EditContext.new()
 		copy.axes = axes
@@ -150,9 +89,6 @@ class EditContext extends RefCounted:
 		copy.bounds_max = bounds_max
 		return copy
 
-	## Returns [param cells] without the cells that this context forbids. It
-	## returns the same dictionary when nothing is limited, so an edit without a
-	## selection or a slice pays no copy.
 	func filter(cells: Dictionary) -> Dictionary:
 		if slice_axis < 0 and selection.is_empty() and bounded_axes == 0:
 			return cells
@@ -162,10 +98,6 @@ class EditContext extends RefCounted:
 				kept[cell] = cells[cell]
 		return kept
 
-	## Expands a set of changes through the symmetry and the selection filter.
-	## [param existing_only] keeps only cells that the frame holds.
-	## [param matching_material] keeps only cells with that full material. The
-	## optional [param job] supplies the cancel checkpoints.
 	func expand(changes: Dictionary, frame: VoxelFrame, existing_only: bool, matching_material: Variant, job: EditJob = null) -> Dictionary:
 		if axes == 0 and selection.is_empty() and slice_axis < 0 and bounded_axes == 0 and not existing_only and matching_material == null:
 			return changes
@@ -185,7 +117,6 @@ class EditContext extends RefCounted:
 					return {}
 		if axes == 0:
 			return expanded
-		# Preserve original colors where the original and reflected patterns overlap.
 		for cell: Vector3i in changes:
 			if _allows(cell, frame, existing_only, matching_material):
 				expanded[cell] = changes[cell]
@@ -194,7 +125,6 @@ class EditContext extends RefCounted:
 				return {}
 		return expanded
 
-	## Returns the mirror of one cell for one symmetry mask.
 	func reflect(cell: Vector3i, mask: int) -> Vector3i:
 		var destination := cell
 		for axis in 3:
@@ -202,25 +132,13 @@ class EditContext extends RefCounted:
 				destination[axis] = origin_twice[axis] - cell[axis]
 		return destination
 
-	# The reflected destination must hold the same full material as the source cell.
 	func _allows(cell: Vector3i, frame: VoxelFrame, existing_only: bool, matching_material: Variant) -> bool:
 		return allows(cell) and (not existing_only or frame.has(cell)) and (matching_material == null or frame.matches(cell, matching_material))
 
-## One cancellable edit job that runs on the worker pool.
-##
-## A job reports progress through [method stage] and checks the cancel flag
-## through [method checkpoint]. State owns the worker launch and the join.
 class EditJob extends RefCounted:
-	## The worker pool task id, or -1 when no worker runs.
 	var worker_task_id := -1
-	## The edit context that expands the changes, or null.
 	var edit_context: EditContext
-	## The expanded cells that the job applied.
 	var applied_cells := {}
-	# Set this when every cell of the job holds the same material. The write then
-	# skips the per-chunk test for a uniform batch. Leave it null when the cells
-	# can differ, or the write would treat a mixed batch as uniform.
-	## The one material of every cell, or null when the cells can differ.
 	var applied_uniform: Variant = null
 	var _label := "Preparing edit"
 	var _completed := 0
@@ -228,7 +146,6 @@ class EditJob extends RefCounted:
 	var _cancel_requested := false
 	var _progress_lock := Mutex.new()
 
-	## Starts one progress stage. [param total] is the total work count.
 	func stage(label: String, total: int) -> void:
 		_progress_lock.lock()
 		_label = label
@@ -236,8 +153,6 @@ class EditJob extends RefCounted:
 		_total = total
 		_progress_lock.unlock()
 
-	## Reports the completed count and returns [code]false[/code] when the job
-	## must stop.
 	func checkpoint(completed: int) -> bool:
 		_progress_lock.lock()
 		_completed = completed
@@ -245,40 +160,29 @@ class EditJob extends RefCounted:
 		_progress_lock.unlock()
 		return keep_running
 
-	## Returns the current progress as [code][label, completed, total][/code].
 	func progress() -> Array:
 		_progress_lock.lock()
 		var result := [_label, _completed, _total]
 		_progress_lock.unlock()
 		return result
 
-	## Requests a stop. The job stops at its next checkpoint.
 	func cancel() -> void:
 		_progress_lock.lock()
 		_cancel_requested = true
 		_progress_lock.unlock()
 
-	# Wait for the worker and retire its handle. This owns the wait and the id
-	# reset only: it never cancels the job, and it never touches the operation,
-	# the result, or the publication checkpoint. Main thread only. A job without
-	# a worker, or one whose task was already retired, returns at once.
-	## Waits for the worker and retires its handle. It never cancels the job. Call
-	## it on the main thread only.
 	func wait_for_worker() -> void:
 		if worker_task_id < 0:
 			return
 		WorkerThreadPool.wait_for_task_completion(worker_task_id)
 		worker_task_id = -1
 
-	## Expands the changes through the context and writes them to the frame.
-	## Returns the chunk locations that need a new surface.
 	func apply_cells(frame: VoxelFrame, changes: Dictionary, existing_only := false, matching_material: Variant = null) -> Array[Vector3i]:
 		applied_cells = edit_context.expand(changes, frame, existing_only, matching_material, self) if edit_context else changes
 		if not checkpoint(0):
 			return []
 		return frame.set_cells(applied_cells, self, applied_uniform)
 
-	## Returns the estimated work after the symmetry expansion.
 	func estimate_work(original_work: int) -> int:
 		var work := original_work
 		if edit_context:
@@ -287,83 +191,38 @@ class EditJob extends RefCounted:
 					work *= 2
 		return work
 
-## The read-only occupancy rows of one chunk.
-##
-## Row k holds the occupied x bits of the local row (y, z), where k is
-## `y + CHUNK_SIZE * z`. That is the same order as the chunk grid slot walk.
-## The masks and counts are immutable after the build, so a copy-on-write chunk
-## copy shares them. The revision names the occupancy revision they describe.
 class OccupancyRows extends RefCounted:
-	## The occupied x bits of each local row.
 	var masks := PackedInt32Array()
-	## The occupied cell count of each local row.
 	var counts := PackedByteArray()
-	## The occupancy revision that these rows describe.
 	var revision := 0
-	## The dense grid slots that the build read.
 	var grid_reads := 0
-	## The row masks that the build wrote.
 	var build_slots := 0
 
 
-## One 16-cube chunk of voxel cells.
-##
-## The chunk holds a dense grid of material ids and a material table. Id 0 is
-## an empty cell. Table id k reads entry k - 1 of the material table.
 class Chunk extends RefCounted:
-	# One grid slot holds one material id. Id 0 is an empty cell, so an erase
-	# leaves no hole. A table entry can serve many cells; a write to a shared
-	# entry gives that cell its own entry. Table id k reads entry k - 1.
-	## The chunk coordinate.
 	var location := Vector3i.ZERO
-	## The dense grid of material ids, one slot per local cell.
 	var grid := PackedInt32Array()
-	## The material table, nine floats per entry.
 	var materials := PackedFloat32Array()
-	## The occupied cell count.
 	var occupied_count := 0
-	## A revision counter that a surface cache can watch.
 	var voxel_revision := 0
-	## The cached bounds of the occupied cells.
 	var occupied_bounds := AABB()
-	## Whether [member occupied_bounds] needs a rescan.
 	var bounds_dirty := false
-	# A bulk fill points every cell at one table entry. A later single-cell write
-	# must not change that shared entry, so it gives that cell its own entry and
-	# leaves the shared one alone. The flag stays set, because the chunk can still
-	# hold shared entries after the write.
-	## Whether more than one cell points at one material entry.
 	var shared_materials := false
-	## The cached serialized record for this chunk.
 	var serialized_record: Array = []
-	## A per-color cell cache for [method VoxelFrame.cells_with_color].
 	var positions_by_color: Dictionary = {}
-	## The occupancy revision. It moves only when a cell appears or disappears.
-	## A material-only write keeps it, so the occupancy rows survive a repaint.
 	var occupancy_revision := 0
-	# The cached occupancy rows and the revision they describe. The value is
-	# immutable after install, so a copy-on-write chunk copy can share it.
 	var _occupancy_rows: OccupancyRows = null
-	# A chunk below this occupied-cell count keeps only its occupied slots. A
-	# write expands it to the dense grid once. 512 cells fill 4 KB as slot/value
-	# pairs, so the sparse form stays smaller than the 16 KB grid with room for
-	# the binary search.
 	const SPARSE_CELL_LIMIT := 512
-	# The sorted local slots of a sparse chunk.
 	var _sparse_slots := PackedInt32Array()
-	# The material id of each sparse slot, by the same index.
 	var _sparse_values := PackedInt32Array()
-	# The lowest set column of a 16-bit row mask, by the low nibble.
 	const LOWEST_COLUMN := [0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0]
 
 	func _init() -> void:
 		grid.resize(VoxelFrame.CHUNK_SIZE * VoxelFrame.CHUNK_SIZE * VoxelFrame.CHUNK_SIZE)
 
-	## Returns [code]true[/code] when this chunk stores only its occupied slots.
 	func is_sparse() -> bool:
 		return grid.is_empty()
 
-	## Returns the lowest set column of a 16-bit row mask.
 	static func first_column(mask: int) -> int:
 		if mask & 15:
 			return LOWEST_COLUMN[mask & 15]
@@ -373,7 +232,6 @@ class Chunk extends RefCounted:
 			return 8 + LOWEST_COLUMN[(mask >> 8) & 15]
 		return 12 + LOWEST_COLUMN[(mask >> 12) & 15]
 
-	# The index of one local slot in the sparse list, or -1.
 	func _sparse_index(slot: int) -> int:
 		var low := 0
 		var high := _sparse_slots.size() - 1
@@ -388,14 +246,12 @@ class Chunk extends RefCounted:
 				high = middle - 1
 		return -1
 
-	## Returns the material id of one local slot.
 	func cell_id_at_slot(slot: int) -> int:
 		if not grid.is_empty():
 			return grid[slot]
 		var index := _sparse_index(slot)
 		return _sparse_values[index] if index >= 0 else 0
 
-	## Expands a sparse chunk into the dense grid.
 	func ensure_dense() -> void:
 		if not grid.is_empty():
 			return
@@ -405,7 +261,6 @@ class Chunk extends RefCounted:
 		_sparse_slots = PackedInt32Array()
 		_sparse_values = PackedInt32Array()
 
-	## Compresses a low-occupancy chunk to its occupied slots.
 	func compress_if_sparse() -> void:
 		if grid.is_empty() or occupied_count > SPARSE_CELL_LIMIT:
 			return
@@ -418,9 +273,6 @@ class Chunk extends RefCounted:
 				_sparse_values.append(id)
 		grid = PackedInt32Array()
 
-	## Returns the occupancy rows of this chunk. A miss builds them once per
-	## occupancy revision. A material-only write keeps the revision, so a repaint
-	## reuses the rows. The result is read-only.
 	func occupancy_rows() -> OccupancyRows:
 		for _attempt in 2:
 			VoxelFrame._occupancy_lock.lock()
@@ -439,16 +291,12 @@ class Chunk extends RefCounted:
 			VoxelFrame._occupancy_lock.unlock()
 		return _build_occupancy_rows(occupancy_revision)
 
-	## Returns [code]true[/code] when the cached occupancy rows describe the
-	## current occupancy. It is a diagnostic.
 	func occupancy_index_current() -> bool:
 		VoxelFrame._occupancy_lock.lock()
 		var current := _occupancy_rows != null and _occupancy_rows.revision == occupancy_revision
 		VoxelFrame._occupancy_lock.unlock()
 		return current
 
-	# Build the row masks from the dense grid. The build runs off the install
-	# lock, so a reader never waits on a full chunk scan.
 	func _build_occupancy_rows(revision: int) -> OccupancyRows:
 		var built := OccupancyRows.new()
 		built.masks.resize(VoxelFrame.CHUNK_SIZE * VoxelFrame.CHUNK_SIZE)
@@ -477,17 +325,12 @@ class Chunk extends RefCounted:
 		built.revision = revision
 		return built
 
-	# Flat slot for one local cell. The z axis runs slowest.
-	## Returns the flat grid slot for one local cell. The z axis runs slowest.
 	static func cell_slot(local_cell: Vector3i) -> int:
 		return local_cell.x + VoxelFrame.CHUNK_SIZE * (local_cell.y + VoxelFrame.CHUNK_SIZE * local_cell.z)
 
-	# The first world cell of this chunk.
-	## Returns the first world cell of this chunk.
 	func origin() -> Vector3i:
 		return location * VoxelFrame.CHUNK_SIZE
 
-	## Returns an independent copy of this chunk.
 	func copy() -> Chunk:
 		var chunk_copy := Chunk.new()
 		chunk_copy.location = location
@@ -503,28 +346,21 @@ class Chunk extends RefCounted:
 		chunk_copy.occupied_bounds = occupied_bounds
 		chunk_copy.bounds_dirty = bounds_dirty
 		chunk_copy.shared_materials = shared_materials
-		# A worker can install the rows on this shared chunk at the same time.
-		# Take the install lock, so the reference stays valid across the copy.
 		VoxelFrame._occupancy_lock.lock()
 		chunk_copy.occupancy_revision = occupancy_revision
 		chunk_copy._occupancy_rows = _occupancy_rows
 		VoxelFrame._occupancy_lock.unlock()
 		return chunk_copy
 
-	# The material id of one world cell. A missing or empty cell returns 0.
-	## Returns the material id of one world cell. A missing or empty cell
-	## returns 0.
 	func material_id(cell_position: Vector3i) -> int:
 		var local_cell := cell_position - origin()
 		if local_cell.x < 0 or local_cell.y < 0 or local_cell.z < 0 or local_cell.x >= VoxelFrame.CHUNK_SIZE or local_cell.y >= VoxelFrame.CHUNK_SIZE or local_cell.z >= VoxelFrame.CHUNK_SIZE:
 			return 0
 		return cell_id_at_slot(cell_slot(local_cell))
 
-	## Returns [code]true[/code] when this chunk holds the cell.
 	func has(cell_position: Vector3i) -> bool:
 		return material_id(cell_position) > 0
 
-	# True when the table entry at id holds the full material.
 	func _id_matches_material(id: int, cell_material: PackedFloat32Array) -> bool:
 		if id == 0:
 			return false
@@ -534,19 +370,12 @@ class Chunk extends RefCounted:
 				return false
 		return true
 
-	## Returns [code]true[/code] when the cell holds that full material.
 	func matches(cell_position: Vector3i, cell_material: PackedFloat32Array) -> bool:
 		return _id_matches_material(material_id(cell_position), cell_material)
 
-	# Compare by content. Two equal chunks can number their ids differently.
-	## Compares two chunks by content. Two equal chunks can number their ids
-	## differently.
 	func equals(other: Chunk) -> bool:
 		if occupied_count != other.occupied_count:
 			return false
-		# Identical ids and tables are equal. This is a sufficient check only, so
-		# a miss falls through to the content compare below. Two sparse chunks
-		# also need the same slots, because both grids are empty.
 		if grid.is_empty() and other.grid.is_empty():
 			if _sparse_slots == other._sparse_slots and _sparse_values == other._sparse_values and materials == other.materials:
 				return true
@@ -569,8 +398,6 @@ class Chunk extends RefCounted:
 					return false
 		return true
 
-	## Stores one material at one cell. A shared entry is replaced by a new entry
-	## for that cell.
 	func store(cell_position: Vector3i, cell_material: PackedFloat32Array) -> void:
 		ensure_dense()
 		var local_cell := cell_position - origin()
@@ -585,11 +412,6 @@ class Chunk extends RefCounted:
 					break
 			if same:
 				return
-			# A bulk fill points every cell at one entry. Give this cell its own entry
-			# rather than expanding the whole chunk, and leave the shared entry alone
-			# so the cells that still point at it keep their material. A repaint-only
-			# workload never erases, so the reclamation has to happen here or the
-			# table grows with every edit.
 			if shared_materials:
 				materials.append_array(cell_material)
 				grid[slot] = materials.size() / MATERIAL_STRIDE
@@ -604,7 +426,6 @@ class Chunk extends RefCounted:
 		occupied_count += 1
 		occupancy_revision += 1
 
-	## Erases one cell.
 	func erase(cell_position: Vector3i) -> void:
 		ensure_dense()
 		var local_cell := cell_position - origin()
@@ -619,36 +440,10 @@ class Chunk extends RefCounted:
 		if materials.size() > occupied_count * MATERIAL_STRIDE * 2:
 			_compact()
 
-	# Apply a batch of changes whose cells all belong to this chunk. The chunk
-	# origin is passed in, so no cell pays for it again.
-	#
-	# `copy_for_write` runs once, before the first change, and returns the chunk
-	# to mutate. It returns a copy while the frame still shares this one, so a
-	# batch that changes nothing never copies.
-	#
-	# Returns [chunk to keep, face bits of the changed cells, changed cell count].
-	## Applies a batch of changes that all belong to this chunk. Returns
-	## [code][chunk to keep, face bits, changed cell count][/code]. A null chunk
-	## means that the batch erased the whole chunk.
 	func apply_changes(changes: Dictionary, chunk_origin: Vector3i, copy_for_write: Callable, declared_uniform: Variant = null) -> Array:
-		# A batch that covers every cell of this chunk with one material writes the
-		# region at once instead of one store per cell. The dense grid then costs
-		# almost nothing per cell, which is the dense equivalent of writing one
-		# high node of an octree. The test is on the batch, not on the caller, so
-		# any writer that covers a chunk qualifies: a large brush, a fill, a
-		# paste, or an erase. A smaller footprint does not reach it, and pays the
-		# per-cell path. A caller that knows its batch is uniform passes the
-		# material and skips the test.
 		var bulk := _uniform_batch(changes, declared_uniform)
 		if bulk.size() > 0:
 			return _fill_chunk(bulk, chunk_origin, copy_for_write)
-		# A partial batch whose cells the caller declared share one material can
-		# write one appended row for the whole batch. The hint is trusted only
-		# because it is explicit, and the chunk must already share rows: on an
-		# unshared chunk every cell owns its row, so the per-cell path below writes
-		# in place without growing the table or forcing a compaction. An empty
-		# replacement also keeps that path, so the erase semantics stay in one
-		# place.
 		if shared_materials and declared_uniform != null:
 			var declared: PackedFloat32Array = declared_uniform
 			if not VoxelFrame.is_empty(declared):
@@ -691,8 +486,6 @@ class Chunk extends RefCounted:
 						copied = true
 						target.ensure_dense()
 					if target.shared_materials:
-						# Give this cell its own entry and leave the shared one alone.
-						# Reclaim here too, because a repaint-only batch never erases.
 						target.materials.append_array(cell_material)
 						target.grid[slot] = target.materials.size() / MATERIAL_STRIDE
 						if target.materials.size() > target.occupied_count * MATERIAL_STRIDE * 2:
@@ -714,26 +507,14 @@ class Chunk extends RefCounted:
 					max_cell = Vector3i(maxi(max_cell.x, local.x), maxi(max_cell.y, local.y), maxi(max_cell.z, local.z))
 			face_bits |= VoxelFrame._face_bits(local)
 			changed_count += 1
-		# One compaction per batch instead of one per erased cell. The table never
-		# grows on an erase, so the end state is the same. A chunk this batch emptied
-		# needs no compaction, because the frame drops it. Only a copied target is
-		# compacted, so a batch that changes nothing leaves the chunk shared.
 		if changed_count > 0 and target.occupied_count > 0 and target.materials.size() > target.occupied_count * MATERIAL_STRIDE * 2:
 			target._compact()
-		# One bounds merge for the whole batch instead of one per cell.
 		if changed_count > 0 and not target.bounds_dirty and max_cell.x >= min_cell.x:
 			var batch_bounds := AABB(Vector3(chunk_origin + min_cell) - Vector3.ONE * 0.5, Vector3(max_cell - min_cell + Vector3i.ONE))
 			target.occupied_bounds = target.occupied_bounds.merge(batch_bounds) if target.occupied_bounds.has_volume() else batch_bounds
 		return [target, face_bits, changed_count]
 
 
-	# A partial batch whose cells the caller declared share one material. The chunk
-	# already shares rows, so every changed slot moves to one row appended once for
-	# the batch. The batch pays one row instead of one row or one in-place write per
-	# cell. Rows outside the batch stay, so a cell the batch does not touch keeps
-	# its material. The row is appended only when the batch changes a cell, so a
-	# repeated batch copies nothing. The caller must pass the hint only when every
-	# cell holds it.
 	func _apply_uniform_partial(changes: Dictionary, chunk_origin: Vector3i, copy_for_write: Callable, cell_material: PackedFloat32Array) -> Array:
 		var target := self
 		var copied := false
@@ -742,9 +523,6 @@ class Chunk extends RefCounted:
 		var min_cell := Vector3i.MAX
 		var max_cell := Vector3i.MIN
 		var new_id := 0
-		# The last id and its match are cached. A batch writes one chunk, and a
-		# coherent batch visits the same row in a run, so a scalar cache removes the
-		# repeated compare without a dictionary step per cell.
 		var last_id := 0
 		var last_same := false
 		for cell_position: Vector3i in changes:
@@ -770,8 +548,6 @@ class Chunk extends RefCounted:
 				target = copy_for_write.call()
 				copied = true
 				target.ensure_dense()
-				# One owned row for the whole batch. `append_array` copies the values,
-				# so a later change to the caller's material cannot reach the table.
 				target.materials.append_array(cell_material)
 				new_id = target.materials.size() / MATERIAL_STRIDE
 				target.shared_materials = true
@@ -784,23 +560,14 @@ class Chunk extends RefCounted:
 			if not target.bounds_dirty:
 				min_cell = Vector3i(mini(min_cell.x, local.x), mini(min_cell.y, local.y), mini(min_cell.z, local.z))
 				max_cell = Vector3i(maxi(max_cell.x, local.x), maxi(max_cell.y, local.y), maxi(max_cell.z, local.z))
-		# One compaction for the whole batch, after every changed slot moved to the
-		# new row, so the new id is never used after a remap.
 		if changed_count > 0 and target.occupied_count > 0 and target.materials.size() > target.occupied_count * MATERIAL_STRIDE * 2:
 			target._compact()
-		# One bounds merge for the whole batch. Every change here is a write, so the
-		# bounds only grow.
 		if changed_count > 0 and not target.bounds_dirty and max_cell.x >= min_cell.x:
 			var batch_bounds := AABB(Vector3(chunk_origin + min_cell) - Vector3.ONE * 0.5, Vector3(max_cell - min_cell + Vector3i.ONE))
 			target.occupied_bounds = target.occupied_bounds.merge(batch_bounds) if target.occupied_bounds.has_volume() else batch_bounds
 		return [target, face_bits, changed_count]
 
 
-	# The one material of a batch that covers every cell of this chunk, or an empty
-	# material when the batch is partial or holds more than one material. The
-	# caller buckets by chunk, so a batch of 4096 cells covers this chunk whole.
-	# A caller that knows its material passes it and skips the per-cell test. The
-	# coverage test stays, because a partial batch must never fill a whole chunk.
 	func _uniform_batch(changes: Dictionary, declared: Variant = null) -> PackedFloat32Array:
 		var cells := VoxelFrame.CHUNK_SIZE * VoxelFrame.CHUNK_SIZE * VoxelFrame.CHUNK_SIZE
 		if changes.size() != cells:
@@ -817,28 +584,15 @@ class Chunk extends RefCounted:
 		return single
 
 
-	# Write one material to every cell of this chunk. The grid holds one id and the
-	# table one material, so the cost does not follow the cell count. An empty
-	# material removes the chunk, so the caller receives a null chunk to drop.
 	func _fill_chunk(cell_material: PackedFloat32Array, chunk_origin: Vector3i, copy_for_write: Callable) -> Array:
 		var cells := VoxelFrame.CHUNK_SIZE * VoxelFrame.CHUNK_SIZE * VoxelFrame.CHUNK_SIZE
 		if VoxelFrame.is_empty(cell_material):
 			if occupied_count == 0:
 				return [self, 0, 0]
-			# Every occupied cell changes, and the empty ones are already empty. The
-			# frame drops the whole chunk, so a copy, a grid fill, and a compaction
-			# would all be discarded work. The faces that need a rebuild are the
-			# extent of what was occupied.
 			var bounds := get_bounds()
 			var min_cell := Vector3i(bounds.position + Vector3.ONE * 0.5) - chunk_origin
 			var max_cell := Vector3i(bounds.end - Vector3.ONE * 0.5) - chunk_origin
 			return [null, _extent_face_bits(min_cell, max_cell), occupied_count]
-		# The batch covers the chunk, so the result is one entry for every cell. A
-		# chunk the bulk fill wrote already holds exactly one entry, and then the
-		# answer needs no scan at all: the same material changes nothing, and any
-		# other material changes every cell and touches every face. Anything else
-		# needs the walk, because a chunk written cell by cell holds one entry per
-		# cell and the comparison has to be by content.
 		var count := 0
 		var bits := 0
 		if occupied_count == cells and materials.size() == MATERIAL_STRIDE:
@@ -866,18 +620,12 @@ class Chunk extends RefCounted:
 		return [filled, bits, count]
 
 
-	# How many cells of this chunk differ from a full uniform batch, and the extent
-	# of those cells. A chunk that already holds the material reports a count of
-	# zero, so a repeated motion copies nothing. Each id is compared once, so the
-	# walk costs a grid scan rather than a material scan per cell.
 	func _changed_extent(cell_material: PackedFloat32Array) -> Array:
 		var size := VoxelFrame.CHUNK_SIZE
 		var cells := size * size * size
 		if occupied_count == 0:
 			return [cells, Vector3i.ZERO, Vector3i.ONE * (size - 1)]
 		if grid.is_empty():
-			# Every empty cell changes, so a sparse chunk always reaches every
-			# face. Only the occupied cells can already hold the material.
 			var matching := 0
 			var sparse_matches := {}
 			for index in _sparse_slots.size():
@@ -920,8 +668,6 @@ class Chunk extends RefCounted:
 		return [changed, min_cell, max_cell]
 
 
-	# The faces a set of changed cells touches, from their extent. A bit is set when
-	# a changed cell sits on that face, which is exactly when the extent reaches it.
 	static func _extent_face_bits(min_cell: Vector3i, max_cell: Vector3i) -> int:
 		if max_cell.x < min_cell.x:
 			return 0
@@ -933,9 +679,6 @@ class Chunk extends RefCounted:
 				bits |= 1 << (axis * 2 + 1)
 		return bits
 
-	# Drop the table entries no slot uses and merge equal materials. The grid
-	# remaps to the used ids. The remap walks the ids in order, so equal chunks
-	# save equal bytes.
 	func _compact() -> void:
 		ensure_dense()
 		var used_ids: Array = []
@@ -974,13 +717,9 @@ class Chunk extends RefCounted:
 			if usage[id] > 1:
 				shared = true
 				break
-		# A cached record stores content, not these ids, so it stays valid after
-		# a representation-only remap. Do not clear it here.
 		materials = compacted
 		shared_materials = shared
 
-	## Returns the color of one cell, or [constant Color.TRANSPARENT] for an
-	## empty cell.
 	func get_color(cell_position: Vector3i) -> Color:
 		var id := material_id(cell_position)
 		if id == 0:
@@ -988,7 +727,6 @@ class Chunk extends RefCounted:
 		var base := (id - 1) * MATERIAL_STRIDE
 		return Color(materials[base], materials[base + 1], materials[base + 2], materials[base + 3])
 
-	## Returns the emission color of one cell.
 	func get_emission(cell_position: Vector3i) -> Color:
 		var id := material_id(cell_position)
 		if id == 0:
@@ -996,26 +734,20 @@ class Chunk extends RefCounted:
 		var base := (id - 1) * MATERIAL_STRIDE + MATERIAL_EMISSION
 		return Color(materials[base], materials[base + 1], materials[base + 2])
 
-	## Returns the metallic value of one cell.
 	func get_metallic(cell_position: Vector3i) -> float:
 		var id := material_id(cell_position)
 		return materials[(id - 1) * MATERIAL_STRIDE + MATERIAL_METALLIC] if id > 0 else DEFAULT_METALLIC
 
-	## Returns the roughness value of one cell.
 	func get_roughness(cell_position: Vector3i) -> float:
 		var id := material_id(cell_position)
 		return materials[(id - 1) * MATERIAL_STRIDE + MATERIAL_ROUGHNESS] if id > 0 else DEFAULT_ROUGHNESS
 
-	## Returns the full material of one cell. An empty cell returns a transparent
-	## material.
 	func get_material(cell_position: Vector3i) -> PackedFloat32Array:
 		var id := material_id(cell_position)
 		if id == 0:
 			return VoxelFrame.material(Color.TRANSPARENT)
 		return materials.slice((id - 1) * MATERIAL_STRIDE, id * MATERIAL_STRIDE)
 
-	# Every occupied world cell, in grid order.
-	## Returns every occupied world cell, in grid order.
 	func world_cells() -> Array[Vector3i]:
 		var cell_positions: Array[Vector3i] = []
 		var size := VoxelFrame.CHUNK_SIZE
@@ -1033,8 +765,6 @@ class Chunk extends RefCounted:
 				written += 1
 		return cell_positions
 
-	## Returns the bounds of the occupied cells. It rescans when the bounds are
-	## dirty.
 	func get_bounds() -> AABB:
 		if bounds_dirty:
 			var min_cell := Vector3i.MAX
@@ -1060,37 +790,24 @@ class Chunk extends RefCounted:
 			bounds_dirty = false
 		return occupied_bounds
 
-	# True when the cell sits on the current occupied bounds, so removing it can
-	# shrink them. Only then does an erase need a full rescan.
-	## Returns [code]true[/code] when the cell sits on the current bounds. Only
-	## then can an erase shrink the bounds.
 	func on_bounds(cell_position: Vector3i) -> bool:
 		var min_cell := Vector3i(occupied_bounds.position + Vector3.ONE * 0.5)
 		var max_cell := Vector3i(occupied_bounds.end - Vector3.ONE * 0.5)
 		return cell_position.x == min_cell.x or cell_position.y == min_cell.y or cell_position.z == min_cell.z or cell_position.x == max_cell.x or cell_position.y == max_cell.y or cell_position.z == max_cell.z
 
-	# Extend the cached bounds with one written cell. The caller keeps the
-	# bounds clean, so a batch of writes needs no rescan.
-	## Extends the cached bounds with one written cell.
 	func grow_bounds(cell_position: Vector3i) -> void:
 		if bounds_dirty:
 			return
 		var cell_bounds := AABB(Vector3(cell_position) - Vector3.ONE * 0.5, Vector3.ONE)
 		occupied_bounds = occupied_bounds.merge(cell_bounds) if occupied_bounds.has_volume() else cell_bounds
 
-## The occupied chunks, keyed by chunk coordinate.
 var chunks: Dictionary = {}
 var _shared_chunks: Dictionary = {}
-# The cached frame bounds and the chunk count they describe. A cache hit checks
-# the chunk count, so a raw chunk add or remove cannot leave stale bounds. A raw
-# change to a chunk entry that keeps the count must call `invalidate_bounds()`,
-# which repairs the bounds only. Use the frame write methods for cell changes.
 var _bounds := AABB()
 var _bounds_dirty := true
 var _bounds_chunk_count := -1
 
 
-## Returns the occupied cell count.
 func count() -> int:
 	var cell_count := 0
 	for chunk in chunks.values():
@@ -1098,17 +815,10 @@ func count() -> int:
 	return cell_count
 
 
-# The first cell of the chunk that holds this cell. A right shift floors toward
-# negative infinity, which is what floor division does, so it matches
-# `floori(x / CHUNK_SIZE)` for negative cells too. `CHUNK_SHIFT` carries the
-# power-of-two assumption, and `chunk_storage` checks it against `CHUNK_SIZE`.
-## Returns the chunk coordinate that holds one cell. It floors toward negative
-## infinity, so negative cells map correctly.
 static func chunk_position(cell_position: Vector3i) -> Vector3i:
 	return Vector3i(cell_position.x >> CHUNK_SHIFT, cell_position.y >> CHUNK_SHIFT, cell_position.z >> CHUNK_SHIFT)
 
 
-## Removes every cell.
 func clear() -> void:
 	chunks = {}
 	_shared_chunks = {}
@@ -1116,68 +826,51 @@ func clear() -> void:
 	_bounds_chunk_count = -1
 
 
-## Returns the material id of one world cell. A missing chunk returns zero.
 func material_id(cell_position: Vector3i) -> int:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk.material_id(cell_position) if chunk else 0
 
 
-## Returns the occupancy rows of one chunk, or [code]null[/code] when the frame
-## does not hold that chunk.
 func occupancy_rows_at(location: Vector3i) -> OccupancyRows:
 	var chunk: Chunk = chunks.get(location)
 	return chunk.occupancy_rows() if chunk else null
 
 
-## Returns [code]true[/code] when the frame holds the cell.
 func has(cell_position: Vector3i) -> bool:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk != null and chunk.has(cell_position)
 
 
-## Returns the color of one cell, or [constant Color.TRANSPARENT] for an empty
-## cell.
 func get_color(cell_position: Vector3i) -> Color:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk.get_color(cell_position) if chunk else Color.TRANSPARENT
 
 
-## Returns the emission color of one cell.
 func get_emission(cell_position: Vector3i) -> Color:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk.get_emission(cell_position) if chunk else DEFAULT_EMISSION
 
 
-## Returns the metallic value of one cell.
 func get_metallic(cell_position: Vector3i) -> float:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk.get_metallic(cell_position) if chunk else DEFAULT_METALLIC
 
 
-## Returns the roughness value of one cell.
 func get_roughness(cell_position: Vector3i) -> float:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk.get_roughness(cell_position) if chunk else DEFAULT_ROUGHNESS
 
 
-## Returns the full material of one cell. An empty cell returns a transparent
-## material.
 func get_material(cell_position: Vector3i) -> PackedFloat32Array:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk.get_material(cell_position) if chunk else material(Color.TRANSPARENT)
 
 
-# Compare the whole stored material. One voxel holds the color, the emission, the metallic, and the roughness.
-## Returns [code]true[/code] when the cell holds that full material. It compares
-## the color, the emission, the metallic, and the roughness.
 func matches(cell_position: Vector3i, cell_material: PackedFloat32Array) -> bool:
 	var chunk: Chunk = chunks.get(chunk_position(cell_position))
 	return chunk != null and chunk.matches(cell_position, cell_material)
 
 
-# One write supplies the whole material. A transparent color erases the voxel.
-## Sets one cell. It copies a shared chunk first. A transparent color erases
-## the cell.
 func set_cell(cell_position: Vector3i, cell_material: PackedFloat32Array) -> void:
 	var chunk_location := chunk_position(cell_position)
 	var chunk: Chunk = chunks.get(chunk_location)
@@ -1211,30 +904,14 @@ func set_cell(cell_position: Vector3i, cell_material: PackedFloat32Array) -> voi
 	_bounds_dirty = true
 
 
-# Batch writes copy and invalidate each changed chunk once.
-# The result lists every chunk that needs a new surface: each changed chunk and
-# each neighbor that meshes across the changed faces. A mesher reads one cell
-# beyond its chunk, so only cells on a chunk face affect a neighbor.
-## Writes a batch of cells. Each changed chunk is copied and invalidated once.
-## Returns the chunk locations that need a new surface: each changed chunk and
-## each neighbor that meshes across a changed face. A canceled [param edit_job]
-## returns an empty array.
 func set_cells(cell_materials: Dictionary, edit_job: EditJob = null, uniform_material: Variant = null) -> Array[Vector3i]:
-	# The one write gate. A job that carries an edit scope may write only the
-	# cells that the scope allows, and the filtered set is the set the job
-	# reports as applied. A document write, a load, or a history restore passes
-	# no job, so it is never limited.
 	if edit_job != null and edit_job.edit_context != null:
 		cell_materials = edit_job.edit_context.filter(cell_materials)
 		edit_job.applied_cells = cell_materials
 	var started := Time.get_ticks_usec()
-	# A cancelled batch can still write some chunks, so the cache starts dirty.
 	_bounds_dirty = true
 	var changes_by_chunk := {}
 	var completed := 0
-	# Hold the current batch in a local. A brush stamp writes its cells in a
-	# spatially coherent order, so almost every cell lands in the chunk the last
-	# cell used and needs no dictionary lookup for its batch.
 	var last_location := Vector3i.MAX
 	var last_batch: Dictionary = {}
 	for cell_position: Vector3i in cell_materials:
@@ -1255,8 +932,6 @@ func set_cells(cell_materials: Dictionary, edit_job: EditJob = null, uniform_mat
 		var chunk: Chunk = chunks.get(chunk_location)
 		var chunk_changes: Dictionary = changes_by_chunk[chunk_location]
 		var chunk_origin := chunk_location * CHUNK_SIZE
-		# The batch copies the chunk once, before its first change. A batch that
-		# changes nothing leaves the frame sharing the chunk.
 		var copy_for_write := func() -> Chunk:
 			var target: Chunk = null
 			if chunk == null:
@@ -1277,9 +952,6 @@ func set_cells(cell_materials: Dictionary, edit_job: EditJob = null, uniform_mat
 			continue
 		chunk = outcome[0]
 		if chunk == null:
-			# The batch erased every cell of the chunk, so the frame drops it. No
-			# copy was made, so the shared marker must go with the chunk. Otherwise
-			# the marker outlives the removal until the next capture or restore.
 			chunks.erase(chunk_location)
 			_shared_chunks.erase(chunk_location)
 		else:
@@ -1289,7 +961,6 @@ func set_cells(cell_materials: Dictionary, edit_job: EditJob = null, uniform_mat
 			if chunk.occupied_count == 0:
 				chunks.erase(chunk_location)
 			else:
-				# A clean batch needs no rescan. Only an erase on the bounds sets the flag.
 				chunk.get_bounds()
 		changed_chunks.append(chunk_location)
 		for offset in _touched_neighbors(face_bits):
@@ -1302,7 +973,6 @@ func set_cells(cell_materials: Dictionary, edit_job: EditJob = null, uniform_mat
 	return changed_chunks
 
 
-# One bit per chunk face: negative then positive for each axis.
 static func _face_bits(local_cell: Vector3i) -> int:
 	var bits := 0
 	for axis in 3:
@@ -1313,16 +983,11 @@ static func _face_bits(local_cell: Vector3i) -> int:
 	return bits
 
 
-# Chunk offsets relative to the cell's own chunk whose mesher reads this cell.
-# A mesher reads one cell beyond its chunk, so only face and corner cells cross over.
-## Returns the chunk offsets whose mesher reads this cell. Only face and corner
-## cells cross a chunk border.
 static func crosstalk_chunks(cell_position: Vector3i) -> Array[Vector3i]:
 	var local_cell := cell_position - chunk_position(cell_position) * CHUNK_SIZE
 	return _touched_neighbors(_face_bits(local_cell))
 
 
-# A neighbor is affected when every crossing axis of its offset touches a changed face.
 static func _touched_neighbors(face_bits: int) -> Array[Vector3i]:
 	var touched: Array[Vector3i] = []
 	if face_bits == 0:
@@ -1342,9 +1007,6 @@ static func _touched_neighbors(face_bits: int) -> Array[Vector3i]:
 static var _crosstalk_offsets_cache: Array[Vector3i] = []
 
 
-# Build the offsets once when the class loads. A worker can call
-# `_touched_neighbors` from `set_cells`, so a lazy build could race another
-# worker on the same array.
 static func _static_init() -> void:
 	for z in range(-1, 2):
 		for y in range(-1, 2):
@@ -1354,13 +1016,10 @@ static func _static_init() -> void:
 					_crosstalk_offsets_cache.append(offset)
 
 
-# Every chunk offset a mesher can read across, including diagonal corners.
 static func _crosstalk_offsets() -> Array[Vector3i]:
 	return _crosstalk_offsets_cache
 
 
-## Returns a shared snapshot of the chunks. The next write copies a chunk
-## before it mutates, so this snapshot stays frozen.
 func capture() -> Dictionary:
 	var started := Time.get_ticks_usec()
 	_shared_chunks = chunks.duplicate()
@@ -1370,7 +1029,6 @@ func capture() -> Dictionary:
 	return snapshot
 
 
-## Replaces the chunks with a captured snapshot and marks them shared.
 func restore(chunk_snapshot: Dictionary) -> void:
 	var started := Time.get_ticks_usec()
 	chunks = chunk_snapshot.duplicate()
@@ -1381,7 +1039,6 @@ func restore(chunk_snapshot: Dictionary) -> void:
 	_profile_restore_us += Time.get_ticks_usec() - started
 
 
-## Returns an independent copy of this frame.
 func copy_frame() -> VoxelFrame:
 	_profile_copy_frame_calls += 1
 	var frame_copy := VoxelFrame.new()
@@ -1390,14 +1047,6 @@ func copy_frame() -> VoxelFrame:
 	return frame_copy
 
 
-## Returns a snapshot with only the requested present chunks.
-##
-## The result keeps the same chunk objects, world chunk coordinates, and frame
-## delay. Missing locations are ignored and duplicate locations are idempotent.
-## The source marks each requested present chunk shared before the snapshot is
-## exposed. Existing shared entries stay shared, so an older full or subset
-## snapshot stays frozen. The cost follows the requested locations, not the
-## whole chunk dictionary. Call it on the thread that owns the frame.
 func copy_chunks(locations: Array[Vector3i]) -> VoxelFrame:
 	var selected := {}
 	for location in locations:
@@ -1414,22 +1063,12 @@ func copy_chunks(locations: Array[Vector3i]) -> VoxelFrame:
 	return frame_copy
 
 
-## Returns a frame that shares the source chunk objects with its own
-## dictionaries. Every chunk location is marked shared, so a write inside the
-## result copies a chunk before it mutates. The source is never touched. The
-## cost is two chunk-map copies, not cell copies. Call it on the thread that
-## owns the source.
 static func job_frame(source: VoxelFrame) -> VoxelFrame:
 	var frame_copy := job_frame_of_snapshot(source.chunks)
 	frame_copy.delay_ms = source.delay_ms
 	return frame_copy
 
 
-## Returns a frame that shares the snapshot chunk objects with its own
-## dictionary. Every chunk location is marked shared, so a write inside the
-## result copies a chunk before it mutates. The snapshot is never touched. The
-## cost is two chunk-map copies, not cell copies. Call it on the thread that
-## owns the snapshot.
 static func job_frame_of_snapshot(snapshot: Dictionary) -> VoxelFrame:
 	_profile_job_frame_calls += 1
 	var frame_copy := VoxelFrame.new()
@@ -1438,17 +1077,6 @@ static func job_frame_of_snapshot(snapshot: Dictionary) -> VoxelFrame:
 	return frame_copy
 
 
-## Publishes one job frame into this frame. [param locations] holds every
-## chunk the job may have written and every neighbor that meshes across a
-## changed face. A present published chunk replaces the chunk at its
-## location. A missing chunk removes the location. The method copies no
-## chunk. The cost follows the location count. Call it on the thread that
-## owns the frame.
-##
-## A chunk the job wrote is its own copy, so this frame can write it in place.
-## A neighbor, or a chunk the job reverted to a baseline, still belongs to a
-## snapshot, so its copy-on-write marker stays. The published frame marks a
-## chunk it wrote, so that marker tells the two cases apart.
 func apply_published(locations: Array[Vector3i], published: VoxelFrame) -> void:
 	var started := Time.get_ticks_usec()
 	_bounds_dirty = true
@@ -1468,7 +1096,6 @@ func apply_published(locations: Array[Vector3i], published: VoxelFrame) -> void:
 	_profile_publish_us += Time.get_ticks_usec() - started
 
 
-## Returns every occupied cell in the frame.
 func positions() -> Array[Vector3i]:
 	var cell_positions: Array[Vector3i] = []
 	for chunk in chunks.values():
@@ -1476,7 +1103,6 @@ func positions() -> Array[Vector3i]:
 	return cell_positions
 
 
-## Returns every cell that holds one color. It caches positions per chunk.
 func cells_with_color(color: Color) -> Array[Vector3i]:
 	var matching_positions: Array[Vector3i] = []
 	for chunk in chunks.values():
@@ -1491,11 +1117,6 @@ func cells_with_color(color: Color) -> Array[Vector3i]:
 	return matching_positions
 
 
-## Returns the bounds of the occupied cells of every chunk.
-##
-## The result is cached between model changes. A cache hit also checks the chunk
-## count, so a raw chunk add or remove cannot leave stale bounds. A raw change
-## that keeps the same chunk count must call [method invalidate_bounds].
 func get_bounds() -> AABB:
 	if not _bounds_dirty and chunks.size() == _bounds_chunk_count:
 		return _bounds
@@ -1503,8 +1124,6 @@ func get_bounds() -> AABB:
 	var frame_bounds := AABB()
 	for chunk in chunks.values():
 		var chunk_bounds: AABB = chunk.get_bounds()
-		# An empty well-formed chunk has no volume. Merging its origin box would
-		# pull the frame bounds to the origin.
 		if not chunk_bounds.has_volume():
 			continue
 		frame_bounds = frame_bounds.merge(chunk_bounds) if frame_bounds.has_volume() else chunk_bounds
@@ -1516,15 +1135,6 @@ func get_bounds() -> AABB:
 	return _bounds
 
 
-## Invalidates the cached frame bounds.
-##
-## Use it after a raw replacement of a [member chunks] entry whose chunk is
-## already well formed, or after a raw metadata change that keeps the chunk
-## count. It repairs the bounds only. A raw grid write also invalidates the
-## occupied count, the occupancy rows, the voxel revision, and the copy-on-write
-## sharing of that chunk, so bounds-only repair is not enough. Use the frame
-## write methods for cell changes. The frame does not promise thread-safe
-## arbitrary raw grid writes.
 func invalidate_bounds() -> void:
 	_bounds_dirty = true
 	_bounds_chunk_count = -1
@@ -1536,7 +1146,6 @@ func _encode() -> PackedByteArray:
 	return var_to_bytes(storage_data())
 
 
-## Returns the serialized storage for the document payload.
 func storage_data() -> Array:
 	var serialized_chunks: Array = []
 	for chunk_location in chunks:
@@ -1547,19 +1156,13 @@ func storage_data() -> Array:
 	return [STORAGE_VERSION, serialized_chunks]
 
 
-# A record holds one material table and one octree of material ids. Id 0 is empty.
-# The table keeps one entry per distinct material, so a uniform chunk stays small.
 static func _encode_chunk(chunk: Chunk, chunk_location: Vector3i) -> Array:
 	var material_table := material(Color.TRANSPARENT)
 	var material_ids := {}
 	material_ids[material_table.slice(0, MATERIAL_STRIDE)] = 0
-	# A compact table uses the same id many times. Slice each entry once instead
-	# of once per occupied cell.
 	var material_values := {}
 	var cell_ids := PackedInt32Array()
 	cell_ids.resize(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE)
-	# A sparse chunk holds only its occupied slots, so the encoder visits those
-	# alone. A dense chunk keeps the grid walk.
 	var sparse := chunk.grid.is_empty()
 	var sparse_slots := chunk._sparse_slots
 	var sparse_values := chunk._sparse_values
@@ -1620,9 +1223,6 @@ func _decode(encoded_voxels: PackedByteArray) -> void:
 	restore_storage(serialized_frame)
 
 
-# Call only after validate_storage succeeds for the complete document.
-## Replaces the frame content from serialized storage. Call it only after
-## [method validate_storage] succeeds for the complete document.
 func restore_storage(serialized_frame: Array) -> void:
 	var version: int = serialized_frame[0]
 	var restored_chunks := {}
@@ -1634,13 +1234,8 @@ func restore_storage(serialized_frame: Array) -> void:
 		var octree_nodes: PackedInt32Array = serialized_chunk[serialized_chunk.size() - 1]
 		if version == STORAGE_VERSION:
 			var material_table: PackedFloat32Array = serialized_chunk[1]
-			# A cell that points at an empty entry reads as occupied and as empty.
-			# The writer never stores one, so skip this chunk and keep the rest.
 			if _has_empty_stored_entry(material_table):
 				continue
-			# The stored table already holds one entry per distinct material. Install
-			# it directly instead of expanding one entry per cell, so a solid or a
-			# checkerboard chunk keeps a small table.
 			chunk.materials = material_table.slice(MATERIAL_STRIDE)
 			var usage := PackedInt32Array()
 			usage.resize(chunk.materials.size() / MATERIAL_STRIDE + 1)
@@ -1656,11 +1251,8 @@ func restore_storage(serialized_frame: Array) -> void:
 				emission_table = serialized_chunk[2]
 				finish_table = serialized_chunk[3]
 			_decode_region(octree_nodes, [0], serialized_chunk[1], emission_table, finish_table, chunk_origin, CHUNK_SIZE, chunk)
-			# Older records expand one table row per cell. Merge equal rows before
-			# the sparse check so the legacy path also keeps a small table.
 			chunk._compact()
 		chunk.compress_if_sparse()
-		# An empty chunk and a missing chunk have the same content, so skip it.
 		if chunk.occupied_count == 0:
 			continue
 		chunk.bounds_dirty = true
@@ -1670,18 +1262,11 @@ func restore_storage(serialized_frame: Array) -> void:
 	restore(restored_chunks)
 
 
-## The maximum stored voxel count for one document.
 const MAX_STORED_VOXELS := 4 * 1024 * 1024
-## The maximum stored chunk count for one document.
 const MAX_STORED_CHUNKS := 65536
-## The maximum absolute chunk coordinate on each axis.
 const MAX_CHUNK_COORDINATE := 65535
 
 
-# Count occupied leaves before expanding any chunk into voxel dictionaries.
-## Validates serialized storage and returns the occupied voxel count. Returns -1
-## when the data is invalid or exceeds [param voxel_limit]. It counts leaves
-## before any chunk expands into voxel dictionaries.
 static func validate_storage(data: Variant, voxel_limit := MAX_STORED_VOXELS) -> int:
 	if not data is Array or data.size() != 2 or not data[0] is int or data[0] < 1 or data[0] > STORAGE_VERSION or not data[1] is Array:
 		return -1
@@ -1739,7 +1324,6 @@ static func _valid_record(record: Variant, version: int) -> bool:
 	return record[1] is PackedColorArray and record[2] is PackedInt32Array
 
 
-# The empty entry holds id 0. Every other entry holds a color.
 static func _valid_colors(color_table: PackedColorArray) -> bool:
 	if color_table.is_empty() or color_table.size() > 4097 or color_table[0] != Color.TRANSPARENT:
 		return false
@@ -1751,7 +1335,6 @@ static func _valid_colors(color_table: PackedColorArray) -> bool:
 	return true
 
 
-# The empty entry holds id 0. Every other entry holds nine floats in 0 through 1.
 static func _valid_material_values(material_table: PackedFloat32Array) -> bool:
 	if material_table.size() < MATERIAL_STRIDE or material_table.size() > 4097 * MATERIAL_STRIDE or material_table.size() % MATERIAL_STRIDE != 0:
 		return false
@@ -1763,7 +1346,6 @@ static func _valid_material_values(material_table: PackedFloat32Array) -> bool:
 	return true
 
 
-# Returns true when a stored material table holds an empty entry after entry 0.
 static func _has_empty_stored_entry(material_table: PackedFloat32Array) -> bool:
 	for entry in range(1, material_table.size() / MATERIAL_STRIDE):
 		if is_empty(material_table.slice(entry * MATERIAL_STRIDE, (entry + 1) * MATERIAL_STRIDE)):
@@ -1771,7 +1353,6 @@ static func _has_empty_stored_entry(material_table: PackedFloat32Array) -> bool:
 	return false
 
 
-# Emission stores the glow color. Finish stores metallic and roughness. Alpha is unused.
 static func _valid_material_table(emission_table: PackedColorArray, finish_table: PackedColorArray) -> bool:
 	if emission_table.size() != finish_table.size() or emission_table.size() > 4096:
 		return false
@@ -1802,7 +1383,6 @@ static func _validate_region(nodes: PackedInt32Array, cursor: Array, value_count
 	return occupied
 
 
-# Version 1 stores color ids alone. Version 2 packs a color id and a material id.
 static func _decode_region(octree_nodes: PackedInt32Array, node_cursor: Array, color_table: PackedColorArray, emission_table: PackedColorArray, finish_table: PackedColorArray, region_origin: Vector3i, region_size: int, chunk: Chunk) -> void:
 	var cell_value_id := octree_nodes[node_cursor[0]]
 	node_cursor[0] += 1
@@ -1824,8 +1404,6 @@ static func _decode_region(octree_nodes: PackedInt32Array, node_cursor: Array, c
 		_decode_region(octree_nodes, node_cursor, color_table, emission_table, finish_table, region_origin + child_offset, child_size, chunk)
 
 
-# Version 3 stores one material id per cell. The stored table is already unique,
-# so the decoder installs it directly and fills each region with its id.
 static func _decode_materials(octree_nodes: PackedInt32Array, node_cursor: Array, region_origin: Vector3i, region_size: int, chunk: Chunk, usage: PackedInt32Array) -> void:
 	var material_id := octree_nodes[node_cursor[0]]
 	node_cursor[0] += 1
@@ -1840,8 +1418,6 @@ static func _decode_materials(octree_nodes: PackedInt32Array, node_cursor: Array
 		_decode_materials(octree_nodes, node_cursor, region_origin + child_offset, child_size, chunk, usage)
 
 
-# Fill one uniform octree region with one material id. The table is already
-# installed, so this only writes the grid and counts the cells.
 static func _fill_material_region(chunk: Chunk, region_origin: Vector3i, region_size: int, material_id: int, usage: PackedInt32Array) -> void:
 	var local_origin := region_origin - chunk.origin()
 	var z_step := CHUNK_SIZE * CHUNK_SIZE
@@ -1858,7 +1434,6 @@ static func _fill_material_region(chunk: Chunk, region_origin: Vector3i, region_
 		usage[material_id] += volume
 
 
-# Store one material for every cell of a uniform octree region.
 static func _fill_cells(chunk: Chunk, region_origin: Vector3i, region_size: int, cell_material: PackedFloat32Array) -> void:
 	var local_origin := region_origin - chunk.origin()
 	var z_step := CHUNK_SIZE * CHUNK_SIZE

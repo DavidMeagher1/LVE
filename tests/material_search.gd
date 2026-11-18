@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the material-matching tests. Each test keeps the steps and
-# checks of its original scene. The user arguments after `--` name the tests to
-# run, so an old scene name still selects its own test.
 
 const BLOCK := 18
 const DISTANT := Vector3i(64, 0, 0)
@@ -16,13 +13,10 @@ var frame: VoxelFrame
 
 func _ready() -> void:
 	test("Fill and Wand match the full voxel material, not only the color", _material_matching, "material_matching")
-	# The large fill needs the longer deadline of its original scene.
 	timeout = 30.0
 	test("a worker-sized fill matches the full voxel material", _material_matching_large, "material_matching_large")
 
 
-# Each test starts from a fresh document and the default symmetry. The fill
-# connected option lives in a shared resource, so it is restored here.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -31,13 +25,11 @@ func before_test() -> void:
 	_fill_settings.connected = true
 
 
-# Shared fixture: a fresh document and its current frame.
 func _fresh_frame() -> void:
 	State.document = VoxelDocument.new()
 	frame = State.get_current_voxel_frame()
 
 
-# Shared fixture: the fill tool with the green replacement material.
 func _fill_tool() -> void:
 	select_toolbar_item("paint", "Bucket Fill")
 	fill = plugin("PaintPlugin")._fill_tool

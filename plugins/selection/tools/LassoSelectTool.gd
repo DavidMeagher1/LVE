@@ -1,16 +1,7 @@
 extends "./SelectTool.gd"
 
-## The lasso selection tool.
-##
-## It selects the volume behind a dragged screen outline. The pointer path is
-## sampled. The samples bound the polygon test.
 
-# The lasso tool selects the volume behind a dragged outline.
-# The pointer path is sampled. The samples bound the polygon test.
-
-## The minimum distance between two sampled pointer points in pixels.
 const SCREEN_STEP := 6.0
-## The maximum sampled pointer point count.
 const SCREEN_POINT_LIMIT := 512
 
 var _points := PackedVector2Array()
@@ -34,8 +25,6 @@ func _commit_shape(pos: Vector2) -> void:
 	_commit_screen(_screen_rectangle(pos), PackedVector2Array())
 
 
-# A lasso click stays near the press point. A path that returns to its start is
-# still a drag.
 func _is_click(release_pos: Vector2) -> bool:
 	if not super._is_click(release_pos):
 		return false
@@ -51,8 +40,6 @@ func _reset_shape() -> void:
 
 
 func _append_point(pos: Vector2) -> void:
-	# At the limit, halve the path instead of dropping the rest. A dropped tail
-	# would close the outline short of the pointer.
 	if _points.size() >= SCREEN_POINT_LIMIT:
 		var thinned := PackedVector2Array()
 		for index in range(0, _points.size(), 2):

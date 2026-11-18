@@ -1,14 +1,8 @@
 extends "res://Globals/Rendering/VoxelPreview.gd"
 
-## A brush cursor that mirrors its preview through the symmetry axes.
-##
-## The preview duplicates its mesh for each active symmetry mask.
 
-## Whether the preview shows the symmetry mirrors.
 @export var apply_edit_symmetry := false
 var _mirrors: Array[MeshInstance3D] = []
-# The mirror transform has a negative scale, so the mesh normal points inward.
-# This copy of the lit material flips the normal back for the lighting.
 var _mirror_lit_material: ShaderMaterial
 
 
@@ -29,7 +23,6 @@ func _ready() -> void:
 			_mirrors.append(mirror)
 
 
-# Keeps the mirrored lit material in step with the main one.
 func _sync_lit_material(carrier: StandardMaterial3D) -> void:
 	super._sync_lit_material(carrier)
 	if _mirror_lit_material != null:

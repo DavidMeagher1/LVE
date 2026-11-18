@@ -1,33 +1,20 @@
 extends Node3D
 
-## The editor viewport scene.
-##
-## It owns the camera, the light, and the grid. It handles the view drags and
-## the light drag. The lighting settings can follow the document.
 
-## Emitted after the lighting settings change.
 signal lighting_changed()
 
 const SLICE_MATTE_SCRIPT := preload("res://ui/Viewport/SliceMatte.gd")
 
-## Whether the lighting settings load from and save to the document.
 @export var document_lighting := true
-## Whether the view settings load from and save to the document.
 @export var document_view := true
 
-## The view drag mode.
 enum ViewMode {
-	## No view drag.
 	NONE,
-	## Pan the view.
 	PAN,
-	## Orbit the view.
 	ROTATE,
-	## Drag the light.
 	LIGHT,
 }
 
-## The active view mode.
 var view_mode:ViewMode = ViewMode.NONE
 var _drag_mode:ViewMode = ViewMode.NONE
 var _light_dragging := false
@@ -48,7 +35,6 @@ var _lighting_document: VoxelDocument
 var _view_document: VoxelDocument
 var _camera_shadow_projection := Camera3D.PROJECTION_PERSPECTIVE
 const LIGHT_HANDLE_RADIUS := 12.0
-## The distance ratio of one wheel notch.
 const WHEEL_ZOOM_FACTOR := 0.85
 
 func _ready() -> void:
@@ -87,9 +73,6 @@ func _ready() -> void:
 		_restore_document_view()
 
 
-# Shows only the slice slab while the slice is on. The renderer keeps its mesh
-# cache; the slice is part of the surface key, so a layer move rebuilds only the
-# slice rows.
 func _on_slice_changed() -> void:
 	var renderer: VoxelRenderer = $VoxelRenderer
 	renderer.set_slice(
@@ -163,7 +146,7 @@ func _on_camera_index_pressed(index:int) -> void:
 				adjacent_index += direction
 	elif popup.is_item_checkable(index):
 		popup.set_item_checked(index, not popup.is_item_checked(index))
-	
+
 	match text:
 		"orthographic":
 			_set_orthographic(popup.is_item_checked(index))
@@ -173,14 +156,11 @@ func _on_camera_index_pressed(index:int) -> void:
 			%CameraRig.set_view(text)
 
 
-## Returns the lighting settings of this viewport. The keys match the export
-## lighting dictionary in `docs/DOCUMENT_FORMAT.md`.
 func get_lighting_settings() -> Dictionary:
 	var environment: Environment = $WorldEnvironment.environment
 	return {"basis": $Light.basis, "color": $Light.light_color, "energy": $Light.light_energy, "ambient_color": environment.ambient_light_color, "ambient_energy": environment.ambient_light_energy, "shadows": $Light.shadow_enabled, "shaded": not $VoxelRenderer.unshaded, "view_locked": %LockView.button_pressed, "view_basis": _view_light_basis}
 
 
-## Applies one lighting settings dictionary and emits [signal lighting_changed].
 func set_lighting_settings(settings: Dictionary) -> void:
 	VoxelImageRenderer.apply_lighting($Light, $WorldEnvironment.environment, settings)
 	$VoxelRenderer.unshaded = not settings.get("shaded", true)
@@ -192,14 +172,10 @@ func set_lighting_settings(settings: Dictionary) -> void:
 	lighting_changed.emit()
 
 
-## Applies one orthographic state and updates the camera menu. It does not save
-## the document view.
 func set_orthographic(value: bool) -> void:
 	_set_orthographic(value, false)
 
 
-## Returns the editor view settings. The keys match the `view` dictionary in
-## `docs/DOCUMENT_FORMAT.md`.
 func get_view_settings() -> Dictionary:
 	return {
 		"grid": %Grid.visible,
@@ -228,8 +204,6 @@ func _restore_document_view() -> void:
 		_set_grid_visible(grid, false)
 		_set_wireframe(wireframe, false)
 		_set_orthographic(orthographic, false)
-		# Apply the drag mode before the row. A closed row turns the light
-		# widget off.
 		_set_view_mode(int(saved.get("view_mode", int(view_mode))))
 		var open: bool = saved.get("environment_open", %EnvironmentMenu.button_pressed)
 		_set_environment_open(open)
@@ -237,14 +211,10 @@ func _restore_document_view() -> void:
 	_view_document = State.document
 
 
-## Applies the active document's saved lighting to this viewport. The MCP
-## workspace write calls it after it replaces the document settings.
 func apply_document_lighting() -> void:
 	_restore_document_lighting()
 
 
-## Applies the active document's saved view state to this viewport. The MCP
-## workspace write calls it after it replaces the document settings.
 func apply_document_view() -> void:
 	_restore_document_view()
 
@@ -271,7 +241,6 @@ func _set_orthographic(value: bool, save := true) -> void:
 
 
 func _set_view_mode(mode: ViewMode) -> void:
-	# A disabled light control cannot own the drag.
 	if mode == ViewMode.LIGHT and not %Shaded.button_pressed:
 		mode = ViewMode.NONE
 	if mode == ViewMode.LIGHT:
@@ -289,20 +258,11 @@ func _set_environment_open(value: bool) -> void:
 	_on_environment_toggled(value)
 
 
-## Resets the view to the editor defaults without saving them.
 func reset_view_state() -> void:
 	_loading_document_view = true
-	# `set_view` and `configure` reach `_save_pose` through `view_changed`, and
-	# `_save_pose` stores the pose on the document. Turn that off for the reset,
-	# so a reset never lands in the document.
 	var stores_pose: bool = %CameraRig.stores_document_pose
 	%CameraRig.stores_document_pose = false
-	# The camera keeps its angles across a document change, and a document
-	# without a saved pose does not restore them. Reset the pose here, or a new
-	# scene inherits the previous one.
 	%CameraRig.set_view("default")
-	# Framing needs a document. A reset before the first document keeps the pose
-	# only.
 	if State.document != null:
 		%CameraRig.configure()
 	%CameraRig.stores_document_pose = stores_pose
@@ -386,7 +346,6 @@ func _on_shadows_toggled(pressed: bool) -> void:
 func _on_shaded_toggled(pressed: bool) -> void:
 	$VoxelRenderer.unshaded = not pressed
 	_sync_shading_controls()
-	# Shading off turns the light widget off, which changes the view mode.
 	if not _loading_document_view:
 		_save_document_view()
 	lighting_changed.emit()
@@ -456,7 +415,6 @@ func _light_trackball_vector(screen_position: Vector2) -> Vector3:
 	var point := (screen_position - _light_trackball_center) / _light_trackball_radius
 	point.y = -point.y
 	var distance_squared := point.length_squared()
-	# Blend the sphere into a hyperbolic surface for smooth motion outside its edge.
 	var depth := sqrt(1.0 - distance_squared) if distance_squared <= 0.5 else 0.5 / sqrt(distance_squared)
 	return (_light_trackball_basis * Vector3(point.x, point.y, depth)).normalized()
 
@@ -583,7 +541,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
-		
+
 		if mb.button_index == MOUSE_BUTTON_LEFT:
 			var mode := _view_drag_mode(mb)
 			if mode != ViewMode.NONE or _drag_mode != ViewMode.NONE:
@@ -594,15 +552,13 @@ func _input(event: InputEvent) -> void:
 					_show_view_mode(mode)
 				get_viewport().set_input_as_handled()
 				return
-		
+
 		match mb.button_index:
 			MOUSE_BUTTON_RIGHT:
 				get_viewport().set_input_as_handled()
 			MOUSE_BUTTON_MIDDLE:
 				get_viewport().set_input_as_handled()
 			MOUSE_BUTTON_WHEEL_UP:
-				# An X11 wheel can arrive as a press and a release, so only the
-				# press zooms. Both events are consumed.
 				if mb.pressed:
 					%ZoomSlider.value += %CameraRig.zoom_step_for_factor(1.0 / WHEEL_ZOOM_FACTOR)
 				get_viewport().set_input_as_handled()
@@ -614,8 +570,6 @@ func _input(event: InputEvent) -> void:
 		var mm := event as InputEventMouseMotion
 		var mask := mm.button_mask
 		if _drag_mode != ViewMode.NONE and not (mask & MOUSE_BUTTON_MASK_LEFT):
-			# A release outside the window sends no button event. The first
-			# motion with the button up ends the drag.
 			_drag_mode = ViewMode.NONE
 			_restore_view_toggles()
 		var active := _drag_mode

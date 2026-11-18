@@ -1,43 +1,21 @@
 extends "res://plugins/brush/BrushPreview.gd"
 
-## A test-only probe for the spray latency benchmark.
-##
-## It counts the cursor requests, the visible mesh installs, and the completed
-## results that the latest-only request policy discards. It changes no behavior.
-##
-## A discard is a result the worker finished and the main thread threw away
-## because a newer request arrived first. A high discard count with a low install
-## count is the visible starvation of the cursor.
 
-## The cursor requests since the last reset.
 var request_calls := 0
-## The visible mesh installs since the last reset.
 var installs := 0
-## The completed results that a newer request superseded.
 var discards := 0
-## The microseconds of the last request.
 var request_us := 0
-## The microseconds of the last brush material update.
 var material_us := 0
-## The microseconds of the last show_voxels call, including its request.
 var show_us := 0
-## The microseconds of the last install or discard.
 var finish_us := 0
-## The microseconds of the longest install.
 var install_max_us := 0
-## The chunks that the last finished preview job built.
 var job_chunk_count := 0
-## The per-chunk build microseconds of the last finished preview job.
 var build_us := 0
-## The vertex and index merge microseconds of the last finished preview job.
 var merge_us := 0
-## The estimated geometry bytes of the last finished preview job.
 var geometry_bytes := 0
-## The cells of the last finished preview job.
 var preview_cells := 0
 
 
-## Clears the counters. It does not change the cursor state.
 func reset_probe() -> void:
 	request_calls = 0
 	installs = 0
@@ -66,8 +44,6 @@ func show_voxels(colors: Dictionary, color: Color, outline: bool = false, cube_d
 	show_us = Time.get_ticks_usec() - started
 
 
-## The prepared path of the spray cursor. It records the same show cost, so the
-## benchmark still times the cursor request after the worker built the payload.
 func submit_prepared(payload) -> void:
 	var started := Time.get_ticks_usec()
 	super.submit_prepared(payload)
@@ -102,7 +78,6 @@ func _finish_preview() -> void:
 		discards += 1
 
 
-## Returns the instance id of the shown mesh, or zero when the cursor is empty.
 func mesh_id() -> int:
 	if mesh == null:
 		return 0

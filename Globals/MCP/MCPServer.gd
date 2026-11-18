@@ -1,91 +1,54 @@
 extends Node
 
-## The in-app MCP server.
-##
-## It listens on the loopback interface and speaks newline-delimited JSON-RPC
-## to the LVE bridge. The bridge converts stdio MCP messages to this connection.
-## The tools drive the editor as the user: they use the real active tool, the
-## current material, the shared selection, and the normal undo history.
 
-## The default loopback port. The bridge uses the same default.
 const DEFAULT_PORT := 17373
-## The off-screen viewport used for screenshots.
 const SCREENSHOT_VIEWPORT := preload("res://Globals/VoxelImageRenderer/RendererViewport.tscn")
-## The export plugin script. Its sprite sheet layout is static.
 const EXPORT_PLUGIN_SCRIPT := preload("res://plugins/Export/ExportPlugin.gd")
-## The server log in the shared user directory.
 const LOG_PATH := "user://mcp_server.log"
-## The largest cell box that one read scans.
 const MAX_BOX_CELLS := 262144
-## The default occupied-cell cap of one read.
 const MAX_GET_CELLS := 512
-## The largest cell count that one write accepts.
 const MAX_WRITE_CELLS := 65536
-## The largest cell count that one multi-frame write accepts.
 const MAX_WRITE_TOTAL_CELLS := MAX_WRITE_CELLS * 4
-## The largest frame cell count that the semantic read tools scan.
 const MAX_SCAN_CELLS := 262144
-## The largest island count that one read lists.
 const MAX_INSPECT_ISLANDS := 256
-## The largest number of entries the change journal keeps.
 const MAX_JOURNAL_ENTRIES := 512
-## The largest number of changed cells the change journal keeps.
 const MAX_JOURNAL_CELLS := 262144
-## The six face neighbors used by the connected region scan.
 const REGION_NEIGHBORS := [
 	Vector3i(1, 0, 0), Vector3i(-1, 0, 0),
 	Vector3i(0, 1, 0), Vector3i(0, -1, 0),
 	Vector3i(0, 0, 1), Vector3i(0, 0, -1),
 ]
-## The standard model sheet views. The six orthographic directions come first,
-## then one three-quarter view.
 const MODEL_SHEET_VIEWS := ["front", "back", "left", "right", "top", "bottom", "isometric"]
-## The guide resources and their topic slices.
 const MCPGuide := preload("res://Globals/MCP/MCPGuide.gd")
 const MCPJson := preload("res://Globals/MCP/MCPJson.gd")
 const PrimitiveField := preload("res://Globals/State/Tools/PrimitiveField.gd")
 const MCPWorkspace := preload("res://Globals/MCP/MCPWorkspace.gd")
 const MCPTransport := preload("res://Globals/MCP/MCPTransport.gd")
 
-## The material slice characters. A slice with more materials uses "?".
 const SLICE_CHARS := [
 	"#", "+", "*", "o", "x", "=", "%", "&", "a", "b", "c", "d", "e", "f",
 	"g", "h", "i", "j", "k", "l", "m", "n", "p", "q", "r", "s", "t", "u",
 	"v", "w", "y", "z",
 ]
 
-## The tool catalog. The server keeps the short aliases below, so callers and
-## tests still read MCPServer.TOOLS.
 const MCPToolCatalog := preload("res://Globals/MCP/MCPToolCatalog.gd")
 const TOOLS := MCPToolCatalog.TOOLS
 const OUTPUT_SCHEMAS := MCPToolCatalog.OUTPUT_SCHEMAS
 const INSTRUCTIONS_BODY := MCPToolCatalog.INSTRUCTIONS_BODY
 
 
-## The main scene that owns the editor. Main sets it when it creates the server.
 var _main: Node
-## The loopback transport.
 var _transport := MCPTransport.new()
-## The document content revision. The read tools report it.
 var _revision := 0
-## The bounded journal of cell and chunk changes since a revision.
 var _journal: Array[Dictionary] = []
-## The number of cells in the journal.
 var _journal_cells := 0
-## The oldest revision that the journal can describe.
 var _journal_floor := 0
-## The revision of the last cell or chunk signal. A history change with no new
-## content signal is an undo or redo that carries no cell list.
 var _last_content_revision := 0
-## Whether a cell or chunk signal arrived since the last history change.
 var _content_since_history := false
-## The selection revision that the cached bounds follow.
 var _cached_selection_bounds_revision := -1
-## The cached selection bounds. A selection read does not rescan the cells.
 var _cached_selection_bounds: Variant = null
 
 
-## One direct cell write job. It writes a batch through the edit context.
 class WriteJob extends VoxelFrame.EditJob:
 	var edited_frame: VoxelFrame
 	var changes: Dictionary
@@ -98,7 +61,7 @@ class WriteJob extends VoxelFrame.EditJob:
 
 func _init() -> void:
 	_transport.dispatch = _dispatch_request
-	_transport.log = _log
+	_transport.log_line = _log
 
 
 func _ready() -> void:
@@ -106,8 +69,6 @@ func _ready() -> void:
 	_connect_state()
 
 
-## Sets the main scene that owns the editor viewport. Main calls this before it
-## adds the server to the tree.
 func set_main(value: Node) -> void:
 	_main = value
 
@@ -157,15 +118,12 @@ func _disconnect_state() -> void:
 
 func _on_cells_changed(frame: int, affected: Array[Vector3i]) -> void:
 	if affected.is_empty():
-		# A restore can change the model without listing the cells.
 		_reset_journal()
 		return
 	_record_cells_change(frame, affected)
 
 
 func _record_cells_change(frame: int, affected: Array) -> void:
-	# A write that the scope filtered to nothing changes no cell, so it must keep
-	# the journal instead of forcing a full refresh.
 	if affected.is_empty():
 		return
 	_revision += 1
@@ -184,8 +142,6 @@ func _on_chunks_changed(frame: int, affected: Array[Vector3i]) -> void:
 	_revision += 1
 	_last_content_revision = _revision
 	_content_since_history = true
-	# A tool reports chunk locations, not cell coordinates. Store origins, so
-	# every journal field uses cell units.
 	var origins: Array[Vector3i] = []
 	for location in affected:
 		origins.append(location * VoxelFrame.CHUNK_SIZE)
@@ -194,9 +150,6 @@ func _on_chunks_changed(frame: int, affected: Array[Vector3i]) -> void:
 
 
 func _on_history_changed() -> void:
-	# Undo and redo emit no cell list. A history change after a content signal
-	# belongs to that edit. A history change without one is opaque, so the next
-	# delta read must ask for a full read.
 	if _content_since_history:
 		_content_since_history = false
 		return
@@ -234,12 +187,6 @@ func _entry_cell_count(entry: Dictionary) -> int:
 	return 0
 
 
-## Starts the loopback server. A port of zero selects a free port. In HTTP mode
-## the server accepts Streamable HTTP requests at `/mcp`; otherwise it accepts
-## newline-delimited JSON-RPC for the stdio bridge.
-## Starts the loopback server. A port of zero selects a free port. In HTTP mode
-## the server accepts Streamable HTTP requests at `/mcp`; otherwise it accepts
-## newline-delimited JSON-RPC for the stdio bridge.
 func start(port: int = DEFAULT_PORT, http_mode := false) -> Error:
 	var error := _transport.start(port, http_mode)
 	if error == OK:
@@ -247,13 +194,11 @@ func start(port: int = DEFAULT_PORT, http_mode := false) -> Error:
 	return error
 
 
-## Stops the server and closes every client connection.
 func stop() -> void:
 	_transport.stop()
 	set_process(false)
 
 
-## Returns the port that the server listens on, or zero when it is closed.
 func local_port() -> int:
 	return _transport.local_port()
 
@@ -271,7 +216,6 @@ func _dispatch_request(request: Dictionary) -> Variant:
 		return null
 	var method: String = method_value
 	if id == null:
-		# A notification never gets a response.
 		return null
 	var params: Dictionary = {}
 	var params_value: Variant = request.get("params", {})
@@ -301,8 +245,6 @@ func _dispatch_request(request: Dictionary) -> Variant:
 
 
 func _initialize(_params: Dictionary) -> Dictionary:
-	# outputSchema is part of 2025-06-18. An older revision cannot show a tool's
-	# return type, so this server answers 2025-06-18 to every request.
 	var version := "2025-06-18"
 	var version_string := str(ProjectSettings.get_setting("application/config/version", "0"))
 	if version_string.count(".") < 2:
@@ -318,14 +260,10 @@ func _initialize(_params: Dictionary) -> Dictionary:
 	}
 
 
-## Returns the initialize instructions: the fixed rules and the tool index.
 func _instructions_text() -> String:
 	return INSTRUCTIONS_BODY + _tool_index()
 
 
-## Returns one line per tool with its argument names. The index comes from the
-## input schemas, so it cannot drift from the tools. A client that hides most
-## tools can read the whole list here, without a search call.
 func _tool_index() -> String:
 	var lines: PackedStringArray = []
 	for value in TOOLS:
@@ -348,9 +286,6 @@ func _tool_index() -> String:
 	return "\n".join(lines)
 
 
-## Returns the declared output schema of one tool. The inspect_document schema
-## gains the single-frame keys at the root, so it matches both result shapes
-## without listing the same keys twice.
 func _output_schema(name: String) -> Variant:
 	var schema_value: Variant = OUTPUT_SCHEMAS.get(name, null)
 	if not (schema_value is Dictionary):
@@ -375,8 +310,6 @@ func _output_schema(name: String) -> Variant:
 	return schema
 
 
-## Returns the tool list with the output schema of each tool. The schemas are
-## kept in a separate table, so a tool entry stays readable.
 func _tools_json() -> Array:
 	var tools: Array = []
 	for value in TOOLS:
@@ -393,8 +326,6 @@ func _resources_json() -> Array:
 	return MCPGuide.resources()
 
 
-## Reads one static resource. The guide and the format file are read from the
-## packed project, so a client outside the repository can read them.
 func _read_resource(id: Variant, params: Dictionary) -> Dictionary:
 	var uri_value: Variant = params.get("uri", "")
 	if not (uri_value is String):
@@ -510,8 +441,6 @@ func _error_response(id: Variant, code: int, message: String) -> Dictionary:
 	return {"jsonrpc": "2.0", "id": _response_id(id), "error": {"code": code, "message": message}}
 
 
-# JSON numbers parse as floats. A whole id goes back as an integer, so a client
-# that sent 1 receives 1, not 1.0.
 func _response_id(id: Variant) -> Variant:
 	if id is float and is_equal_approx(id, roundf(id)):
 		id = int(id)
@@ -521,8 +450,6 @@ func _response_id(id: Variant) -> Variant:
 func _tool_ok(data: Variant) -> Dictionary:
 	var result := {"content": [{"type": "text", "text": JSON.stringify(data)}]}
 	if data is Dictionary:
-		# The structured half lets a client use the result as data and check it
-		# against the declared output schema. The text half keeps older clients.
 		result["structuredContent"] = data
 	return result
 
@@ -660,7 +587,6 @@ func _get_cells(args: Dictionary) -> Dictionary:
 				if not material_filter.is_empty() and not MCPJson.material_key_matches(material_key, material_filter):
 					continue
 				if full:
-					# The cap is reached only when one more matching cell exists.
 					truncated = true
 					next_cell = cell
 					done = true
@@ -756,8 +682,6 @@ func _inspect_document(args: Dictionary, scan_budget := MAX_SCAN_CELLS) -> Dicti
 			"empty": occupied == 0,
 		}
 		if (include_materials or include_islands or include_transitions) and occupied > 0:
-			# The budget covers the whole request, not each frame. A request for
-			# many frames must not scan every one at full size.
 			if occupied > remaining_scan:
 				scans[index] = {"cells": {}, "materials": {}, "truncated": true, "occupied": occupied}
 				frame_data["scan_truncated"] = true
@@ -799,8 +723,6 @@ func _inspect_document(args: Dictionary, scan_budget := MAX_SCAN_CELLS) -> Dicti
 		"frames": frames,
 		"tags": _tags_json(),
 	}
-	# One frame is the common read. Its fields sit at the root, so a caller does
-	# not need frames[0]. A multi-frame read keeps them in the list only.
 	if frames.size() == 1:
 		var only: Dictionary = frames[0]
 		for key in only:
@@ -900,7 +822,6 @@ func _get_slice(args: Dictionary) -> Dictionary:
 		var key: String = entry["key"]
 		var slice_char: String = SLICE_CHARS[index] if index < SLICE_CHARS.size() else "?"
 		char_by_key[key] = slice_char
-		# The key holds the color, metallic, roughness, and emission.
 		legend.append({"char": slice_char, "key": key})
 	var slices: Array = []
 	var values: Array = []
@@ -918,8 +839,6 @@ func _get_slice(args: Dictionary) -> Dictionary:
 					cell_values[key] = int(cell[fixed_index])
 			else:
 				cell_values[key] = int(cell_values.get(key, 0)) + 1
-		# A height is a real coordinate, so the empty marker must sit outside the
-		# box. A fixed -1 would hide a cell at layer -1.
 		var empty_height := fixed_start - 1
 		for gy in range(grid_height):
 			var row: Array = []
@@ -931,8 +850,6 @@ func _get_slice(args: Dictionary) -> Dictionary:
 					row.append(int(cell_values.get(key, 0)))
 			values.append(row)
 	else:
-		# One pass over the cells fills every scaled block, so a large scale costs
-		# one write per cell, not one lookup per cell of every block.
 		var layer_blocks := _slice_blocks(cells, layer_values, fixed_index, column_axis, row_axis, col_start, row_start, scale, mode)
 		for layer in layer_values:
 			var blocks: Dictionary = layer_blocks.get(layer, {})
@@ -1207,8 +1124,6 @@ func _changed_bounds_since(since: int, frame_index: int) -> Variant:
 		if entry_chunks is Array:
 			for cell in entry_chunks:
 				chunks[cell] = true
-	# A cell list is exact. A tool that reports only chunks has no cell list, so
-	# its bounds cover the whole changed chunks and stay coarse.
 	if not cells.is_empty():
 		return MCPJson.bounds_of_dictionaries([cells])
 	if chunks.is_empty():
@@ -1251,8 +1166,6 @@ func _frame_bounds_array(frame: VoxelFrame) -> Variant:
 	return [min_cell.x, min_cell.y, min_cell.z, max_cell.x, max_cell.y, max_cell.z]
 
 
-## Returns the bounds of the shared selection, or null when it is empty. The
-## bounds follow the selection revision, so a read does not rescan the cells.
 func _selection_bounds() -> Variant:
 	var selection := State.selection
 	if selection.revision == _cached_selection_bounds_revision:
@@ -1313,9 +1226,6 @@ func _cell_with_axes(fixed_axis: int, fixed_value: int, column_axis: int, column
 	return cell
 
 
-## Groups the cells of one slice into scaled blocks. The result maps a layer to
-## a block grid, keyed by (column block, row block). An occupancy block holds
-## [code]true[/code]. A materials block holds a map of material key to count.
 func _slice_blocks(cells: Dictionary, layer_values: Array, fixed_index: int, column_axis: int, row_axis: int, col_start: int, row_start: int, scale: int, mode: String) -> Dictionary:
 	var blocks := {}
 	for cell in cells:
@@ -1372,16 +1282,11 @@ func _bool_arg(args: Dictionary, key: String, fallback: bool) -> bool:
 	return fallback
 
 
-## Returns the frame indices of the [code]frames[/code] list, or of the
-## [code]frame[/code] argument, or the current frame. An invalid list or index
-## returns an empty array. [param limit] is the longest accepted list.
 func _frame_indices_arg(args: Dictionary, limit := 64) -> Array:
 	var document := State.document
 	if document == null:
 		return []
 	var frames_value: Variant = args.get("frames", null)
-	# A key that is present with the wrong type is an error, not a request for the
-	# current frame. A silent fallback would edit or remove another frame.
 	if frames_value != null and not frames_value is Array:
 		return []
 	if args.has("frame") and not (args["frame"] is int or args["frame"] is float):
@@ -1405,10 +1310,6 @@ func _frame_indices_arg(args: Dictionary, limit := 64) -> Array:
 	return [index]
 
 
-## Returns the error for a frame outside the open document. The message names
-## the document and its frame count, so a caller does not need a second read to
-## learn why the frame is missing. A negative index means the call named no
-## valid frame at all.
 func _frame_error(index := -1) -> String:
 	var document := State.document
 	if document == null:
@@ -1488,8 +1389,6 @@ func _scan_frame(frame: VoxelFrame) -> Dictionary:
 
 func _materials_json(materials: Dictionary) -> Array:
 	var list: Array = []
-	# The key holds the color, metallic, roughness, and emission, so the entry
-	# does not repeat them as an object.
 	for histogram in materials.values():
 		list.append({
 			"cells": histogram.get("cells", 0),
@@ -1517,8 +1416,6 @@ func _build_regions(cells: Dictionary, group: String, min_cells: int, max_region
 		var count := 0
 		var min_cell: Vector3i = start
 		var max_cell: Vector3i = start
-		# A region far from the origin can hold a sum above the 32-bit range of a
-		# Vector3i component, so the totals use plain integers.
 		var sum := Vector3i.ZERO
 		var sum_x := 0
 		var sum_y := 0
@@ -1596,8 +1493,6 @@ func _build_regions(cells: Dictionary, group: String, min_cells: int, max_region
 
 
 func _transition_json(from_index: int, to_index: int, scans: Dictionary) -> Dictionary:
-	# `Dictionary.get` evaluates its default at once, so a scan is only built on a
-	# miss. A cached scan must never be rescanned.
 	var from_scan: Dictionary = scans[from_index] if scans.has(from_index) else _scan_frame(State.get_voxel_frame(from_index))
 	var to_scan: Dictionary = scans[to_index] if scans.has(to_index) else _scan_frame(State.get_voxel_frame(to_index))
 	if bool(from_scan.get("truncated", false)) or bool(to_scan.get("truncated", false)):
@@ -1627,8 +1522,6 @@ func _transition_json(from_index: int, to_index: int, scans: Dictionary) -> Dict
 	}
 
 
-## Renders the standard seven-view model sheet for one frame. It reuses the
-## screenshot path, so it shares the lighting, projection, and focus options.
 func _model_sheet(args: Dictionary) -> Dictionary:
 	var forwarded := args.duplicate()
 	forwarded["views"] = MODEL_SHEET_VIEWS
@@ -1639,8 +1532,6 @@ func _model_sheet(args: Dictionary) -> Dictionary:
 	return await _screenshot(forwarded)
 
 
-## Returns a render copy of one frame, clipped to an inclusive box when a box is
-## given. The document frame is never changed.
 func _screenshot_frame(source: VoxelFrame, clip_box: Variant) -> VoxelFrame:
 	if source == null or clip_box == null:
 		return source
@@ -1947,8 +1838,6 @@ func _save_document(args: Dictionary) -> Dictionary:
 	var path := _save_path(args)
 	if path.is_empty():
 		return _tool_error("path must be an absolute path ending in .lve or .lve.png.")
-	# A call without a path saves the open document. A call with a path writes a
-	# copy unless it asks for a main save.
 	var copy := false
 	if args.has("path"):
 		var copy_value: Variant = args.get("copy", true)
@@ -1970,8 +1859,6 @@ func _save_document(args: Dictionary) -> Dictionary:
 			return _tool_error("The document changed before the save finished.")
 		if preview == null:
 			return _tool_error("The preview could not be rendered.")
-	# A save must not fail because the folder is missing. res:// can be read only
-	# in an exported build, so the save error still reports that case.
 	var folder := path.get_base_dir()
 	if not folder.is_empty():
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(folder))
@@ -2016,17 +1903,11 @@ func _document_path(value: Variant) -> String:
 	var path: String = String(value).strip_edges()
 	if path.is_empty():
 		return ""
-	# An agent knows the file system, not the engine. Only an absolute path is
-	# allowed. A relative path or an engine path is refused, because the client
-	# named a location the server cannot resolve on its own. is_absolute_path()
-	# accepts an engine path, so the schemes are refused first.
 	if path.begins_with("user://") or path.begins_with("res://"):
 		return ""
 	return path if path.is_absolute_path() else ""
 
 
-## Returns the path a save writes, or an empty string when the path is invalid.
-## A call without a path saves the open document to its own path.
 func _save_path(args: Dictionary) -> String:
 	var value: Variant = args.get("path", null)
 	if value is String and not String(value).strip_edges().is_empty():
@@ -2050,9 +1931,6 @@ func _save_path(args: Dictionary) -> String:
 	return ProjectSettings.globalize_path("user://" + name)
 
 
-## Returns the export path for one output file, or an empty string when the
-## path is invalid. A path without an extension gets the first extension. A path
-## with an extension outside [param extensions] is invalid.
 func _export_path(value: Variant, extensions: Array) -> String:
 	var path := _document_path(value)
 	if path.is_empty():
@@ -2063,8 +1941,6 @@ func _export_path(value: Variant, extensions: Array) -> String:
 	return path if extensions.has(extension) else ""
 
 
-## Returns the output path of an export. A call without a path exports beside
-## the document. An unsaved document exports in the user directory.
 func _export_output_path(args: Dictionary, extensions: Array) -> String:
 	var value: Variant = args.get("path", null)
 	if value is String and not String(value).strip_edges().is_empty():
@@ -2075,15 +1951,12 @@ func _export_output_path(args: Dictionary, extensions: Array) -> String:
 		name = "Untitled"
 	var base := name.get_basename()
 	if document != null and not document.edit_save_path.is_empty():
-		# The stored path can be an engine path, because the user can open a
-		# document from res://. Globalize it instead of parsing it as input.
 		var folder := ProjectSettings.globalize_path(document.edit_save_path).get_base_dir()
 		if not folder.is_empty():
 			return _export_path(folder.path_join(base), extensions)
 	return _export_path(ProjectSettings.globalize_path("user://" + base), extensions)
 
 
-## Returns a readable message for an export error code.
 func _export_error(error: Error) -> String:
 	match error:
 		ERR_BUSY:
@@ -2095,16 +1968,12 @@ func _export_error(error: Error) -> String:
 	return "The export failed: " + error_string(error)
 
 
-## Creates the folder of one output path. A save or an export must not fail
-## because the folder is missing.
 func _ensure_output_folder(path: String) -> void:
 	var folder := path.get_base_dir()
 	if not folder.is_empty():
 		DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(folder))
 
 
-## Restores the playback state that an export stops. Call it after the export
-## returns, so the call leaves the document as it found it.
 func _restore_export_playback(was_playing: bool, was_frame: int) -> void:
 	if not was_playing or State.is_playing:
 		return
@@ -2183,7 +2052,6 @@ func _set_workspace(args: Dictionary) -> Dictionary:
 		if not (playing_value is bool):
 			return _tool_error("playing must be a boolean.")
 		playing = playing_value
-	# Every argument is valid, so replace the named fields together.
 	if args.has("camera"):
 		document.edit_camera = camera
 	if args.has("lighting"):
@@ -2198,8 +2066,6 @@ func _set_workspace(args: Dictionary) -> Dictionary:
 	return _tool_ok(MCPWorkspace.data(document, _revision))
 
 
-## Coerces whole JSON numbers to ints for the fields that the document format
-## requires as integers. JSON has no integer type.
 func _apply_workspace(args: Dictionary, lighting: Dictionary = {}) -> void:
 	var viewport: Node = State.context.viewport_scene if State.context != null else null
 	if viewport != null:
@@ -2210,8 +2076,6 @@ func _apply_workspace(args: Dictionary, lighting: Dictionary = {}) -> void:
 		if args.has("view") and viewport.has_method("apply_document_view"):
 			viewport.call("apply_document_view")
 		if args.has("lighting"):
-			# The camera and view restores can capture the previous widget
-			# lighting. Restore the requested values before applying them.
 			if State.document != null:
 				State.document.lighting_settings = lighting
 			if viewport.has_method("apply_document_lighting"):
@@ -2280,10 +2144,8 @@ func _export_sprite_sheet(args: Dictionary) -> Dictionary:
 		return _tool_error("The tag does not exist.")
 	var first := _int_arg(args, "first_frame", 0)
 	var last := _int_arg(args, "last_frame", State.get_frame_count() - 1)
-	# Start from the export tab values, so the result reports what the call used.
 	var current_value: Variant = plugin.call("current_export_settings")
 	var settings: Dictionary = current_value.get("sprite", {}).duplicate() if current_value is Dictionary else {}
-	# The tab tag does not apply. The call names its own tag or frame range.
 	settings["tag_name"] = ""
 	if tag >= 0:
 		var tag_data := State.document.tags[tag]
@@ -2360,10 +2222,8 @@ func _export_gif(args: Dictionary) -> Dictionary:
 		return _tool_error("The tag does not exist.")
 	var first := _int_arg(args, "first_frame", 0)
 	var last := _int_arg(args, "last_frame", State.get_frame_count() - 1)
-	# Start from the export tab values, so the result reports what the call used.
 	var current_value: Variant = plugin.call("current_export_settings")
 	var settings: Dictionary = current_value.get("sprite", {}).duplicate() if current_value is Dictionary else {}
-	# A GIF holds color frames only.
 	settings.erase("normal")
 	settings.erase("specular")
 	settings.erase("specular_intensity")
@@ -2427,7 +2287,6 @@ func _add_frame(args: Dictionary) -> Dictionary:
 
 
 func _remove_frame(args: Dictionary) -> Dictionary:
-	# A removal must name its frames. It does not default to the current frame.
 	if not args.has("frame") and not args.has("frames"):
 		return _tool_error("frame or frames is required.")
 	var indices := _frame_indices_arg(args, 256)
@@ -2608,8 +2467,6 @@ func _tag_json(index: int, tag: AnimationTag) -> Dictionary:
 	}
 
 
-## Sets document-level render settings. Every supplied field is applied as one
-## history action, like the document settings modal.
 func _set_document_settings(args: Dictionary) -> Dictionary:
 	if not (args.has("smooth_normals") or args.has("ao") or args.has("size")):
 		return _tool_error("Pass smooth_normals, ao, or size.")
@@ -2648,8 +2505,6 @@ func _set_document_settings(args: Dictionary) -> Dictionary:
 		ao = clampf(float(ao_value), 0.0, 1.0)
 	if smooth == before_smooth and size == before_size and is_equal_approx(ao, before_ao):
 		return _tool_ok({"size": [size.x, size.y, size.z], "smooth_normals": smooth, "ao": ao, "revision": _revision})
-	# The preview path writes without history, then one commit records the whole
-	# change. This matches the document settings modal.
 	State.set_document_properties(smooth, size, false)
 	State.set_ao_strength(ao, false)
 	State.commit_document_settings(before_smooth, before_size, before_ao)
@@ -2753,8 +2608,6 @@ func _set_palette(args: Dictionary) -> Dictionary:
 		return _tool_error("materials must hold at least one entry.")
 	if entries.size() > VoxelDocument.MAX_PALETTE_COLORS:
 		return _tool_error("materials must hold at most %d entries." % VoxelDocument.MAX_PALETTE_COLORS)
-	# A palette entry starts from a plain black material, not from the active
-	# brush material. A missing field must not copy the brush settings.
 	var base := VoxelFrame.material(Color.BLACK)
 	var materials: Array[PackedFloat32Array] = []
 	for index in entries.size():
@@ -3090,9 +2943,6 @@ func _write_cells(args: Dictionary) -> Dictionary:
 	if erase_value is bool:
 		erase = erase_value
 	var current_material := VoxelFrame.material(Color.TRANSPARENT) if erase else State.current_material
-	# One call carries one shape form. A fixed order across forms would be a
-	# hidden rule, and a box would silently overwrite the detail cells next to
-	# it. Call order is the layer order.
 	var forms := 0
 	for key in ["cells", "boxes", "runs"]:
 		if args.get(key, null) != null:
@@ -3136,8 +2986,6 @@ func _write_cells(args: Dictionary) -> Dictionary:
 			if material == null:
 				return _tool_error("boxes[%d] names a material index that does not exist." % index)
 			var extent := end - start + Vector3i.ONE
-			# Check each axis before the product, so a wide box cannot overflow the
-			# cell cap and enter the write loops.
 			if extent.x > MAX_WRITE_CELLS or extent.y > MAX_WRITE_CELLS or extent.z > MAX_WRITE_CELLS:
 				return _tool_error("The write exceeds %d cells." % MAX_WRITE_CELLS)
 			var volume := extent.x * extent.y * extent.z
@@ -3367,8 +3215,6 @@ func _write_material(index: int, materials: Array, current_material: PackedFloat
 		return VoxelFrame.material(Color.TRANSPARENT)
 	if index < 0:
 		return current_material
-	# Without a materials table, an index names the document palette. This is
-	# the same index that set_material and the palette panel use.
 	if materials.is_empty():
 		var palette := State.get_palette()
 		if index >= palette.size():
@@ -3505,8 +3351,6 @@ func _activate_plugin(name: String) -> void:
 	var target: Node = _plugin(name)
 	if target == null or not target.has_method("activate_tool"):
 		return
-	# The shared tool button group unpresses the previous plugin, so its own
-	# toggle handler deactivates it. No caller lists the other plugins.
 	target.call("activate_tool")
 
 
@@ -3520,8 +3364,6 @@ func _toolbar_pressed(plugin: Node) -> bool:
 
 
 func _parse_material(args: Dictionary, base := PackedFloat32Array()) -> Variant:
-	# Packed arrays share their buffer on assignment, so copy the base. A caller
-	# that parses several entries must not carry one entry into the next.
 	var material: PackedFloat32Array = (State.current_material if base.is_empty() else base).duplicate()
 	var color_changed := false
 	var palette_value: Variant = args.get("palette_index", null)
@@ -3564,14 +3406,12 @@ func _parse_material(args: Dictionary, base := PackedFloat32Array()) -> Variant:
 		material[VoxelFrame.MATERIAL_EMISSION + 1] = emission.g
 		material[VoxelFrame.MATERIAL_EMISSION + 2] = emission.b
 	elif color_changed:
-		# A new color is not glowing unless the caller asks for it.
 		material[VoxelFrame.MATERIAL_EMISSION] = 0.0
 		material[VoxelFrame.MATERIAL_EMISSION + 1] = 0.0
 		material[VoxelFrame.MATERIAL_EMISSION + 2] = 0.0
 	return material
 
 
-## Appends one diagnostic line to the server log.
 func _log(message: String) -> void:
 	var file := FileAccess.open(LOG_PATH, FileAccess.READ_WRITE)
 	if file == null:

@@ -1,23 +1,8 @@
 extends "res://tests/test.gd"
 
-# Focused tests for the uniform solid preview.
-#
-# The solid preview hoists one material when every cell of the batch holds it,
-# and passes it to the frame as a positional hint. A full chunk then fills in one
-# write, and the loop allocates no material array per cell. The geometry, the
-# cell set, and the material output must stay exactly equal to the path that lets
-# the frame compare the cells itself.
-#
-#   godot --path . res://tests/preview_solid_uniform.tscn
-#
-# Each test uses its own chunk offset, so the shared preview mesh cache never
-# serves a shape another test already built. Cross-step state lives on members,
-# because a step lambda captures a local by value.
 
 const PREVIEW := preload("res://Globals/Rendering/VoxelPreview.gd")
 const CHUNK := VoxelFrame.CHUNK_SIZE
-# The block edge of the measured batch. It spans several chunks, so a whole-run
-# build is measured, not one chunk.
 const BATCH := 32
 
 var preview
@@ -53,7 +38,6 @@ func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
 	State.clear_selection()
-	# A new chunk offset keeps every test on a fresh cache key.
 	_base += CHUNK
 
 
@@ -64,7 +48,6 @@ func after_test() -> void:
 	_requested = {}
 
 
-# One full chunk of cells in a fixed order, all one color.
 func _uniform_cells() -> Dictionary:
 	var cells := {}
 	for z in CHUNK:
@@ -74,7 +57,6 @@ func _uniform_cells() -> Dictionary:
 	return cells
 
 
-# One full chunk of cells in a fixed order, with sixteen colors.
 func _varied_cells() -> Dictionary:
 	var cells := {}
 	for z in CHUNK:
@@ -84,8 +66,6 @@ func _varied_cells() -> Dictionary:
 	return cells
 
 
-# One large block of cells in a fixed order. A uniform fill gives every cell the
-# same color. A varied fill gives the sixteen-color pattern.
 func _batch_cells(varied: bool) -> Dictionary:
 	var cells := {}
 	for z in BATCH:
@@ -98,10 +78,6 @@ func _batch_cells(varied: bool) -> Dictionary:
 	return cells
 
 
-# The mesh arrays that the frame builds with no uniform hint, so the frame
-# compares the cells itself. This is the pre-optimization path. The arrays are
-# read back from an ArrayMesh, because the preview installs an ArrayMesh and a
-# mesh may store vertex colors at a lower precision than the raw array.
 func _reference_arrays(requested: Dictionary, use_voxel_colors: bool, color_key: Color) -> Array:
 	var materials := {}
 	for cell in requested:
@@ -129,8 +105,6 @@ func _chunk_position() -> Vector3i:
 	return VoxelFrame.chunk_position(Vector3i(_base, 0, 0))
 
 
-# The chunk origin of the fixture. The preview moves the chunk vertices to world
-# space, and a single-chunk builder leaves them local.
 func _reference_positions(requested: Dictionary, use_voxel_colors: bool, color_key: Color) -> PackedVector3Array:
 	var reference := _reference_arrays(requested, use_voxel_colors, color_key)
 	var positions: PackedVector3Array = reference[Mesh.ARRAY_VERTEX]
@@ -224,8 +198,6 @@ func _uniform_installed_cells() -> void:
 	)
 
 
-# A fully transparent batch erases its cells, so the build emits no surface. The
-# preview must not claim cells it does not draw.
 func _empty_surface_cells() -> void:
 	step("Given a solid preview whose only cell is transparent", func():
 		preview = PREVIEW.new()
@@ -250,16 +222,10 @@ func _uniform_cost() -> void:
 			BATCH * BATCH * BATCH, _uniform_us, _varied_us,
 		])
 		expect(_uniform_us > 0 and _varied_us > 0, "both batches measured a build")
-		# The varied path allocates one material array per cell and lets the frame
-		# compare every cell, so the uniform path must not cost more.
 		expect(_uniform_us <= _varied_us, "the uniform batch costs no more than the varied batch")
 	)
 
 
-# The prepared payload must produce the exact surface of `show_voxels`. The two
-# paths share the mesh cache key, so the second install must reuse the first
-# ArrayMesh object. That proves the key, the cells, the material, and the bounds
-# agree without a rebuild.
 func _prepared_matches_normal() -> void:
 	step("Given a uniform chunk shown the normal way", func():
 		preview = PREVIEW.new()
@@ -293,7 +259,6 @@ func _prepared_matches_normal() -> void:
 	)
 
 
-# A prepared submit follows the same clear and supersede rules as a normal one.
 func _prepared_lifecycle() -> void:
 	step("Given a preview with a prepared payload released", func():
 		preview = PREVIEW.new()
@@ -332,7 +297,6 @@ func _prepared_lifecycle() -> void:
 	)
 
 
-# The bounds of a cell list, for the supersede check.
 func _aabb_of_dict(cells: Array[Vector3i]) -> AABB:
 	var min_corner := Vector3(INF, INF, INF)
 	var max_corner := Vector3(-INF, -INF, -INF)
@@ -342,9 +306,6 @@ func _aabb_of_dict(cells: Array[Vector3i]) -> AABB:
 	return AABB(min_corner, max_corner - min_corner)
 
 
-# The preview reports the mesher phases of a large solid build, and a fully
-# surrounded chunk is built to an empty mesh. That measures the cost an exact
-# no-exposed-face early cull would skip.
 func _mesher_phases() -> void:
 	var job := PREVIEW.PreviewJob.new()
 	step("Given a three-cube block of full chunks", func():
@@ -396,7 +357,6 @@ func _mesher_phases() -> void:
 	)
 
 
-# Runs one solid preview build on this thread and returns its microseconds.
 func _build_us(cells: Dictionary, use_voxel_colors: bool) -> int:
 	var job := PREVIEW.PreviewJob.new()
 	job.cells = cells

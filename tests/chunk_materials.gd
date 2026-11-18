@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# Chunk material storage and the per-chunk atlas bake. The atlas case moved here
-# from `chunk_atlas`, so one process covers both.
 
 const DOCUMENT_PATH := "user://chunk_materials_test.lve"
 const LEGACY_PATH := "user://chunk_materials_legacy.lve"
@@ -76,15 +74,12 @@ func _publish_run() -> void:
 	)
 
 
-# Each case starts from a clean document, history, and playback state. The cases
-# shared one process, so no case may inherit another case's document or undo.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
 	State.undo_redo.clear_history()
 	State.clear_selection()
 	State.symmetry_axes = 0
-
 
 
 func _run() -> void:
@@ -291,7 +286,6 @@ func _atlas_run() -> void:
 		var orm := Image.create_from_data(job.atlas_size.x, job.atlas_size.y, false, Image.FORMAT_RGB8, job.atlas_orm)
 		var samples_match := true
 		var face_samples := [0, 0, 0]
-		# Sample each exposed voxel face, not at the atlas gutter.
 		for cell: Vector3i in atlas_frame.positions():
 			for direction: Vector3i in [Vector3i.LEFT, Vector3i.RIGHT, Vector3i.DOWN, Vector3i.UP, Vector3i.FORWARD, Vector3i.BACK]:
 				if atlas_frame.has(cell + direction):
@@ -350,7 +344,6 @@ func _holds_color(texture: Texture2D, color: Color) -> bool:
 	return false
 
 
-# The packed finish texture holds roughness in green and metallic in blue.
 func _holds_finish(texture: Texture2D, material: Dictionary) -> bool:
 	var expected := Vector2i(roundi(material.roughness * 255.0), roundi(material.metallic * 255.0))
 	var image: Image = texture.get_image()
@@ -448,8 +441,6 @@ func _scope_settle() -> void:
 
 func _storage_run() -> void:
 	step("Given a chunk size that matches the chunk-position shift", func():
-		# `chunk_position` shifts instead of dividing, so the two constants must
-		# agree. This fails loudly if either one moves.
 		expect(VoxelFrame.CHUNK_SIZE == 1 << VoxelFrame.CHUNK_SHIFT, "the chunk shift is the base-two logarithm of the chunk size")
 		expect(VoxelFrame.chunk_position(Vector3i(-1, -17, 15)) == Vector3i(-1, -2, 0), "the chunk position floors toward negative infinity")
 	)
@@ -542,9 +533,6 @@ func _storage_run() -> void:
 		storage_frame.set_cells(batch)
 		var filled: VoxelFrame.Chunk = storage_frame.chunks[Vector3i.ZERO]
 		expect(filled.materials.size() / VoxelFrame.MATERIAL_STRIDE == 1, "the fill leaves one material entry for the whole chunk")
-		# A repaint gives each edited cell its own entry. A repaint-only workload
-		# never erases, so the reclamation has to run on the write path or the table
-		# grows with every edit.
 		var blue := VoxelFrame.material(Color.BLUE)
 		for index in 100:
 			var repaint := {}

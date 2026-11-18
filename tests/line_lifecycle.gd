@@ -1,20 +1,6 @@
 extends "res://tests/test.gd"
 
-# Focused lifecycle tests for the line preview runner.
-#
-# The preview worker now awaits `State.run_edit_job`. These tests prove that a
-# newer endpoint supersedes a running job, that a cancel, a detach, or a context
-# change discards it, that one operation reports the progress, and that a later
-# press still commits. The tests never measure time.
-#
-#   godot --path . res://tests/line_lifecycle.tscn
-#
-# A large stamp pattern keeps the first preview on the worker. No frame runs
-# between two pointer moves, so the running job is still the current job when the
-# newer request arrives.
 
-## The edge of the large stamp pattern. A line of two or more centers then
-## needs more than [constant StrokeTool.INLINE_EDIT_LIMIT] cells.
 const PATTERN_EDGE := 17
 
 var viewport: SubViewport
@@ -46,7 +32,6 @@ func before_test() -> void:
 	settings = plugin("BrushPlugin")._settings
 	settings.shape = settings.BrushShape.CUBE
 	settings.diameter = 1
-	# Select the pencil first, so the line tool mounts again after a detach test.
 	select_toolbar_item("Toolbar", "Pencil")
 	select_toolbar_item("Toolbar", "Line")
 	tool = plugin("BrushPlugin")._line_tool
@@ -193,8 +178,6 @@ func _context_change() -> void:
 	)
 
 
-# Builds a stamp pattern above the inline limit. The line tool copies it at
-# the start of a stroke.
 func _use_large_pattern() -> void:
 	var pattern := {}
 	var materials := {}
@@ -220,7 +203,6 @@ func _await_job_clear() -> void:
 		await get_tree().process_frame
 
 
-# Counts the foreground operations and checks that only the expected one runs.
 func _expect_one_foreground(operation_id: int, owner: Node) -> void:
 	var count := 0
 	var matches := false

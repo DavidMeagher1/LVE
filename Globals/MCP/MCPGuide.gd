@@ -1,18 +1,10 @@
 extends RefCounted
 
-## The MCP guide resources.
-##
-## The Markdown files are the single source of truth. This class slices the MCP
-## guide into a short index and topic resources, so a client reads only the
-## section it needs. The files are included in the export.
 
-## The guide index and the file format resource.
 const GUIDE_URI := "lve://guide"
 const FORMAT_URI := "lve://document-format"
 const GUIDE_PATH := "res://docs/MCP.md"
 const FORMAT_PATH := "res://docs/DOCUMENT_FORMAT.md"
-## The topic slices of the guide. Each entry joins one or more `##` sections
-## from the guide file, so the file stays the single source of truth.
 const GUIDE_GROUPS := [
 	{
 		"slug": "setup",
@@ -68,8 +60,6 @@ static var _text_cache := ""
 static var _sections_cache := {}
 
 
-## Returns the published resources: the short guide index, one resource per
-## topic, and the file format.
 static func resources() -> Array:
 	var entries: Array = [
 		{
@@ -103,7 +93,6 @@ static func resources() -> Array:
 	return entries
 
 
-## Returns the text of one resource, or an empty string for an unknown URI.
 static func read(uri: String) -> String:
 	if uri == GUIDE_URI:
 		return index_text()
@@ -114,8 +103,6 @@ static func read(uri: String) -> String:
 	return ""
 
 
-## Returns the short index resource. The intro comes from the guide file, so
-## the index does not repeat a second copy of the guide.
 static func index_text() -> String:
 	var text := _guide_text()
 	if text.is_empty():
@@ -132,8 +119,6 @@ static func index_text() -> String:
 	return "\n".join(lines)
 
 
-## Returns the joined text of one topic group, or an empty string for an
-## unknown slug.
 static func group_text(slug: String) -> String:
 	var sections := _guide_sections()
 	for value in GUIDE_GROUPS:
@@ -156,8 +141,6 @@ static func _guide_text() -> String:
 	return _text_cache
 
 
-## Parses the guide into a heading -> section map. A section runs from its `##`
-## heading to the next `##` heading.
 static func _guide_sections() -> Dictionary:
 	if not _sections_cache.is_empty():
 		return _sections_cache
@@ -174,7 +157,6 @@ static func _guide_sections() -> Dictionary:
 	return sections
 
 
-## Reads one packed text file. Returns an empty string when the file is missing.
 static func _read_text(path: String) -> String:
 	var file := FileAccess.open(path, FileAccess.READ)
 	return file.get_as_text() if file != null else ""

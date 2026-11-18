@@ -1,12 +1,6 @@
 extends VoxelPlugin
 
-## The deform plugin.
-##
-## It owns the grab and pose tools. It adds their toolbar and option bar, and it
-## switches the active tool when the deform tool changes. A tool switch ends an
-## open gesture like a release, so the drag commits as one history action.
 
-## The stable id of the deform toolbar. The persisted active tool uses it.
 const TOOL_ID := "deform"
 
 var _settings := preload("./DeformSettings.tres")
@@ -35,7 +29,6 @@ func _notification(what: int) -> void:
 				node.free()
 
 
-## Activates the current deform tool and shows the option bar.
 func activate_tool() -> void:
 	if not _toolbar.button_pressed:
 		_toolbar.button_pressed = true
@@ -45,8 +38,6 @@ func activate_tool() -> void:
 	_on_tool_changed(_settings.tool)
 
 
-## Deactivates the current deform tool and hides the option bar. It ends an open
-## gesture like a release.
 func _end_deactivation() -> void:
 	_active = false
 	remove_option_bar_item(_options)
@@ -63,7 +54,6 @@ func _on_tool_changed(tool: int) -> void:
 
 func _select_tool(tool: int) -> void:
 	if _current_tool:
-		# The old tool ends its open gesture like a release before the switch.
 		_current_tool.finish_on_switch()
 		remove_editor_node(_current_tool)
 	match tool:

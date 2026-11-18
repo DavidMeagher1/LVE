@@ -1,114 +1,54 @@
 class_name VoxelMeshBuilder
 extends RefCounted
 
-## Builds the mesh arrays of one chunk.
-##
-## The builder reads a padded snapshot of the chunk and its border. It emits
-## colored vertex arrays or a texture-atlas surface. State owns the worker
-## launch, and [method run] is the worker body.
 
-## The chunk edge length in cells.
 const CHUNK_SIZE := VoxelFrame.CHUNK_SIZE
-## The padded chunk edge length, with one border cell on each side.
 const PADDED_CHUNK_SIZE := CHUNK_SIZE + 2
-# The padded array is indexed as x + PADDED_CHUNK_SIZE * (y + PADDED_CHUNK_SIZE * z),
-# so one cell step along axis zero is one slot, along axis one a row, and along
-# axis two a plane. The face scan and the snapshot step by these, so neither
-# rebuilds a Vector3i nor recomputes the padded index per cell.
-## The padded index step of one cell along each axis.
 const PADDED_AXIS_STRIDE := [1, PADDED_CHUNK_SIZE, PADDED_CHUNK_SIZE * PADDED_CHUNK_SIZE]
-## The padded index of the chunk's first own cell, which is padded cell (1, 1, 1).
 const PADDED_ORIGIN := 1 + PADDED_CHUNK_SIZE * (1 + PADDED_CHUNK_SIZE)
 const SURFACE := preload("./VoxelSurface.gd")
 
-## The frame to read. A run clears it, so the worker does not hold the frame.
 var source_frame: VoxelFrame
-## The chunk coordinate to build.
 var chunk_location := Vector3i.ZERO
-## Whether the mesh uses smooth corner normals.
 var smooth_normals := false
-## The ambient occlusion strength, from 0 to 1. Zero disables it.
 var ao_strength := 0.0
-## Whether the mesh uses the texture atlas instead of vertex colors.
 var texture_materials := true
-## The world axis of the writable slice, or -1 when the mesh holds every layer.
-## A slice build keeps only the cells inside the slice layers, so a renderer can
-## show the floor slab alone.
 var slice_axis := -1
-## The first cell index of the slice along [member slice_axis].
 var slice_index := 0
-## The number of layers in the slice from [member slice_index].
 var slice_count := 1
-## The worker pool task id, or -1 when no worker runs.
 var worker_task_id := -1
-## The built mesh arrays, indexed by [enum Mesh.ArrayType].
 var surface_arrays: Array = []
-## The estimated vertex and index byte count.
 var geometry_bytes := 0
-## The atlas size in pixels, or zero when no atlas exists.
 var atlas_size := Vector2i.ZERO
-## The albedo image data of the atlas.
 var atlas_albedo := PackedByteArray()
-## The finish image data of the atlas.
 var atlas_orm := PackedByteArray()
-## The emission image data of the atlas.
 var atlas_emission := PackedByteArray()
-## The built atlas, or null when the mesh uses vertex colors.
 var atlas: RefCounted
-# The exact enclosed-chunk shortcut. A face is emitted only at an empty or
-# translucent neighbor, so a full chunk whose six face planes and whose own
-# materials are all opaque emits no vertex at all. The shortcut then skips the
-# padded snapshot and the face scan. A test turns it off to build the frozen
-# baseline body and compare the arrays exactly.
-## Whether the enclosed-chunk shortcut runs.
 var enclosed_shortcut := true
-## Whether this run took the enclosed-chunk shortcut.
 var enclosed_culled := false
-# The opt-in phase counters of one run. The default off path records nothing, so
-# a production build pays no counter work. A test or a benchmark turns `profile`
-# on to attribute one build to its padded snapshot, its face scan, and its
-# cleanup with the atlas bake. Every counter is a per-instance total, so a caller
-# sums them over the builders of a batch.
-## Whether this run records the phase microseconds and the read counters.
 var profile := false
-## The padded-snapshot microseconds.
 var snapshot_us := 0
-## The face-scan microseconds, from the groups or the greedy pass.
 var scan_us := 0
-## The cleanup, atlas bake, and emission microseconds.
 var finish_us := 0
-## The neighbor chunks that the snapshot read.
 var snapshot_chunks := 0
-## The neighbor grid slots that the snapshot loop examined.
 var snapshot_cells := 0
-## The occupied cells that the snapshot decoded to a color.
 var snapshot_decodes := 0
-## The padded sample pairs that the face scan tested.
 var scan_queries := 0
-## The face groups that the scan collected.
 var group_count := 0
 
 
-## Builds the mesh arrays for one chunk. This is the worker body.
 func run() -> void:
 	var frame := source_frame
-	# The enclosed shortcut runs before any snapshot work. Every other chunk falls
-	# through to the normal body, so the geometry, the materials, and the shading
-	# are unchanged.
 	if enclosed_shortcut and slice_axis < 0 and frame != null and _enclosed(frame, chunk_location):
 		enclosed_culled = true
 		source_frame = null
 		_finish_enclosed(frame)
 		return
 	var snapshot_started_us := Time.get_ticks_usec() if profile else 0
-	# The AO reads the diagonal corner cells, so those chunks must be in the
-	# snapshot even without smooth normals.
 	var snapshot := _snapshot(source_frame, chunk_location, smooth_normals or ao_strength > 0.0, profile, slice_axis, slice_index, slice_count)
 	var padded_cell_colors: PackedColorArray = snapshot[0]
 	var padded_cell_materials: PackedInt32Array = snapshot[1]
 	var materials: PackedFloat32Array = snapshot[2]
-	# One bit per padded plane. Only the chunk's own cells emit faces, so a plane
-	# with no occupied voxel skips its whole 16 by 16 scan.
 	var occupied_planes: PackedInt32Array = snapshot[3]
 	if profile:
 		snapshot_us += Time.get_ticks_usec() - snapshot_started_us
@@ -122,8 +62,6 @@ func run() -> void:
 	var sparse_layers: Array = _sparse_layers(chunk) if sparse else []
 	source_frame = null
 	if texture_materials and frame != null:
-		# Collect the exposed faces straight from the snapshot. The greedy pass
-		# would merge them only for the cleanup to split them into single cells.
 		var collect_started_us := Time.get_ticks_usec() if profile else 0
 		var groups: Dictionary
 		if sparse:
@@ -135,9 +73,6 @@ func run() -> void:
 			group_count += groups.size()
 		var surface_started_us := Time.get_ticks_usec() if profile else 0
 		var surface := SURFACE.new()
-		# The padded material map already holds occupancy for the chunk and its
-		# neighbor border, so the smooth corner normals read it there instead of
-		# hashing the frame once per corner.
 		surface.run_groups(groups, frame, Vector3(chunk_location * CHUNK_SIZE), Callable(), smooth_normals, padded_cell_materials, ao_strength)
 		if profile:
 			finish_us += Time.get_ticks_usec() - surface_started_us
@@ -169,7 +104,6 @@ func run() -> void:
 	surface_arrays[Mesh.ARRAY_INDEX] = triangle_indices
 	geometry_bytes = vertex_positions.size() * 40 + triangle_indices.size() * 4
 	if texture_materials:
-		# Use the same seam-bounded planar cleanup and bake as the full-frame exporter.
 		var surface_started_us := Time.get_ticks_usec() if profile else 0
 		var surface := SURFACE.new()
 		surface.run(surface_arrays, frame, Vector3(chunk_location * CHUNK_SIZE), Callable(), smooth_normals, ao_strength)
@@ -185,7 +119,6 @@ func run() -> void:
 		geometry_bytes = surface_arrays[Mesh.ARRAY_VERTEX].size() * (48 if ao_strength > 0.0 else 32) + surface_arrays[Mesh.ARRAY_INDEX].size() * 4
 
 
-# Build the greedy vertex-color mesh from the padded snapshot.
 func _greedy_dense(padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array) -> Array:
 	var vertex_positions := PackedVector3Array()
 	var vertex_normals := PackedVector3Array()
@@ -245,7 +178,6 @@ func _greedy_dense(padded_cell_colors: PackedColorArray, padded_cell_materials: 
 	return [vertex_positions, vertex_normals, vertex_colors, triangle_indices]
 
 
-# Build the greedy vertex-color mesh from the occupied slots alone.
 func _greedy_sparse(chunk: VoxelFrame.Chunk, layers: Array, padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array) -> Array:
 	var vertex_positions := PackedVector3Array()
 	var vertex_normals := PackedVector3Array()
@@ -327,7 +259,6 @@ func _greedy_sparse(chunk: VoxelFrame.Chunk, layers: Array, padded_cell_colors: 
 	return [vertex_positions, vertex_normals, vertex_colors, triangle_indices]
 
 
-# Emit one greedy quad. The dense and sparse scans share the same vertex order.
 func _emit_quad(face_axis: int, face_sign: int, layer_index: int, column_axis: int, row_axis: int, column: int, row: int, quad_width: int, quad_height: int, material_id: int, face_normal: Vector3, materials: PackedFloat32Array, padded_cell_colors: PackedColorArray, corner_normals: Dictionary, vertex_positions: PackedVector3Array, vertex_normals: PackedVector3Array, vertex_colors: PackedColorArray, triangle_indices: PackedInt32Array) -> void:
 	var face_origin := Vector3.ZERO
 	face_origin[face_axis] = layer_index + face_sign * 0.5
@@ -374,7 +305,6 @@ func _emit_quad(face_axis: int, face_sign: int, layer_index: int, column_axis: i
 		triangle_indices[index_start + 5] = first_vertex + 3
 
 
-# One entry per face axis and layer, in row then column order.
 static func _sparse_layers(chunk: VoxelFrame.Chunk) -> Array:
 	var layers: Array = [{}, {}, {}]
 	var rows := chunk.occupancy_rows()
@@ -405,9 +335,6 @@ static func _sparse_layers(chunk: VoxelFrame.Chunk) -> Array:
 	return layers
 
 
-# Returns true when one chunk-local cell is inside the slice. The slice holds
-# world layers, so the test adds the chunk's world base. A chunk outside the
-# slice contributes no cell.
 func _cell_in_slice(cell: Vector3i) -> bool:
 	if slice_axis < 0:
 		return true
@@ -415,14 +342,8 @@ func _cell_in_slice(cell: Vector3i) -> bool:
 	return layer >= slice_index and layer < slice_index + slice_count
 
 
-# Finishes one enclosed chunk with the exact empty result that a normal face-free
-# run produces. The shape of the result depends on the material path, so the same
-# finalizers run here: an atlas surface for the texture path, and the plain
-# packed arrays for the color path.
 func _finish_enclosed(frame: VoxelFrame) -> void:
 	if texture_materials and frame != null:
-		# No face exists, so the group set is empty. The shared surface build then
-		# returns the same empty arrays and the same empty atlas as a face-free run.
 		var surface := SURFACE.new()
 		surface.run_groups({}, frame, Vector3(chunk_location * CHUNK_SIZE), Callable(), smooth_normals, null, ao_strength)
 		surface_arrays = surface.arrays
@@ -453,13 +374,6 @@ func _finish_enclosed(frame: VoxelFrame) -> void:
 		geometry_bytes = surface_arrays[Mesh.ARRAY_VERTEX].size() * (48 if ao_strength > 0.0 else 32) + surface_arrays[Mesh.ARRAY_INDEX].size() * 4
 
 
-# Returns true when the chunk cannot emit any face.
-#
-# A face is emitted only where the neighbor cell is empty or translucent, so the
-# chunk is enclosed when its own grid is full, its own material table holds only
-# opaque entries, and each of the six face neighbors is full of opaque boundary
-# cells. The cheap tests run first, so a surface or sparse chunk returns false
-# after one occupancy read.
 static func _enclosed(frame: VoxelFrame, location: Vector3i) -> bool:
 	var cells := CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE
 	var chunk: VoxelFrame.Chunk = frame.chunks.get(location)
@@ -474,14 +388,9 @@ static func _enclosed(frame: VoxelFrame, location: Vector3i) -> bool:
 				return false
 			if not _opaque_plane(neighbor, axis, 0 if direction > 0 else CHUNK_SIZE - 1):
 				return false
-	# The own table can hold a translucent entry, and two translucent cells of
-	# different colors would emit an internal face. Check every stored material,
-	# unused entries included, so a conservative false only skips the shortcut.
 	return _opaque_materials(chunk)
 
 
-# Returns true when the shared boundary plane of one neighbor holds only opaque
-# cells. [param axis] is the plane normal and [param layer] the local plane index.
 static func _opaque_plane(neighbor: VoxelFrame.Chunk, axis: int, layer: int) -> bool:
 	var grid := neighbor.grid
 	var materials := neighbor.materials
@@ -501,7 +410,6 @@ static func _opaque_plane(neighbor: VoxelFrame.Chunk, axis: int, layer: int) -> 
 	return true
 
 
-# Returns true when every stored material of one chunk is opaque.
 static func _opaque_materials(chunk: VoxelFrame.Chunk) -> bool:
 	var materials := chunk.materials
 	var index := 3
@@ -512,9 +420,6 @@ static func _opaque_materials(chunk: VoxelFrame.Chunk) -> bool:
 	return true
 
 
-# Collect the exposed faces of this chunk straight from the padded snapshot,
-# grouped by plane and material. The scan follows the greedy pass, so the
-# groups are created in the same order and the mesh matches vertex for vertex.
 func _collect_groups(padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array, ao_strength := 0.0) -> Dictionary:
 	var groups := {}
 	var material_cache := {}
@@ -540,7 +445,6 @@ func _collect_groups(padded_cell_colors: PackedColorArray, padded_cell_materials
 						if voxel_color == Color.TRANSPARENT:
 							continue
 						var neighbor_color := padded_cell_colors[sample_index + neighbor_step]
-						# The greedy pass emits this face under the same rule.
 						if not (neighbor_color.a < 1.0 and neighbor_color != voxel_color):
 							continue
 						var material_id := padded_cell_materials[sample_index]
@@ -550,9 +454,6 @@ func _collect_groups(padded_cell_colors: PackedColorArray, padded_cell_materials
 						else:
 							material = materials.slice(material_id * VoxelFrame.MATERIAL_STRIDE, (material_id + 1) * VoxelFrame.MATERIAL_STRIDE)
 							material_cache[material_id] = material
-							# Group equal material values under one small id. The
-							# float-array key is hashed once per material, not once
-							# per exposed face.
 							if canonical_cache.has(material):
 								canonical_by_id[material_id] = canonical_cache[material]
 							else:
@@ -574,8 +475,6 @@ func _collect_groups(padded_cell_colors: PackedColorArray, padded_cell_materials
 	return groups
 
 
-# Collect the exposed faces from the occupied layers alone. The order follows
-# `_collect_groups`, so the atlas and vertex arrays match the dense build.
 func _collect_groups_sparse(layers: Array, padded_cell_colors: PackedColorArray, padded_cell_materials: PackedInt32Array, materials: PackedFloat32Array, occupied_planes: PackedInt32Array, ao_strength := 0.0) -> Dictionary:
 	var groups := {}
 	var material_cache := {}
@@ -636,8 +535,6 @@ func _collect_groups_sparse(layers: Array, padded_cell_colors: PackedColorArray,
 	return groups
 
 
-## Returns the chunk offsets that a mesh of this chunk reads. A smooth mesh
-## reads all 26 neighbors. A flat mesh reads only the six face neighbors.
 static func neighbor_offsets(use_smooth_normals: bool) -> Array[Vector3i]:
 	var offsets: Array[Vector3i] = [Vector3i.ZERO]
 	if not use_smooth_normals:
@@ -652,10 +549,6 @@ static func neighbor_offsets(use_smooth_normals: bool) -> Array[Vector3i]:
 	return offsets
 
 
-# The ambient occlusion code of one face, read from the padded material map. A
-# nonzero padded material id marks an occupied cell, so this matches
-# VoxelFrame.has for the stored voxels, including stored transparent voxels.
-# [param outside] is the padded index of the cell in front of the face.
 static func _face_ao_code(padded_cell_materials: PackedInt32Array, outside: int, column_stride: int, row_stride: int) -> int:
 	var code := 0
 	for index in 4:
@@ -680,14 +573,6 @@ static func _corner_normal(corner: Vector3i, padded_cell_colors: PackedColorArra
 	return normal.normalized()
 
 
-# Build the padded snapshot of one chunk plus its neighbor border. Returns
-# [padded colors, padded material ids, material table, occupied planes, read
-# stats]. The last entry holds [chunks read, grid slots examined, cells decoded],
-# and it is zeroed unless [param count_reads] is on. A nonzero padded material id
-# marks an occupied cell for the whole padded volume, including the border. The
-# smooth corner normals and the AO read occupancy from that map, so they match
-# `VoxelFrame.has` for every stored voxel. [param use_smooth_normals] also
-# selects whether the diagonal neighbor chunks are read.
 static func _snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals: bool, count_reads := false, slice_axis := -1, slice_index := 0, slice_count := 1) -> Array:
 	var padded_cell_colors := PackedColorArray()
 	padded_cell_colors.resize(PADDED_CHUNK_SIZE * PADDED_CHUNK_SIZE * PADDED_CHUNK_SIZE)
@@ -707,15 +592,8 @@ static func _snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals:
 			continue
 		var grid := neighbor.grid
 		var neighbor_materials := neighbor.materials
-		# One chunk id always reads one row of that chunk's table, so the content
-		# lookup and the slice run once per distinct id instead of once per cell.
-		# The local table still dedupes by content, so two equal rows of two
-		# chunks keep one entry and the greedy merge groups them together.
 		var row_ids := {}
 		var origin_delta := neighbor.location * CHUNK_SIZE - padded_origin
-		# Only the cells inside the padded volume are copied. A face neighbor
-		# overlaps one plane, so its other rows are skipped rather than examined
-		# by a per-cell range test.
 		var x_first := maxi(0, -origin_delta.x)
 		var x_last := mini(CHUNK_SIZE, PADDED_CHUNK_SIZE - origin_delta.x)
 		var y_first := maxi(0, -origin_delta.y)
@@ -723,8 +601,6 @@ static func _snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals:
 		var z_first := maxi(0, -origin_delta.z)
 		var z_last := mini(CHUNK_SIZE, PADDED_CHUNK_SIZE - origin_delta.z)
 		if slice_axis >= 0:
-			# A slice keeps a range of world layers, so this neighbor contributes
-			# only its own part of that range. A neighbor outside it is skipped.
 			var chunk_base := (location[slice_axis] + offset[slice_axis]) * CHUNK_SIZE
 			var local_first := slice_index - chunk_base
 			var local_last := local_first + slice_count
@@ -753,8 +629,6 @@ static func _snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals:
 		if count_reads:
 			chunks_read += 1
 		if neighbor.is_sparse():
-			# A sparse chunk stores only its occupied slots. Its row masks visit
-			# those alone and write the same padded samples the dense walk writes.
 			var rows := neighbor.occupancy_rows()
 			for row in rows.masks.size():
 				var mask := rows.masks[row]
@@ -814,9 +688,6 @@ static func _snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals:
 						decodes += 1
 					padded_cell_colors[sample_index] = Color(neighbor_materials[base], neighbor_materials[base + 1], neighbor_materials[base + 2], neighbor_materials[base + 3])
 					if offset != Vector3i.ZERO:
-						# Only the chunk's own cells need a real material id. A
-						# border cell marks occupancy alone, which the smooth
-						# corner normals read as a nonzero slot.
 						padded_cell_materials[sample_index] = 1
 						continue
 					occupied_planes[0] |= 1 << (origin_delta.x + local_x)
@@ -835,9 +706,6 @@ static func _snapshot(frame: VoxelFrame, location: Vector3i, use_smooth_normals:
 	return [padded_cell_colors, padded_cell_materials, materials, occupied_planes, [chunks_read, cells_read, decodes]]
 
 
-# The padded sample pairs that the face scan tests. Each axis scans its two signs
-# over the occupied layers alone, so the count is the occupied layer count of that
-# axis times a full plane, for both signs.
 static func _scan_query_count(occupied_planes: PackedInt32Array) -> int:
 	var queries := 0
 	for axis in 3:

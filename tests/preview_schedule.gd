@@ -1,24 +1,9 @@
 extends "res://tests/test.gd"
 
-# Focused tests for the preview schedule.
-#
-# A live cursor can change its request every frame. The strict default cancels a
-# running worker, so the newest request wins alone. The opt-in coalescing path
-# keeps the running worker, installs its completed snapshot in request order, and
-# settles on the newest exact snapshot. The preview exposes the installed cells,
-# so a caller can match a visible preview to a later click.
-#
-#   godot --path . res://tests/preview_schedule.tscn
-#
-# The tests count real mesh installs and compare real world AABBs. They never
-# assert a stale snapshot as the newest. Waits stay in the test body, because a
-# step lambda does not propagate its await to the harness.
 
 const PREVIEW := preload("res://Globals/Rendering/VoxelPreview.gd")
 
 
-## A test job that waits on a shared gate before it builds. The gate makes the
-## worker completion deterministic, so the test proves the install order.
 class GatedJob extends PREVIEW.PreviewJob:
 	static var gate: Semaphore
 
@@ -27,9 +12,7 @@ class GatedJob extends PREVIEW.PreviewJob:
 		super.run()
 
 
-## A test preview that counts installed meshes and hands out a gated job.
 class GatedPreview extends PREVIEW:
-	## The visible mesh installs since the last reset.
 	var installs := 0
 
 	func _new_job() -> PreviewJob:
@@ -42,8 +25,6 @@ class GatedPreview extends PREVIEW:
 			installs += 1
 
 
-## An opaque request token for the attribution tests. Two tokens compare by
-## identity, which is what a caller needs to match a surface to its request.
 class Token extends RefCounted:
 	pass
 
@@ -75,16 +56,12 @@ func before_test() -> void:
 	State.symmetry_axes = 0
 	State.symmetry_origin = State.DEFAULT_SYMMETRY_ORIGIN
 	State.document._bounds_dirty = true
-	# The mesh cache is static, so each test uses its own cell range. A repeated
-	# shape would otherwise install from the cache and hide the worker path.
 	_variant_base += 4096
 	GatedJob.gate = Semaphore.new()
 
 
 func after_test() -> void:
 	if preview != null and is_instance_valid(preview):
-		# Release any blocked worker before the detach joins it, so cleanup cannot
-		# deadlock on the test gate.
 		if GatedJob.gate != null:
 			for i in 32:
 				GatedJob.gate.post()
@@ -93,8 +70,6 @@ func after_test() -> void:
 	GatedJob.gate = null
 
 
-# A distinct uniform solid per index. The row spans 16 cells, so it runs on a
-# worker. The x offset makes each AABB unique.
 func _variant(index: int) -> Dictionary:
 	var cells := {}
 	var start := _variant_base + index * 32
@@ -332,9 +307,6 @@ func _settings_change_replaces() -> void:
 	)
 
 
-# A cached mesh belongs to the request that built it, but the installed surface
-# belongs to the request that asked for the hit. The token must follow the
-# request, not the cached cell dictionary.
 func _cache_hit_token() -> void:
 	var cells := _variant(0)
 	var first := Token.new()
@@ -361,8 +333,6 @@ func _cache_hit_token() -> void:
 	)
 
 
-# A cache hit must record the cells it installed, or the next request for the
-# other set compares against the wrong set and leaves the old surface visible.
 func _cache_hit_dedupe() -> void:
 	var first := _variant(0)
 	var second := _variant(1)
@@ -383,8 +353,6 @@ func _cache_hit_dedupe() -> void:
 	)
 
 
-# A clear and a cancel both hide the surface, so neither may leave a token that
-# a later click could attribute to the hidden request.
 func _token_clear() -> void:
 	var token := Token.new()
 	step("Given an installed surface with a request token", func():

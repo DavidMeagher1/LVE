@@ -1,21 +1,10 @@
 extends "res://tests/test.gd"
 
-# Focused tests for the bounded batch slice consumer shared by the bucket fill
-# and the wand.
-#
-# The consumer applies one bounded slice at a time. These tests prove that every
-# queued cell is applied once, that a partial budget leaves the rest, that a
-# drained queue is not a finished producer, that a cancel wakes a producer on a
-# full queue, and that a callback cannot consume the same cursor again. The last
-# test runs both tools through the shared path and checks the result and undo.
-#
-#   godot --path . res://tests/region_batch_slices.tscn
 
 const REFERENCE := preload("res://tests/region_search_reference.gd")
 const FILL_SIDE := 20
 const FILL_TOTAL := FILL_SIDE * FILL_SIDE * FILL_SIDE
 const WAIT_LIMIT_MS := 30000
-# Keep this equal to VoxelRegionSearch.BatchQueue.LIMIT. The test pins the bound.
 const QUEUE_LIMIT := 4
 
 var frame: VoxelFrame
@@ -27,7 +16,6 @@ var _producer_queue: VoxelRegionSearch.BatchQueue
 var _producer_task := -1
 
 
-# A producer that fills a bounded queue and then waits on a full one.
 class QueueProducer extends RefCounted:
 	var queue: VoxelRegionSearch.BatchQueue
 	var pushed := 0
@@ -39,7 +27,6 @@ class QueueProducer extends RefCounted:
 			pushed += 1
 
 
-# A slice callback that stops after a fixed number of slices.
 class BudgetSlice extends RefCounted:
 	var budget := 3
 	var applied: Array[Vector3i] = []
@@ -53,7 +40,6 @@ class BudgetSlice extends RefCounted:
 		return true
 
 
-# A slice callback that refuses a stale context before it applies the slice.
 class GuardedSlice extends RefCounted:
 	var valid := true
 	var applied: Array[Vector3i] = []
@@ -66,7 +52,6 @@ class GuardedSlice extends RefCounted:
 		return true
 
 
-# A slice callback that tries to consume the same cursor again.
 class ReentrantSlice extends RefCounted:
 	var cursor: VoxelRegionSearch.BatchCursor
 	var calls := 0
@@ -104,7 +89,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Leave no worker or open stroke behind, so a test can run alone or in any order.
 func after_test() -> void:
 	if is_instance_valid(fill_tool):
 		fill_tool._interrupt_fill()
@@ -134,7 +118,6 @@ func _await_until(condition: Callable, limit_ms := WAIT_LIMIT_MS) -> bool:
 	return true
 
 
-# Three batches of different sizes. The cell position is unique across them.
 func _queue_three_batches(queue: VoxelRegionSearch.BatchQueue) -> Dictionary:
 	var expected := {}
 	var sizes := [3, 5, 4]
@@ -190,7 +173,6 @@ func _cursor_no_eager_completion() -> void:
 		expect(not cursor.is_done(), "a partly applied batch is not done")
 		expect(cursor.apply_slice(1, _accept_slice), "the second slice applies")
 		expect(cursor.is_done(), "the drained cursor is done")
-		# The cursor never reports the producer. The caller tests its task.
 		expect(cursor.is_done(), "an empty queue stays done without a producer")
 	)
 

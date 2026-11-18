@@ -1,7 +1,5 @@
 extends "res://tests/test.gd"
 
-# A later passing case must not hide an earlier failure.
-
 
 func _ready() -> void:
 	test("an intentional failure is reported", _failure, "failure")

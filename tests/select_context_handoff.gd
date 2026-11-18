@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# A Delete or Cut during a Box or Lasso drag changes the edit context. The drag
-# must release its own edit, so the command can run, and the stale mouse release
-# must not commit a selection.
 
 var _selection_settings := preload("res://plugins/selection/SelectionSettings.tres")
 
@@ -46,8 +43,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Release only the tool's own drag handle. The document reset above already
-# releases any transaction a failed test left open.
 func after_test() -> void:
 	var selection_plugin := plugin("SelectionPlugin")
 	if selection_plugin != null and is_instance_valid(selection_plugin._current_tool):

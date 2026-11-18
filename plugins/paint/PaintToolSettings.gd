@@ -1,39 +1,19 @@
 class_name PaintToolSettings
 extends "res://plugins/brush/StampToolSettings.gd"
 
-## The shared paint settings.
-##
-## The resource holds the active paint tool and the options of each paint tool.
-## The paint toolbar, the paint option bar, and the paint tools share it. The
-## `changed` signal notifies its observers.
-##
-## The paint settings are independent of the brush settings. The brush and the
-## paintbrush keep their own diameter and shape. The stamp shape, the pattern
-## cache, and the pattern methods come from [StampToolSettings]. This class names
-## the pattern jobs, because a shared settings class that named them kept the
-## whole script graph alive at exit.
 
-## Emitted when [member tool] changes.
 signal tool_changed(tool: Tools)
 
-## The paint tool.
 enum Tools {
-	## Recolor existing voxels with the brush footprint.
 	PAINTBRUSH,
-	## Recolor a connected or a matching region.
 	FILL,
-	## Paint random spots inside a search size.
 	SPRAY,
-	## Recolor existing voxels on a Bayer mask.
 	DITHER
 }
 
 
 const PatternJob := preload("res://plugins/brush/StampPatternJob.gd")
-# The shared size helper comes from StampToolSettings. A second const with the
-# same name here clashes with the inherited one.
 
-## The active paint tool.
 @export var tool: Tools = Tools.PAINTBRUSH :
 	set(value):
 		if value == tool:
@@ -42,8 +22,6 @@ const PatternJob := preload("res://plugins/brush/StampPatternJob.gd")
 		tool_changed.emit(tool)
 		emit_changed()
 
-## Whether the bucket fill floods the six face neighbors. A false value fills
-## every matching cell in the frame.
 @export var connected:bool = true :
 	set(value):
 		if value == connected:
@@ -51,10 +29,6 @@ const PatternJob := preload("res://plugins/brush/StampPatternJob.gd")
 		connected = value
 		emit_changed()
 
-## The diameter in cells of one spray spot. The spot paints every exposed voxel
-## inside the shared brush sphere of this diameter. Diameter 1 paints the spot
-## center alone. It clamps to the range 1 through 64, so the spot matches the
-## brush sphere at every size.
 @export_range(1, 64, 1) var spot_diameter := 1 :
 	set(value):
 		value = VoxelBrushSize.clamp_size(value)
@@ -63,15 +37,6 @@ const PatternJob := preload("res://plugins/brush/StampPatternJob.gd")
 		spot_diameter = value
 		emit_changed()
 
-## The width in cells of the spray search area. The spray samples its spot
-## centers from the exposed voxels inside the shared brush sphere of this size.
-## A voxel is exposed when at least one of its six face neighbors is empty.
-## Size 1 offers the brush cell alone. It clamps to the range 1 through 64.
-##
-## The old spray search radius of 4 spanned 9 cells, so the default size is 9.
-## The sphere mask admits more corner and diagonal cells than the old integer
-## ball of radius 4, so the default mask changes while it keeps the intended
-## physical width.
 @export_range(1, 64, 1) var spray_size := 9 :
 	set(value):
 		value = VoxelBrushSize.clamp_size(value)
@@ -80,17 +45,12 @@ const PatternJob := preload("res://plugins/brush/StampPatternJob.gd")
 		spray_size = value
 		emit_changed()
 
-## Deprecated: the old spray search radius. It is a view of [member spray_size],
-## so the two never disagree. Use [member spray_size] in new code. The old radius
-## r spanned 2r + 1 cells, so the getter returns the span-equivalent radius.
 var spray_radius: int :
 	get:
 		return VoxelBrushSize.size_to_radius(spray_size)
 	set(value):
 		spray_size = VoxelBrushSize.radius_to_size(value)
 
-## The number of distinct spot centers that one click or one brush cell change
-## samples. A spot diameter above one can paint more voxels than this count.
 @export_range(1, 64, 1) var speed := 8 :
 	set(value):
 		value = clampi(value, 1, 64)
@@ -99,9 +59,6 @@ var spray_radius: int :
 		speed = value
 		emit_changed()
 
-## The dither density from 0 through 1. The tool keeps that fraction of the
-## visible surface cells in the brush footprint. The lowest Bayer thresholds win.
-## A value of 0.5 keeps half of the surface cells.
 @export_range(0.0, 1.0, 0.01) var dither_density := 0.5:
 	set(value):
 		value = clampf(value, 0.0, 1.0)
@@ -109,8 +66,6 @@ var spray_radius: int :
 			return
 		dither_density = value
 		emit_changed()
-
-
 
 
 func _build_pattern(brush_diameter: int, brush_shape: int) -> Dictionary:
@@ -121,8 +76,5 @@ func create_pattern_job():
 	return PatternJob.new()
 
 
-## Builds a stamp pattern for one diameter and shape. Returns a dictionary keyed
-## by offset from the center. An optional [param job] supplies the cancel
-## checkpoints and the progress stage.
 static func build_pattern(brush_diameter: int, brush_shape: int, job = null) -> Dictionary:
 	return PatternJob.build_pattern(brush_diameter, brush_shape, job)

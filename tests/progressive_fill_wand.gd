@@ -1,31 +1,13 @@
 extends "res://tests/test.gd"
 
-# Progressive publication for the bucket fill and the wand.
-#
-# A large operation streams the cells it finds, and the main thread applies them in
-# bounded batches. These tests prove that a partial result reaches the live frame,
-# the live selection, and the installed renderer surface while the job still runs,
-# that the final result matches the frozen reference exactly, that one stroke holds
-# one undo action, and that a cancel restores the starting frame and selection.
-#
-#   godot --path . res://tests/progressive_fill_wand.tscn
-#   godot --path . res://tests/progressive_fill_wand.tscn -- partial_fill
 
 const REFERENCE := preload("res://tests/region_search_reference.gd")
-# The fill fixture must be large enough that the streamed partial publication is
-# still observable while the edit runs. A 32 by 16 by 16 block finishes its edit
-# faster than the renderer installs its first partial surface once the write path
-# is fast, so the fixture is 64 wide. The assertions are unchanged.
 const FILL_SIDE_X := 64
 const FILL_SIDE_Y := 16
 const FILL_SIDE_Z := 16
 const FILL_TOTAL := FILL_SIDE_X * FILL_SIDE_Y * FILL_SIDE_Z
-# The wand fixture is large enough that the streamed selection lasts many frames,
-# so a partial outline can actually install before the final one.
 const WAND_SIDE := 40
 const WAND_TOTAL := WAND_SIDE * WAND_SIDE * WAND_SIDE
-# A wall-clock bound for one wait. The streaming fixtures finish in well under
-# this, so a hit means a stalled producer and the next check reports it.
 const WAIT_LIMIT_MS := 30000
 
 var frame: VoxelFrame
@@ -39,12 +21,8 @@ var _longest_frame_us := 0
 var _partials := 0
 var _peak_depth := 0
 var _partial_outline := false
-# A repaint keeps the same shape, so the installed vertex count cannot show it.
-# This records that an installed chunk material held the original red and the fill
-# blue in one sampled frame while the fill was unfinished.
 var _partial_repaint := false
 var _max_installed := 0
-# Step lambdas capture locals by value, so the frames a later step needs are members.
 var _before: VoxelFrame
 var _expected: VoxelFrame
 var _mask := {}
@@ -58,8 +36,6 @@ func _ready() -> void:
 	test("a tool switch lets both operations finish with one undo action", _tool_switch, "tool_switch")
 
 
-# Each test starts from a fresh document, the default symmetry, and the default
-# connected option, because those live in shared resources.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -78,9 +54,6 @@ func before_test() -> void:
 	await get_tree().process_frame
 
 
-# Leave no worker or open stroke behind, so a test can run alone or in any order.
-# A tool switch detaches a tool without destroying it, and its service loop is not
-# tied to the tree, so the cancel runs for every valid tool.
 func after_test() -> void:
 	if is_instance_valid(fill_tool):
 		fill_tool._interrupt_fill()
@@ -119,9 +92,6 @@ func _count_in(x_side: int, y_side: int, z_side: int, color: Color) -> int:
 	return total
 
 
-# Wait while `condition` holds, up to a wall-clock bound. Returns false when the
-# bound is hit, so a stalled producer fails the next check instead of holding the
-# harness watchdog.
 func _await_until(condition: Callable, limit_ms := WAIT_LIMIT_MS) -> bool:
 	var deadline := Time.get_ticks_msec() + limit_ms
 	while condition.call():
@@ -142,8 +112,6 @@ func _fill_fixture() -> void:
 	State.current_material = VoxelFrame.material(Color.BLUE)
 
 
-# The expected result, computed from an untouched copy with the frozen reference.
-# The operation never sees this frame, so a missing or wrong cell cannot hide.
 func _expected_fill(before: VoxelFrame, connected: bool, mask: Dictionary, symmetry := false) -> VoxelFrame:
 	var expected := before.copy_frame()
 	var target := expected.get_material(Vector3i.ZERO)
@@ -156,7 +124,6 @@ func _expected_fill(before: VoxelFrame, connected: bool, mask: Dictionary, symme
 	return expected
 
 
-# The vertices the viewport renderer has installed right now.
 func _installed_vertices() -> int:
 	var renderer := viewport_scene().get_node_or_null("VoxelRenderer")
 	if renderer == null:
@@ -168,10 +135,6 @@ func _installed_vertices() -> int:
 	return total
 
 
-# True when an installed chunk material's atlas holds this color. The atlas
-# texture is the renderer's own installed data, so a request that was never
-# installed cannot satisfy it. A repaint keeps the shape, so the atlas is the
-# installed proof of the new color.
 func _installed_holds(color: Color) -> bool:
 	var renderer := viewport_scene().get_node_or_null("VoxelRenderer")
 	if renderer == null:
@@ -196,9 +159,6 @@ func _texture_holds(texture: Texture2D, color: Color) -> bool:
 	return false
 
 
-# Watch a running fill frame by frame. Records the first partial frame, the first
-# partial installed repaint, the longest frame gap, and the peak queue depth. The
-# loop stops at a wall-clock bound, so a stalled fill reports instead of hanging.
 func _watch_fill() -> void:
 	_started_us = Time.get_ticks_usec()
 	_first_visible_us = 0
@@ -282,8 +242,6 @@ func _wand_fixture() -> void:
 	State.undo_redo.clear_history()
 	activate_tool("selection")
 	select_toolbar_item("selection", "Wand")
-	# The selection plugin can be mid-load while another agent edits it. Leave the
-	# tools null then, so the caller fails a check instead of reading a null tool.
 	var selection_plugin := plugin("SelectionPlugin")
 	wand_tool = selection_plugin._wand if selection_plugin != null else null
 	preview = selection_plugin._selection if selection_plugin != null else null
@@ -296,7 +254,6 @@ func _partial_wand() -> void:
 	step("Given a large block, a marked voxel, and the wand tool", func():
 		_wand_fixture()
 		expect(wand_tool != null and preview != null, "the selection plugin exposes the wand and the preview")
-		# A previous selection that a replace must drop.
 		State.selection.add(Vector3i(999, 999, 999))
 	)
 	if wand_tool == null:
@@ -359,16 +316,11 @@ func _partial_wand() -> void:
 	)
 
 
-# The streamed result must equal the frozen reference for every mode the callers
-# use: connected, disconnected, a selection mask, symmetry, and mixed materials.
 func _streaming_parity() -> void:
 	step("Given a red block with same-color neighbors of different materials", func():
 		State.document = VoxelDocument.new()
 		frame = State.get_current_voxel_frame()
 		frame.set_cells(_block(FILL_SIDE_X, FILL_SIDE_Y, FILL_SIDE_Z))
-		# A same-color voxel with a different metallic, and one with emission. Both
-		# touch the block, so the connected search meets them and must reject them.
-		# The match uses all nine floats, so the fill leaves them unchanged.
 		frame.set_cell(Vector3i(FILL_SIDE_X, 0, 0), VoxelFrame.material(Color.RED, VoxelFrame.DEFAULT_EMISSION, 0.8, 0.5))
 		frame.set_cell(Vector3i(0, 0, FILL_SIDE_Z), VoxelFrame.material(Color.RED, Color(0.5, 0.0, 0.0)))
 		State.document._bounds_dirty = true
@@ -435,8 +387,6 @@ func _streaming_parity() -> void:
 	)
 
 
-# A tool switch must not cancel either operation, and the detached tool keeps its
-# captured settings.
 func _tool_switch() -> void:
 	step("Given a running fill and a switch to another tool", func():
 		_fill_fixture()

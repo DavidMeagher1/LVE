@@ -1,6 +1,5 @@
 extends "res://tests/test.gd"
 
-# Measures where drawing time goes. Prints one line per measurement.
 
 const MATERIAL_COUNT := 64
 const MOTIONS := 16
@@ -160,7 +159,6 @@ func _run() -> void:
 
 	step("Given a 64-cube model and the largest brush", func():
 		_build_large_model()
-		# The document is replaced before the frame is filled, so frame the model now.
 		camera_rig().configure()
 		camera_rig().set_view("top")
 		plugin("BrushPlugin")._options.get_node("Diameter").value = MAX_DIAMETER
@@ -222,8 +220,6 @@ func _run() -> void:
 	)
 
 
-# A 64-cube model. The 32-cube model holds eight chunks, so a brush of the
-# largest diameter cannot show how the cost scales with the footprint.
 func _build_large_model() -> void:
 	var started_us := Time.get_ticks_usec()
 	State.document = VoxelDocument.new()
@@ -234,15 +230,10 @@ func _build_large_model() -> void:
 			for x in LARGE_MODEL:
 				cells[Vector3i(x, y, z)] = cell_material
 	State.get_current_voxel_frame().set_cells(cells)
-	# A direct frame write does not dirty the document bounds. The brush tool
-	# sets the same flag after it restores an edited frame.
 	State.document._bounds_dirty = true
 	large_model_us = Time.get_ticks_usec() - started_us
 
 
-# The stamp cost is the accumulated center count times the brush volume, and
-# every changed chunk rebuilds. A real drag delivers motions faster than a
-# maximum-diameter stamp completes, so queue the whole burst before waiting.
 func _measure_large_stroke(job_limit := 0) -> void:
 	var origin := Vector3(16, 32, 32)
 	VoxelRenderer._surface_job_limit = job_limit
@@ -256,8 +247,6 @@ func _measure_large_stroke(job_limit := 0) -> void:
 	longest_frame_us = 0
 	measuring = true
 	_button(origin, true)
-	# The gap measures the interval between frames. Reset the mark here, or the
-	# first frame also counts the idle time since the last measured frame.
 	last_frame_us = Time.get_ticks_usec()
 	var burst_started_us := Time.get_ticks_usec()
 	for step_index in MAX_MOTIONS:
@@ -267,7 +256,6 @@ func _measure_large_stroke(job_limit := 0) -> void:
 	await _settle_tool()
 	large_edit_us = Time.get_ticks_usec() - burst_started_us - large_burst_us
 	await _settle_large()
-	# Visible completion includes the surfaces, not only the edit worker.
 	large_settle_us = Time.get_ticks_usec() - burst_started_us - large_burst_us
 	measuring = false
 	_button(Vector3(origin.x + MAX_MOTIONS, origin.y, origin.z), false)
@@ -276,8 +264,6 @@ func _measure_large_stroke(job_limit := 0) -> void:
 	large_done = true
 
 
-# One largest-diameter motion, stamped and written with the renderer out of the
-# picture. The result is the job cost alone, which the settle time hides.
 func _measure_stamp() -> void:
 	var pattern: Dictionary = tool._settings.pattern()
 	if pattern.is_empty():
@@ -290,8 +276,6 @@ func _measure_stamp() -> void:
 	job.diameter = MAX_DIAMETER
 	job.shape = tool._settings.shape
 	job.material = State.current_material
-	# The tool declares a uniform batch for a shape brush, so mirror that here or
-	# the line measures a path the brush no longer takes.
 	job.applied_uniform = State.current_material
 	job.edited_frame = State.get_current_voxel_frame().copy_frame()
 	var started_us := Time.get_ticks_usec()
@@ -306,9 +290,6 @@ func _settle_large() -> void:
 		await get_tree().process_frame
 
 
-# The cursor preview is a second cost of a large brush. Above a diameter of 16
-# the pattern is not cached, so the hover builds it first and then builds the
-# preview. Measure both together.
 func _measure_cursor() -> void:
 	var cursor: MeshInstance3D = tool.get_node("Cursor")
 	var started_us := Time.get_ticks_usec()
@@ -330,9 +311,6 @@ func _on_chunks_changed(_updated_frame: int, chunk_positions: Array[Vector3i]) -
 	large_chunks = maxi(large_chunks, chunk_positions.size())
 
 
-# Phase 7 step 0. The same maximum-diameter stroke under different numbers of
-# in-flight surface jobs. The 64-cube model is rebuilt each time so every limit
-# meets the same conditions.
 func _measure_job_limits() -> void:
 	for limit: int in [2, 4, 6, 8]:
 		_build_large_model()
@@ -387,7 +365,6 @@ func _plain_frame() -> VoxelFrame:
 	return plain
 
 
-# A hollow 32-cube shell, like most voxel art, instead of a solid block.
 func _hollow_frame() -> VoxelFrame:
 	var hollow := VoxelFrame.new()
 	var cell_material := VoxelFrame.material(Color.RED)
@@ -399,7 +376,6 @@ func _hollow_frame() -> VoxelFrame:
 	return hollow
 
 
-# Eight uniform material blocks, like a painted model rather than a test pattern.
 func _blocky_frame() -> VoxelFrame:
 	var blocky := VoxelFrame.new()
 	var palette: Array[PackedFloat32Array] = []
@@ -466,9 +442,6 @@ func _time_stages() -> Array:
 	return [regions_us, bake_us, uvs_us]
 
 
-# The cleanup in parts, on the real functions. The protection and the
-# triangulation feed each other, so they are timed on their own group set, and
-# the emission is the remainder of `_finish`.
 func _time_substages() -> Array:
 	var surface := load("res://Globals/Rendering/VoxelSurface.gd")
 	var atlas := load("res://Globals/Rendering/VoxelAtlas.gd")

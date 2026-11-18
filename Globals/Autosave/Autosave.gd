@@ -1,47 +1,27 @@
 class_name Autosave
 extends Node
 
-## Keeps a recovery copy of every edited document.
-##
-## The copy lives next to the original as `~{name}.lve`, so it is easy to find
-## and open by hand. A small manifest in the user folder indexes the copies, so
-## startup can find them even after a crash. A normal save or a discard deletes
-## the copy. On startup the editor offers the remaining copies for recovery.
 
-## Emitted once at startup when recovery files exist.
 signal recovery_available(entries: Array)
 
-## The recovery folder and its manifest. Tests point these at a temporary folder.
 var recovery_dir := "user://recovery"
 var manifest_path := "user://recovery/manifest.json"
-## Tests turn this off when they do not exercise recovery.
 var enabled := true
 
-## The delay after the first edit before a copy is written.
 const SAVE_DELAY_SEC := 2.0
-## The longest delay between attempts after a failed copy.
 const MAX_RETRY_DELAY_SEC := 60.0
 
-## The result of one recovery copy attempt.
 enum SaveOutcome {
-	## The copy is on disk.
 	SAVED,
-	## The write failed, so another attempt can pass.
 	RETRY,
-	## The document cannot encode, so no attempt can pass.
 	PERMANENT,
 }
 
 var _timer: Timer
-## Instance id -> {file, path, name, updated}.
-var _entries := {}
-## Instance ids of documents whose data cannot encode. The retry timer skips
-## them until an edit may make them valid again.
+var _entries_by_instance_id := {}
 var _invalid_ids := {}
 var _dirty := false
 var _retry_delay := SAVE_DELAY_SEC
-## The documents that need a copy in this cycle. One document leaves the list
-## after its copy is written.
 var _pending_documents: Array[VoxelDocument] = []
 
 
@@ -118,9 +98,6 @@ func _on_chunks_changed(_frame: int, _affected: Array[Vector3i]) -> void:
 func _mark_dirty() -> void:
 	if not enabled or State.is_playing:
 		return
-	# Adoption emits the content signals too, but it is not an edit. A new edit
-	# to this document may make it valid again, so only that edit clears the
-	# skip. Another document keeps its skip, because this edit cannot fix it.
 	if not State.is_adopting():
 		var document := State.document
 		if document != null:
@@ -129,21 +106,13 @@ func _mark_dirty() -> void:
 	_queue_save()
 
 
-# A frame switch or a tab change does not make an unencodable document valid, so
-# it keeps the skip. It still queues a copy, because the edit frame or the tab
-# set changed.
 func _mark_view_changed() -> void:
-	# Playback steps the frame every tick. No content changed, so the copy must
-	# not be rewritten for each step.
 	if not enabled or State.is_playing:
 		return
-	# A frame switch changes the stored edit frame, so the copy of the active
-	# document is stale even when no cell changed.
 	_remember_pending(State.document)
 	_queue_save()
 
 
-# Marks the copy dirty and starts the timer.
 func _queue_save() -> void:
 	_dirty = true
 	if _timer != null and _timer.is_stopped():
@@ -165,8 +134,6 @@ func _on_timer_timeout() -> void:
 	_save_one()
 
 
-# Writes one recovery copy per tick. A large tab set then costs one encode and
-# one write per callback instead of freezing the app for all of them at once.
 func _save_one() -> void:
 	DirAccess.make_dir_recursive_absolute(recovery_dir)
 	var current_ids := {}
@@ -185,7 +152,6 @@ func _save_one() -> void:
 	_pending_documents.erase(document)
 	var outcome := _save_document(document)
 	if outcome == SaveOutcome.RETRY:
-		# Keep the document first, so the retry cycle cannot starve it.
 		_pending_documents.push_front(document)
 		_dirty = true
 		_retry_delay = minf(_retry_delay * 2.0, MAX_RETRY_DELAY_SEC)
@@ -211,7 +177,6 @@ func _restart_timer() -> void:
 	_timer.start()
 
 
-# Returns the first pending copy that is still valid and dirty, or null.
 func _next_pending() -> VoxelDocument:
 	for document in _pending_documents:
 		if document == null or not document.edit_dirty:
@@ -223,10 +188,9 @@ func _next_pending() -> VoxelDocument:
 
 
 func _prune_entries(current_ids: Dictionary) -> void:
-	for id in _entries.keys():
+	for id in _entries_by_instance_id.keys():
 		if not current_ids.has(id):
 			_remove_entry(id)
-	# A closed document must not stay in the skip set.
 	for id in _invalid_ids.keys():
 		if not current_ids.has(id):
 			_invalid_ids.erase(id)
@@ -235,7 +199,6 @@ func _prune_entries(current_ids: Dictionary) -> void:
 			_pending_documents.erase(document)
 
 
-## Writes a recovery copy of every dirty document and removes stale copies.
 func save_now() -> void:
 	if not enabled:
 		return
@@ -251,8 +214,6 @@ func save_now() -> void:
 			if _invalid_ids.has(id):
 				_pending_documents.erase(document)
 				continue
-			# A document that cannot encode will never produce a copy. Keep the
-			# unsaved mark, but do not retry a permanent failure.
 			match _save_document(document):
 				SaveOutcome.PERMANENT:
 					_invalid_ids[id] = true
@@ -267,8 +228,6 @@ func save_now() -> void:
 			_pending_documents.erase(document)
 	_prune_entries(current_ids)
 	_write_manifest()
-	# A failed copy must keep the dirty mark, or only the next model change
-	# would retry it.
 	_dirty = failed or _next_pending() != null
 	if failed:
 		_retry_delay = minf(_retry_delay * 2.0, MAX_RETRY_DELAY_SEC)
@@ -282,7 +241,6 @@ func save_now() -> void:
 			_timer.stop()
 
 
-## Returns the recovery entries that are still on disk.
 func list_recovery() -> Array:
 	var entries := _read_manifest()
 	var known := {}
@@ -309,7 +267,6 @@ func list_recovery() -> Array:
 	return entries
 
 
-## Emits [signal recovery_available] when a recovery copy exists.
 func check_recovery() -> void:
 	if not enabled:
 		return
@@ -318,7 +275,6 @@ func check_recovery() -> void:
 		recovery_available.emit(entries)
 
 
-## Loads the selected recovery copies and opens them as dirty tabs.
 func recover(entries: Array) -> void:
 	if not enabled:
 		return
@@ -341,7 +297,6 @@ func recover(entries: Array) -> void:
 	_write_manifest()
 
 
-## Deletes the selected recovery copies.
 func discard_entries(entries: Array) -> void:
 	for value in entries:
 		if not (value is Dictionary):
@@ -350,13 +305,12 @@ func discard_entries(entries: Array) -> void:
 		var file := str(entry.get("file", ""))
 		if not file.is_empty() and FileAccess.file_exists(file):
 			DirAccess.remove_absolute(file)
-		for id in _entries.keys():
-			if str(_entries[id].get("file", "")) == file:
-				_entries.erase(id)
+		for id in _entries_by_instance_id.keys():
+			if str(_entries_by_instance_id[id].get("file", "")) == file:
+				_entries_by_instance_id.erase(id)
 	_write_manifest()
 
 
-## Deletes the recovery copy of one document.
 func discard_document(document: VoxelDocument) -> void:
 	if document == null:
 		return
@@ -364,9 +318,8 @@ func discard_document(document: VoxelDocument) -> void:
 	_write_manifest()
 
 
-## Returns the current in-memory recovery entries. Tests use it.
 func recovery_entries() -> Array:
-	return _entries.values()
+	return _entries_by_instance_id.values()
 
 
 func _save_document(document: VoxelDocument) -> SaveOutcome:
@@ -384,11 +337,11 @@ func _save_document(document: VoxelDocument) -> SaveOutcome:
 		if error != OK:
 			return SaveOutcome.RETRY
 	var entry: Dictionary
-	if _entries.has(id):
-		entry = _entries[id]
+	if _entries_by_instance_id.has(id):
+		entry = _entries_by_instance_id[id]
 	else:
 		entry = {"file": "", "path": "", "name": "", "updated": 0}
-		_entries[id] = entry
+		_entries_by_instance_id[id] = entry
 	var old_file := str(entry.get("file", ""))
 	if not old_file.is_empty() and old_file != file and FileAccess.file_exists(old_file):
 		DirAccess.remove_absolute(old_file)
@@ -419,16 +372,14 @@ func _fallback_path(document: VoxelDocument) -> String:
 
 
 func _remove_entry(id: int) -> void:
-	# A skipped document keeps no copy, so its permanent mark leaves with the
-	# entry.
 	_invalid_ids.erase(id)
-	if not _entries.has(id):
+	if not _entries_by_instance_id.has(id):
 		return
-	var entry: Dictionary = _entries[id]
+	var entry: Dictionary = _entries_by_instance_id[id]
 	var file := str(entry.get("file", ""))
 	if not file.is_empty() and FileAccess.file_exists(file):
 		DirAccess.remove_absolute(file)
-	_entries.erase(id)
+	_entries_by_instance_id.erase(id)
 
 
 func _on_document_saved(document: VoxelDocument) -> void:
@@ -451,10 +402,10 @@ func _open_recovered(document: VoxelDocument, original: String) -> void:
 
 func _adopt(document: VoxelDocument, entry: Dictionary) -> void:
 	var file := str(entry.get("file", ""))
-	for id in _entries.keys():
-		if str(_entries[id].get("file", "")) == file:
-			_entries.erase(id)
-	_entries[document.get_instance_id()] = entry
+	for id in _entries_by_instance_id.keys():
+		if str(_entries_by_instance_id[id].get("file", "")) == file:
+			_entries_by_instance_id.erase(id)
+	_entries_by_instance_id[document.get_instance_id()] = entry
 
 
 func _read_manifest() -> Array:
@@ -509,7 +460,7 @@ func _write_manifest() -> void:
 		return
 	DirAccess.make_dir_recursive_absolute(recovery_dir)
 	var documents: Array = []
-	for entry in _entries.values():
+	for entry in _entries_by_instance_id.values():
 		documents.append(entry)
 	var text := JSON.stringify({"documents": documents})
 	var temporary_path := manifest_path + ".tmp"

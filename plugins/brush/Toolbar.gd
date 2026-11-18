@@ -1,12 +1,6 @@
 extends ToolMenuButton
 
-## The brush tool menu button.
-##
-## It selects a brush mode and shows that mode's icon. The brush mode shortcuts
-## select a mode too.
 
-# The popup item id of each brush mode. The ids stay fixed, so a menu item and
-# its shortcut select the same mode even when the enum changes.
 const PENCIL_ID := 0
 const LINE_ID := 1
 const ERASER_ID := 2
@@ -34,8 +28,6 @@ func _sync_icon() -> void:
 		icon = get_popup().get_item_icon(item_index)
 
 
-# Select one mode by its popup item id. The icon comes from the matching item,
-# so the button shows the active mode.
 func _select_id(id: int) -> void:
 	var item_index := get_popup().get_item_index(id)
 	if item_index < 0:

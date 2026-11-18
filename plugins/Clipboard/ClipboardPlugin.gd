@@ -1,20 +1,10 @@
 extends VoxelPlugin
 
-## The clipboard plugin.
-##
-## It copies voxels to the system clipboard as JSON, and it pastes them with
-## the paste tool. It also cuts and deletes the selection. The clipboard text
-## holds the cells and their full materials.
 
-## The prefix that marks a voxel clipboard record.
 const CLIPBOARD_PREFIX := '{"voxel_voxels":'
 const StampCopyJob := preload("res://plugins/brush/StampCopyJob.gd")
-# One clipboard record holds the cell and its nine material floats.
-## The field count of one clipboard voxel record.
 const VOXEL_RECORD_SIZE := 3 + VoxelFrame.MATERIAL_STRIDE
-## The largest copy or cut source that runs on the main thread.
 const INLINE_EDIT_LIMIT := 4096
-## The alpha value above which an image pixel becomes a cell.
 const IMAGE_ALPHA_CLIP := 0.5
 
 @onready var _options := preload("./Options.tscn").instantiate()
@@ -30,26 +20,15 @@ var _import_job: ClipboardImportJob
 var _image_job: ClipboardImageJob
 var _has_clipboard_voxels := false
 var _has_clipboard_image := false
-# The clipboard text whose voxel record failed to parse. A focus refresh must
-# not re-enable Paste for the same text.
 var _rejected_clipboard_text := ""
 var _shutting_down := false
 
-## One cancellable copy or cut job.
-##
-## The job builds the clipboard JSON from a frame snapshot. A cut also erases
-## the source cells. [method StampCopyJob.run] is the base worker body.
 class ClipboardCopyJob extends StampCopyJob:
-	## The clipboard JSON text.
-	var text := ""
-	## The selected offsets relative to the pattern center.
+	var json_text := ""
 	var selection_pattern := {}
-	## Whether the job also erases the source cells.
 	var cut_source := false
-	## The chunk locations that a cut changed.
 	var changed_chunks: Array[Vector3i] = []
 
-	## Builds the clipboard text and applies a cut. This is the worker body.
 	func run() -> void:
 		super.run()
 		if not checkpoint(0):
@@ -72,7 +51,7 @@ class ClipboardCopyJob extends StampCopyJob:
 			selected_records.append([offset.x, offset.y, offset.z])
 			if selected_records.size() % 4096 == 0 and not checkpoint(selected_records.size()):
 				return
-		text = JSON.stringify({"voxel_voxels": records, "voxel_selection": selected_records}, "", false, true)
+		json_text = JSON.stringify({"voxel_voxels": records, "voxel_selection": selected_records}, "", false, true)
 		if cut_source and checkpoint(0):
 			stage("Cutting voxels", _colors.size())
 			var changes := {}
@@ -82,24 +61,15 @@ class ClipboardCopyJob extends StampCopyJob:
 					return
 			changed_chunks = source_frame.set_cells(changes, self)
 
-## One cancellable clipboard import job.
-##
-## The job parses the clipboard JSON into a pattern. It rejects a malformed
-## record. [method VoxelFrame.EditJob.run] is the worker body.
 class ClipboardImportJob extends VoxelFrame.EditJob:
-	## The clipboard JSON text to parse.
-	var text := ""
-	## The parsed colors, keyed by offset from the pattern center.
+	var json_text := ""
 	var pattern := {}
-	## The parsed full materials, keyed by offset from the pattern center.
 	var pattern_materials := {}
-	## The parsed selection offsets.
 	var selection_pattern := {}
 
-	## Parses the clipboard text. This is the worker body.
 	func run() -> void:
 		stage("Reading voxel clipboard", -1)
-		var data = JSON.parse_string(text)
+		var data = JSON.parse_string(json_text)
 		if not data is Dictionary or not data.get("voxel_voxels") is Array:
 			return
 		stage("Reading voxel clipboard", data.voxel_voxels.size())
@@ -147,21 +117,12 @@ class ClipboardImportJob extends VoxelFrame.EditJob:
 			if completed % 4096 == 0 and not checkpoint(completed):
 				return
 
-## One cancellable clipboard image conversion job.
-##
-## The job turns the image pixels into a one-voxel-thick pattern on the floor
-## plane. [method VoxelFrame.EditJob.run] is the worker body.
 class ClipboardImageJob extends VoxelFrame.EditJob:
-	## The image data to convert.
 	var image: Image
-	## The world axis that the image plane faces.
 	var plane_axis := Vector3.Axis.AXIS_Y
-	## The parsed colors, keyed by offset from the pattern center.
 	var pattern := {}
-	## The pasted pixels, keyed by offset from the pattern center.
 	var selection_pattern := {}
 
-	## Converts the image pixels. This is the worker body.
 	func run() -> void:
 		if image == null or image.get_width() <= 0 or image.get_height() <= 0:
 			return
@@ -203,8 +164,6 @@ func _ready() -> void:
 
 
 func _notification(what: int) -> void:
-	# Another window can copy while this one is inactive, so a focus event is the
-	# point where the Paste state can change.
 	if what == NOTIFICATION_APPLICATION_FOCUS_IN or what == NOTIFICATION_WM_WINDOW_FOCUS_IN:
 		_refresh_clipboard()
 		return
@@ -234,7 +193,6 @@ func _sync_options() -> void:
 		_safe_add(target, _options)
 	elif _options.get_parent():
 		_options.get_parent().remove_child(_options)
-	# The option bar is visible now, so its first Paste state is current.
 	_refresh_clipboard()
 	_sync_buttons()
 
@@ -255,9 +213,6 @@ func _on_cells_changed(_frame: int, _affected: Array[Vector3i]) -> void:
 	_sync_buttons()
 
 
-# Refreshes the Paste state from the system clipboard. The clipboard can change
-# only in another window, so a focus event covers it. A large voxel record costs
-# one full read here, not one read every half second.
 func _refresh_clipboard() -> void:
 	var text := _read_clipboard()
 	var has_voxels := text.begins_with(CLIPBOARD_PREFIX) and text != _rejected_clipboard_text
@@ -279,12 +234,10 @@ func _clipboard_has_image() -> bool:
 	return DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD) and DisplayServer.clipboard_has_image()
 
 
-## Copies the selection, or the whole frame, to the clipboard.
 func copy_voxels() -> void:
 	_copy_voxels(false)
 
 
-## Copies the selection, or the whole frame, to the clipboard and erases it.
 func cut_voxels() -> void:
 	_copy_voxels(true)
 
@@ -299,8 +252,6 @@ func _copy_voxels(cut_source: bool) -> void:
 	job.source_frame = frame.copy_frame()
 	job.selection_mask = State.selection.capture()
 	job.cut_source = cut_source
-	# A cut is an edit, so the slice limits its writes. The document size does
-	# not: a selected voxel outside the size can still be cut.
 	job.edit_context = State.drawing_context()
 	if cut_source:
 		job.edit_context = job.edit_context.duplicate()
@@ -311,13 +262,10 @@ func _copy_voxels(cut_source: bool) -> void:
 	if source_count <= INLINE_EDIT_LIMIT:
 		job.run()
 	else:
-		# The runner pumps the progress and joins the worker. The frame check
-		# cancels the job when its document or frame changes.
 		await State.run_edit_job(job, operation_id, "Copy voxels", func() -> void:
 			if State.document != document or State.get_current_voxel_frame() != frame:
 				job.cancel()
 		)
-	# A shutdown or a newer job owns the fields now, so this job cannot install.
 	if _copy_job != job:
 		State.finish_operation(operation_id)
 		return
@@ -329,12 +277,12 @@ func _copy_voxels(cut_source: bool) -> void:
 		_material_pattern = job.pattern_materials
 		_material_pattern.make_read_only()
 		_center = job.center
-		_clipboard_text = job.text
+		_clipboard_text = job.json_text
 		_rejected_clipboard_text = ""
 		_has_clipboard_voxels = true
 		_has_clipboard_image = false
 		if DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):
-			DisplayServer.clipboard_set(job.text)
+			DisplayServer.clipboard_set(job.json_text)
 		if cut_source:
 			var tx := State.begin_edit()
 			if tx != null:
@@ -348,7 +296,6 @@ func _copy_voxels(cut_source: bool) -> void:
 	_sync_buttons()
 
 
-## Erases the selection as one history action.
 func delete_voxels() -> void:
 	if State.edit_busy() or State.selection.is_empty():
 		return
@@ -360,14 +307,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel") and cancel_paste():
 		get_viewport().set_input_as_handled()
 		return
-	# The Paste option bar is absent for some tools. Keep Ctrl+V available from
-	# every tool. A focused text field consumes its own paste shortcut first.
 	if event is InputEventKey and event.pressed and not event.echo and event.is_command_or_control_pressed() and not event.shift_pressed and not event.alt_pressed and (event.keycode == KEY_V or event.physical_keycode == KEY_V):
 		paste_voxels()
 		get_viewport().set_input_as_handled()
 
 
-## Cancels a running paste. Returns [code]true[/code] when a paste was canceled.
 func cancel_paste() -> bool:
 	if _import_job:
 		_import_job.cancel()
@@ -381,8 +325,6 @@ func cancel_paste() -> bool:
 	return false
 
 
-## Starts a paste from the clipboard. It prefers a voxel record, then uses image
-## data. It places the paste tool at the cursor.
 func paste_voxels() -> void:
 	if State.edit_busy() or _import_job or _image_job:
 		return
@@ -402,24 +344,18 @@ func paste_voxels() -> void:
 	await _paste_clipboard_image()
 
 
-## Parses one voxel clipboard record when it changed, then places the paste
-## tool. The caller emits the context signal and stops the editor first.
 func _paste_voxel_text(text: String) -> void:
 	if text != _clipboard_text or _pattern.is_empty():
 		var document := State.document
 		var frame := State.get_current_voxel_frame()
 		var job := ClipboardImportJob.new()
-		job.text = text
+		job.json_text = text
 		_import_job = job
 		var operation_id := State.begin_operation("Reading voxel clipboard", -1, true, self)
-		# The runner pumps the progress and joins the worker. The frame check
-		# cancels the job when its document or frame changes.
 		await State.run_edit_job(job, operation_id, "Read voxel clipboard", func() -> void:
 			if State.document != document or State.get_current_voxel_frame() != frame:
 				job.cancel()
 		)
-		# A shutdown or a newer job owns the fields now, so this job cannot start
-		# a paste.
 		if _import_job != job:
 			State.finish_operation(operation_id)
 			return
@@ -428,9 +364,6 @@ func _paste_voxel_text(text: String) -> void:
 		if _shutting_down or State.document != document or State.get_current_voxel_frame() != frame or not job.checkpoint(0):
 			return
 		if job.pattern.is_empty():
-			# A malformed payload with the voxel prefix must not leave Paste
-			# enabled with no parsed pattern behind it. Keep the rejected text,
-			# so a focus refresh does not enable the same payload again.
 			_has_clipboard_voxels = false
 			_rejected_clipboard_text = text
 			_sync_buttons()
@@ -447,7 +380,6 @@ func _paste_voxel_text(text: String) -> void:
 	_paste_tool.begin_paste(_pattern, _selection_pattern, _center, _material_pattern)
 
 
-## Reads the image on the clipboard and places its pixels as voxels.
 func _paste_clipboard_image() -> void:
 	var image: Image = DisplayServer.clipboard_get_image()
 	if image == null or image.get_width() <= 0 or image.get_height() <= 0:
@@ -461,8 +393,6 @@ func _paste_clipboard_image() -> void:
 	await _start_image_paste(image)
 
 
-## Converts one image and places its pixels as voxels. The caller emits the
-## context signal and stops the editor first.
 func _start_image_paste(image: Image) -> void:
 	if State.edit_busy() or _import_job or _image_job:
 		return
@@ -475,14 +405,10 @@ func _start_image_paste(image: Image) -> void:
 	job.plane_axis = State.floor_axis
 	_image_job = job
 	var operation_id := State.begin_operation("Reading clipboard image", -1, true, self)
-	# The runner pumps the progress and joins the worker. The frame check
-	# cancels the job when its document or frame changes.
 	await State.run_edit_job(job, operation_id, "Read clipboard image", func() -> void:
 		if State.document != document or State.get_current_voxel_frame() != frame:
 			job.cancel()
 	)
-	# A shutdown or a newer job owns the fields now, so this job cannot start a
-	# paste.
 	if _image_job != job:
 		State.finish_operation(operation_id)
 		return
@@ -499,8 +425,6 @@ func _start_image_paste(image: Image) -> void:
 	_selection_pattern = job.selection_pattern
 	_material_pattern = {}
 	_center = Vector3i.ZERO
-	# The empty text keeps a later voxel record from reusing this image pattern
-	# when the same text returns to the clipboard.
 	_clipboard_text = ""
 	_rejected_clipboard_text = ""
 	add_editor_node(_paste_tool)
@@ -514,8 +438,6 @@ func _on_paste_finished() -> void:
 
 
 func _remove_paste_preview() -> void:
-	# The deferred call can run after the plugin left the tree on shutdown. The
-	# predelete notification frees the tool in that case.
 	if _shutting_down or not is_inside_tree():
 		return
 	if not _paste_tool._active:
@@ -524,8 +446,6 @@ func _remove_paste_preview() -> void:
 
 func _exit_tree() -> void:
 	_shutting_down = true
-	# The runner owns the join and retires the task id. This wait is the same
-	# exactly-once join, so a second wait never touches a disposed task.
 	for job in [_copy_job, _import_job, _image_job]:
 		if job:
 			job.cancel()

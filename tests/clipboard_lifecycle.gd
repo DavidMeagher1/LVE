@@ -1,20 +1,7 @@
 extends "res://tests/test.gd"
 
-# Focused lifecycle tests for the clipboard runner and the paste status.
-#
-# The copy, cut, and import workers now await `State.run_edit_job`. These tests
-# prove that a document change cancels the worker, that the caller adopts a
-# result only for its own document and frame, that one operation reports the
-# paste placement and its preview, and that a cancel leaves no status.
-#
-#   godot --path . res://tests/clipboard_lifecycle.tscn
-#
-# The source volume is above the inline limit, so the copy and the import use the
-# worker path. The paste tests pass their own large pattern to the paste tool.
 
-## The edge of the large source volume.
 const SOURCE_EDGE := 18
-## The edge of the large paste pattern.
 const PASTE_EDGE := 17
 const CLIPBOARD_PREFIX := '{"voxel_voxels":'
 
@@ -29,8 +16,6 @@ var _input_tool: VoxelTool
 var _busy_operation := 0
 
 
-# A tool that consumes every event it is asked to handle. The test proves that
-# the busy guard returns before this method when another owner runs.
 class InputTool extends VoxelTool:
 	func handle_input(_event: InputEvent, _pos: Vector2) -> bool:
 		return true
@@ -265,8 +250,6 @@ func _await_paste_preview() -> void:
 		await get_tree().process_frame
 
 
-# The clipboard can hold the voxel prefix and still contain an invalid record.
-# The parse failure must clear the Paste availability, not leave the button inert.
 func _malformed_payload() -> void:
 	step("Given a clipboard with the voxel prefix and an invalid record", func():
 		var text := CLIPBOARD_PREFIX + "{}}"
@@ -291,8 +274,6 @@ func _malformed_payload() -> void:
 	)
 
 
-# The clipboard controls attach only to some option bars. Ctrl+V must still
-# start a paste while another tool is active.
 func _global_paste() -> void:
 	var text := JSON.stringify({
 		"voxel_voxels": [[0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1]],

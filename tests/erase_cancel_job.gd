@@ -1,7 +1,5 @@
 extends "res://Globals/State/State.gd".EraseJob
 
-# Test-only erase job that cancels itself after a fixed number of checkpoints, so
-# the erase stops in the middle of its work instead of before it starts.
 var checks := 0
 var cancel_after := 1
 

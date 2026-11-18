@@ -1,6 +1,5 @@
 extends "res://tests/test.gd"
 
-## Checks the operation registry and the settings store as stand-alone models.
 
 const OperationRegistry = preload("res://Globals/State/OperationRegistry.gd")
 const SettingsStore = preload("res://Globals/State/SettingsStore.gd")
@@ -11,7 +10,6 @@ const EditSession = preload("res://Globals/State/EditSession.gd")
 const EditingAids = preload("res://Globals/State/EditingAids.gd")
 
 
-# A job that keeps the worker busy for a few frames, so the pump loop runs.
 class WaitJob extends VoxelFrame.EditJob:
 	var reached := 0
 
@@ -40,7 +38,7 @@ var frames := 0
 var session: DocumentSession
 var selection_model: SelectionState
 var selection_context_result: VoxelFrame.EditContext
-var material_state: MaterialState
+var material_editing: MaterialState
 var edit_session: EditSession
 var aids: EditingAids
 var transaction: VoxelEditTransaction
@@ -91,7 +89,7 @@ func before_test() -> void:
 	session = null
 	selection_model = null
 	selection_context_result = null
-	material_state = null
+	material_editing = null
 	edit_session = null
 	aids = null
 	transaction = null
@@ -150,11 +148,11 @@ func _material_history(execute := true) -> void:
 
 
 func _apply_test_material(values: PackedFloat32Array) -> void:
-	material_state.apply_history_material(values)
+	material_editing.apply_history_material(values)
 
 
 func _restore_test_palette(snapshot: Dictionary) -> void:
-	material_state.restore_history_palette(snapshot)
+	material_editing.restore_history_palette(snapshot)
 
 
 func _restore_test_chunks(edited_frame: VoxelFrame, chunk_snapshot: Dictionary, selection_snapshot: Dictionary, selection_snapshot_masks := {}) -> void:
@@ -538,28 +536,28 @@ func _selection_context() -> void:
 func _material_changes() -> void:
 	step("Given a material state on a session", func():
 		session = DocumentSession.new()
-		material_state = MaterialState.new()
-		material_state.session = session
-		material_state.settings = store
-		material_state.operations = registry
-		material_state.commit_history = _material_history
-		material_state.history_apply = _apply_test_material
-		material_state.history_restore_palette = _restore_test_palette
-		session.document.palette = material_state.copy_default_palette()
-		material_state.select_palette_entry(0)
-		material_state.color_changed.connect(_on_color_event)
-		material_state.palette_changed.connect(_on_palette_event)
+		material_editing = MaterialState.new()
+		material_editing.session = session
+		material_editing.settings = store
+		material_editing.operations = registry
+		material_editing.commit_history = _material_history
+		material_editing.history_apply = _apply_test_material
+		material_editing.history_restore_palette = _restore_test_palette
+		session.document.palette = material_editing.copy_default_palette()
+		material_editing.select_palette_entry(0)
+		material_editing.color_changed.connect(_on_color_event)
+		material_editing.palette_changed.connect(_on_palette_event)
 	)
 	step("Then the first palette entry is the current material", func():
-		expect(material_state.current_palette_index == 0, "the first entry is selected")
-		expect(material_state.current_material == material_state.get_palette()[0], "the material matches the first entry")
+		expect(material_editing.current_palette_index == 0, "the first entry is selected")
+		expect(material_editing.current_material == material_editing.get_palette()[0], "the material matches the first entry")
 	)
 	step("When the material changes", func():
-		material_state.set_material(VoxelFrame.material(Color(0.25, 0.5, 0.75)))
+		material_editing.set_material(VoxelFrame.material(Color(0.25, 0.5, 0.75)))
 	)
 	step("Then the new material is current and one history action exists", func():
-		expect(VoxelFrame.material_color(material_state.current_material) == Color(0.25, 0.5, 0.75), "the material is the new color")
-		expect(material_state.current_palette_index == -1, "the material matches no swatch")
+		expect(VoxelFrame.material_color(material_editing.current_material) == Color(0.25, 0.5, 0.75), "the material is the new color")
+		expect(material_editing.current_palette_index == -1, "the material matches no swatch")
 		expect(color_events == 1, "the color change is reported")
 		expect(history_events == 1, "the change records one history action")
 	)
@@ -567,17 +565,17 @@ func _material_changes() -> void:
 		session.document.edit_history.undo()
 	)
 	step("Then the first material returns", func():
-		expect(VoxelFrame.material_color(material_state.current_material) == Color.BLACK, "the first palette material returns")
-		expect(material_state.current_palette_index == 0, "the swatch selection returns")
+		expect(VoxelFrame.material_color(material_editing.current_material) == Color.BLACK, "the first palette material returns")
+		expect(material_editing.current_palette_index == 0, "the swatch selection returns")
 	)
 	step("When the palette changes", func():
 		var replacement: Array[PackedFloat32Array] = [VoxelFrame.material(Color.BLUE), VoxelFrame.material(Color.GREEN)]
-		material_state.set_palette(replacement)
+		material_editing.set_palette(replacement)
 	)
 	step("Then the palette is replaced and one history action exists", func():
 		var expected: Array[PackedFloat32Array] = [VoxelFrame.material(Color.BLUE), VoxelFrame.material(Color.GREEN)]
-		expect(material_state.get_palette() == expected, "the palette is replaced")
-		expect(material_state.current_palette_index == -1, "the old material matches no new swatch")
+		expect(material_editing.get_palette() == expected, "the palette is replaced")
+		expect(material_editing.current_palette_index == -1, "the old material matches no new swatch")
 		expect(palette_events == 1, "the palette change is reported")
 		expect(history_events == 2, "the palette change records one history action")
 	)
@@ -585,8 +583,8 @@ func _material_changes() -> void:
 		session.document.edit_history.undo()
 	)
 	step("Then the built-in palette returns", func():
-		expect(material_state.get_palette() == material_state.get_builtin_palette(), "the palette is restored")
-		expect(material_state.current_palette_index == 0, "the black swatch is selected again")
+		expect(material_editing.get_palette() == material_editing.get_builtin_palette(), "the palette is restored")
+		expect(material_editing.current_palette_index == 0, "the black swatch is selected again")
 	)
 
 
@@ -695,4 +693,3 @@ func _aids_context() -> void:
 		var mirror := aids.symmetry_transform(1, Vector3(-0.5, -0.5, -0.5))
 		expect((mirror * Vector3(1, 0, 0)).is_equal_approx(Vector3(-2, 0, 0)), "the X symmetry mirrors the point")
 	)
-

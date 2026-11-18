@@ -1,19 +1,5 @@
 extends RefCounted
 
-# Frozen copy of the region search that the fill job ran before the shared helper
-# replaced it. The search algorithm itself is frozen here: the pending list, the
-# neighbor order, the visited set, the mask test, and the checkpoint positions.
-#
-# This is not a fully independent implementation. It reuses production helpers
-# that this unit did not change, which are also the specification the optimized
-# search must agree with: `VoxelFrame.chunk_position`, `VoxelFrame.DIRECTIONS`,
-# `VoxelFrame.matches`, `Chunk.matches`, and `Chunk.world_cells`. Re-read this file
-# when any of those helpers changes.
-#
-# The frozen search has no seed test. The original job added the seed to its result
-# without one, because the caller validates the seed first. The shared helper adds
-# that test, so an empty seed differs by design and the parity test states it.
-
 
 static func find(result: Dictionary, frame: VoxelFrame, seed_cell: Vector3i, target_material: PackedFloat32Array, connected: bool, value: Variant = true, selection_mask: Dictionary = {}, job: VoxelFrame.EditJob = null) -> bool:
 	if frame == null:

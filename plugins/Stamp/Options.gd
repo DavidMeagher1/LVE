@@ -1,17 +1,9 @@
 extends HBoxContainer
 
-## The stamp option bar.
-##
-## It chooses the stamp source. A file source opens the frame panel. A selection
-## source uses the current voxel selection.
 
-## Emitted when the user picks an LVE file.
 signal file_chosen(path: String)
-## Emitted when the user chooses the current voxel selection.
 signal selection_requested()
-## Emitted when the center-on-cursor option changes.
 signal center_changed(on: bool)
-## Emitted when the user clears the stamp source.
 signal clear_requested()
 
 var _busy := false
@@ -45,18 +37,15 @@ func _exit_tree() -> void:
 		_file_dialog.hide()
 
 
-## Sets the source description that the option bar shows.
 func set_source(text: String) -> void:
 	_source_label.text = text
 
 
-## Shows or clears the source error.
 func set_error(text: String) -> void:
 	_error_label.text = text
 	_error_label.visible = not text.is_empty()
 
 
-## Disables the source controls while a stamp prepares.
 func set_busy(busy: bool) -> void:
 	_busy = busy
 	_file_button.disabled = busy
@@ -64,12 +53,10 @@ func set_busy(busy: bool) -> void:
 	_sync_clear()
 
 
-## Sets the center-on-cursor button without emitting a signal.
 func set_center(on: bool) -> void:
 	$Center.set_pressed_no_signal(on)
 
 
-## Enables the clear button while a source exists.
 func set_clear_enabled(enabled: bool) -> void:
 	_clear_enabled = enabled
 	_sync_clear()

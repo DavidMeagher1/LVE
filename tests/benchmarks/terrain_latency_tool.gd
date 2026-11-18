@@ -1,7 +1,5 @@
 extends "res://plugins/Terrain/TerrainTool.gd"
 
-# Keep the old gather frozen for an in-process comparison through real strokes.
-# This test-only tool changes the job constructor, not the input or publication.
 const ReferenceJobs := preload("res://tests/terrain_occupancy_reference.gd")
 const Rounding := preload("res://plugins/Terrain/SmoothOperation.gd")
 

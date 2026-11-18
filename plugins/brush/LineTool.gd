@@ -1,10 +1,5 @@
 extends "res://plugins/brush/BrushTool.gd"
 
-## The line tool.
-##
-## A press sets the anchor. A drag or a second click sets the endpoint and
-## commits one line. Enter commits the line. Escape and a context change
-## discard it. The line stamps the brush pattern along the path.
 
 var _anchor := VoxelPicking.NONE
 var _endpoint := VoxelPicking.NONE
@@ -27,8 +22,6 @@ func _enter_tree() -> void:
 		State.selection_changed.connect(_cancel_edit)
 	if not State.floor_plane_changed.is_connected(_cancel_edit):
 		State.floor_plane_changed.connect(_cancel_edit)
-	# The anchor froze its symmetry and slice at the press, so a change must
-	# discard the line instead of committing it with the old scope.
 	if not State.symmetry_changed.is_connected(_cancel_edit):
 		State.symmetry_changed.connect(_cancel_edit)
 	if not State.slice_changed.is_connected(_cancel_edit):
@@ -37,9 +30,6 @@ func _enter_tree() -> void:
 
 func _exit_tree() -> void:
 	super._exit_tree()
-	# The preview runner awaits `State.run_edit_job`, so it continues after this
-	# detach. The preview is discarded here and its worker joined once. The runner
-	# adopts only its own job, so it cannot publish this preview.
 	if _job:
 		_job.cancel()
 		_job.wait_for_worker()
@@ -58,19 +48,12 @@ func _exit_tree() -> void:
 		State.symmetry_changed.disconnect(_cancel_edit)
 	if State.slice_changed.is_connected(_cancel_edit):
 		State.slice_changed.disconnect(_cancel_edit)
-	# `tree_exited` releases the context subscriptions after this exit.
 
 
-# The line keeps its preview discard policy. Only the stroke tool commits on a
-# switch, so the line drops its pending preview.
-## Discards the pending preview on a tool or mode switch. A line never commits
-## on a switch.
 func finish_on_switch() -> void:
 	_cancel_edit()
 
 
-## Handles one input event. It sets the anchor, the endpoint, and the commit.
-## Escape cancels and Enter commits.
 func handle_input(event: InputEvent, pos: Vector2) -> bool:
 	if event.is_action_pressed("ui_cancel") and _anchor != VoxelPicking.NONE:
 		_cancel_edit()
@@ -128,12 +111,10 @@ func _pick_start(origin: Vector3, dir: Vector3) -> PickResult:
 	return pick
 
 
-## Returns the drag pick on the plane through the anchor. The slice plane stays
-## the drag plane while the slice is on.
 func pick_drag(request: PickRequest) -> PickResult:
 	if not State.slice_enabled:
 		_plane = VoxelPicking.view_plane(_anchor, request.origin, request.forward)
-	return VoxelPicking.drag_pick(request.origin, request.dir, request.frame, _plane)
+	return VoxelPicking.drag_pick(request.origin, request.direction, request.frame, _plane)
 
 
 func _pick_endpoint(origin: Vector3, dir: Vector3, plane_only := false) -> PickResult:
@@ -193,8 +174,6 @@ func _start_preview() -> void:
 	_job.shape = _stroke_shape
 	_job.material = _stroke_material
 	_job.edit_context = _edit_context
-	# The preview writes its own frame. `job_frame` shares the frozen line
-	# snapshot, so a preview costs the cells it writes, not the whole frame.
 	_job.edited_frame = VoxelFrame.job_frame(_line_snapshot)
 	_job.revision = _revision
 	var work := _job.estimate_work(_job.centers.size() * _stroke_pattern_size)
@@ -203,14 +182,9 @@ func _start_preview() -> void:
 		_finish_preview()
 		_service_preview()
 		return
-	# One runner owns this preview batch. It pumps the progress and joins the
-	# worker even when a tool switch detaches this node.
 	var job := _job
 	var operation_id := _begin_preview_operation(work)
 	await State.run_edit_job(job, operation_id, "Line preview", _cancel_preview_if_stale.bind(job))
-	# A cancel or a detach can clear or replace `_job` while the runner waits. The
-	# runner adopts only the job it started, so it cannot publish a stale preview
-	# or finish a newer operation.
 	if _job != job:
 		return
 	_finish_preview()
@@ -218,31 +192,23 @@ func _start_preview() -> void:
 	_service_preview()
 
 
-# Cancels one preview worker when its request is no longer current. The runner
-# calls this once per pumped frame, so a superseded preview stops early.
 func _cancel_preview_if_stale(job: BrushJob) -> void:
 	if _job != job or _anchor == VoxelPicking.NONE or job.revision != _revision:
 		job.cancel()
 
 
-## Returns the operation id that reports the preview progress. A subclass that
-## already owns a longer operation returns that id.
 func _begin_preview_operation(work: int) -> int:
 	if not State.has_operation(_operation_id):
 		_operation_id = State.begin_operation("Preparing line", work, true, self)
 	return _operation_id
 
 
-## Finishes the operation that reports the preview progress. A subclass that
-## shares a longer operation keeps it open.
 func _finish_preview_operation(operation_id: int) -> void:
 	State.finish_operation(operation_id)
 	if _operation_id == operation_id:
 		_operation_id = 0
 
 
-# Continues the preview after one job finishes or is discarded. A newer request
-# wins, and a commit waits for the newest preview.
 func _service_preview() -> void:
 	if _preview_requested and _anchor != VoxelPicking.NONE:
 		_start_preview()
@@ -284,7 +250,6 @@ func _show_preview(job: BrushJob) -> void:
 	$Cursor.show_voxels(job.applied_cells if use_voxel_colors else _preview_colors(job), _stroke_color, false, 0, use_voxel_colors)
 
 
-# The preview shows the applied cells. Each color comes from the applied material.
 func _preview_colors(job: BrushJob) -> Dictionary:
 	var colors := {}
 	for cell_position in job.applied_cells:
@@ -310,8 +275,6 @@ func _commit_line() -> void:
 	var tx := State.begin_edit()
 	if tx == null:
 		return
-	# Publish the cells the preview wrote. The snapshot is unchanged, so an
-	# unchanged chunk stays as it is.
 	frame.apply_published(job.changed_chunks, job.edited_frame)
 	State.document._bounds_dirty = true
 	State.finish_edit(tx, "Line")
@@ -358,8 +321,6 @@ func _on_color_changed(color: Color) -> void:
 		_request_preview()
 
 
-## Updates the brush cursor for one pick. A line in progress shows its own
-## preview.
 func update_visual(pick: PickResult) -> void:
 	if pick.target == VoxelPicking.NONE:
 		visible = false

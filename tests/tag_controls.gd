@@ -1,16 +1,11 @@
 extends "res://tests/test.gd"
 
-# One process runs the tag-control tests. Each test keeps the steps and checks of
-# its original scene. The user arguments after `--` name the tests to run, so an
-# old scene name still selects its own test.
-
 
 func _ready() -> void:
 	test("can select, rename, and remove tags while keeping a default tag", _tags_ui, "tags_ui")
 	test("can edit a tag's loop mode and repeats", _tag_loop_ui, "tag_loop_ui")
 
 
-# Each test starts from a fresh one-frame document with its default tag.
 func before_test() -> void:
 	State.stop()
 	State.document = VoxelDocument.new()
@@ -18,15 +13,12 @@ func before_test() -> void:
 	State.active_tag = 0
 
 
-# An emitted rename signal leaves the dialog open, so close it before the next
-# test. Nothing else here changes focus, the pointer, or a popup.
 func after_test() -> void:
 	var dialog: ConfirmationDialog = _tag_row().get_node_or_null("%TagRenameDialog")
 	if dialog != null and dialog.visible:
 		dialog.hide()
 
 
-# Shared controls. Both tests read the same tag row.
 func _tag_row() -> Node:
 	return main.find_child("TagRow", true, false)
 
@@ -39,7 +31,6 @@ func _actions_popup() -> PopupMenu:
 	return _tag_row().get_node("%TagActions").get_popup()
 
 
-# Shared fixture: add frames beside the first one.
 func _add_frames(extra: int) -> void:
 	for i in extra:
 		State.add_frame()
@@ -333,7 +324,6 @@ func _tag_loop_ui() -> void:
 	)
 
 
-# Controls used by one test only.
 func _name_edit() -> LineEdit:
 	return _tag_row().get_node("%TagRenameInput")
 

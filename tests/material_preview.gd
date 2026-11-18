@@ -209,7 +209,6 @@ func _expect_atlas(preview: MeshInstance3D) -> void:
 		matches = matches and material.metallic_texture == material.roughness_texture
 		matches = matches and material.metallic_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_BLUE
 		matches = matches and material.roughness_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_GREEN
-	# Interpolate the triangle UVs at each exposed voxel face center.
 	for cell: Vector3i in materials:
 		for direction: Vector3i in [Vector3i.LEFT, Vector3i.RIGHT, Vector3i.DOWN, Vector3i.UP, Vector3i.FORWARD, Vector3i.BACK]:
 			if materials.has(cell + direction):

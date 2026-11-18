@@ -1,21 +1,11 @@
 class_name VoxelSelection
 extends RefCounted
 
-## A set of selected voxel cells.
-##
-## The selection stores cell positions in a dictionary. [method capture] returns
-## a shared snapshot. The next write copies the dictionary first, so the
-## snapshot stays frozen. Every mutation also keeps one bit mask per chunk
-## current, so the outline builder reads dense words instead of the dictionary.
 
-## The chunk edge length of one selection mask.
 const MASK_CHUNK := VoxelFrame.CHUNK_SIZE
-## The cell count of one selection mask grid.
 const MASK_SIZE := MASK_CHUNK * MASK_CHUNK
-## The entry index of the chunk cell count. A chunk at zero leaves the mask set.
 const MASK_COUNT := 3
 
-## The selected cells, keyed by cell position. A write replaces the whole set.
 var cells: Dictionary:
 	get:
 		_make_writable()
@@ -26,26 +16,18 @@ var cells: Dictionary:
 		_rebuild_masks()
 		revision += 1
 
-## The content revision. It moves on every mutation, so a caller can dedupe a
-## request without hashing the whole set. A copy or a read does not move it.
 var revision := 0
 
 var _selected_cells := {}
 var _snapshot_shared := false
-# The per-chunk masks, keyed by chunk position. Each value holds the x grid, the
-# y grid, and the z grid in that order. Every mutation keeps the grids current.
 var _chunk_masks := {}
-# The last chunk mask that a write touched. A selection adds cells in a mostly
-# spatial order, so one entry removes most dictionary lookups.
 var _mask_base := Vector3i.MAX
 var _mask_chunk: Array = []
 
-# Phase counters of the mask rebuild. A probe resets them by direct static write.
 static var _profile_rebuild_calls := 0
 static var _profile_rebuild_us := 0
 
 
-## Removes every selected cell.
 func clear() -> void:
 	_selected_cells = {}
 	_snapshot_shared = false
@@ -55,7 +37,6 @@ func clear() -> void:
 	revision += 1
 
 
-## Adds one cell to the selection.
 func add(cell_position: Vector3i) -> void:
 	if _selected_cells.has(cell_position):
 		return
@@ -66,8 +47,6 @@ func add(cell_position: Vector3i) -> void:
 	revision += 1
 
 
-## Removes one cell from the selection. Does nothing when the cell is not
-## selected.
 func erase(cell_position: Vector3i) -> void:
 	if not _selected_cells.has(cell_position):
 		return
@@ -78,9 +57,6 @@ func erase(cell_position: Vector3i) -> void:
 	revision += 1
 
 
-## Adds one range of a streamed batch. The cells are grouped by chunk, and each
-## chunk mask is fetched and written back once, so a large wand batch pays one
-## call and one mask write-back per chunk.
 func add_range(keys: Array, start: int, end: int) -> void:
 	if start >= end:
 		return
@@ -88,8 +64,6 @@ func add_range(keys: Array, start: int, end: int) -> void:
 	var buckets := {}
 	for index in range(start, end):
 		var cell_position: Vector3i = keys[index]
-		# A repeated add must not raise the chunk count, or an erase leaves a
-		# mask with a count above zero.
 		if _selected_cells.has(cell_position):
 			continue
 		_selected_cells[cell_position] = true
@@ -111,7 +85,6 @@ func add_range(keys: Array, start: int, end: int) -> void:
 	revision += 1
 
 
-## Removes one range of a streamed batch. A cell that is not selected is skipped.
 func erase_range(keys: Array, start: int, end: int) -> void:
 	var buckets := {}
 	var writable := false
@@ -120,8 +93,6 @@ func erase_range(keys: Array, start: int, end: int) -> void:
 		if not _selected_cells.has(cell_position):
 			continue
 		if not writable:
-			# A captured selection is shared and read-only, so the first write
-			# copies it. A batch with no match pays no copy.
 			_make_writable()
 			writable = true
 		_selected_cells.erase(cell_position)
@@ -144,17 +115,14 @@ func erase_range(keys: Array, start: int, end: int) -> void:
 	revision += 1
 
 
-## Returns [code]true[/code] when the cell is selected.
 func contains(cell_position: Vector3i) -> bool:
 	return _selected_cells.has(cell_position)
 
 
-## Returns [code]true[/code] when no cell is selected.
 func is_empty() -> bool:
 	return _selected_cells.is_empty()
 
 
-## Returns the selected cells as an array.
 func to_array() -> Array[Vector3i]:
 	var selected_positions: Array[Vector3i] = []
 	for cell_position in _selected_cells:
@@ -162,8 +130,6 @@ func to_array() -> Array[Vector3i]:
 	return selected_positions
 
 
-## Replaces the selection with every cell in the box between two corners. Both
-## corners are inclusive.
 func from_box(first_corner: Vector3i, second_corner: Vector3i) -> void:
 	var min_corner := Vector3i(mini(first_corner.x, second_corner.x), mini(first_corner.y, second_corner.y), mini(first_corner.z, second_corner.z))
 	var max_corner := Vector3i(maxi(first_corner.x, second_corner.x), maxi(first_corner.y, second_corner.y), maxi(first_corner.z, second_corner.z))
@@ -175,7 +141,6 @@ func from_box(first_corner: Vector3i, second_corner: Vector3i) -> void:
 	_fill_box_masks(min_corner, max_corner)
 
 
-## Adds every cell of another selection.
 func union(other_selection: VoxelSelection) -> void:
 	_make_writable()
 	for cell_position in other_selection._selected_cells:
@@ -187,7 +152,6 @@ func union(other_selection: VoxelSelection) -> void:
 	revision += 1
 
 
-## Removes every cell of another selection.
 func subtract(other_selection: VoxelSelection) -> void:
 	_make_writable()
 	for cell_position in other_selection._selected_cells:
@@ -199,28 +163,18 @@ func subtract(other_selection: VoxelSelection) -> void:
 	revision += 1
 
 
-## Returns the number of selected cells.
 func count() -> int:
 	return _selected_cells.size()
 
 
-## Returns a read-only view of the selected cells. Use the selection methods
-## for writes.
 func all_cells() -> Dictionary:
-	# Read-only view. Use the selection methods for writes.
 	return _selected_cells
 
 
-## Returns the per-chunk selection masks. Each value holds the x grid, the y
-## grid, and the z grid in that order. Each grid holds one 16-bit row for every
-## row of the chunk. Every mutation keeps the grids current.
 func mask_chunks() -> Dictionary:
 	return _chunk_masks
 
 
-## Returns a copy of the per-chunk masks for a worker or a history record. The
-## grids are copied, so a later selection write cannot change the snapshot. A
-## packed array that two array elements share does not detach on a write.
 func mask_snapshot() -> Dictionary:
 	var snapshot := {}
 	for location in _chunk_masks:
@@ -229,16 +183,11 @@ func mask_snapshot() -> Dictionary:
 	return snapshot
 
 
-## Returns the selected cells and marks them shared. The next write copies the
-## dictionary first, so this snapshot stays frozen.
 func capture() -> Dictionary:
 	_snapshot_shared = true
 	return _selected_cells
 
 
-## Replaces the selected cells with a captured snapshot. It marks them shared,
-## so the next write copies them first. A caller that captured the masks with
-## [method mask_snapshot] passes them to skip the rebuild.
 func restore(selection_snapshot: Dictionary, mask_snapshot: Dictionary = {}) -> void:
 	_selected_cells = selection_snapshot
 	_snapshot_shared = true
@@ -249,8 +198,6 @@ func restore(selection_snapshot: Dictionary, mask_snapshot: Dictionary = {}) -> 
 	revision += 1
 
 
-# Installs a mask snapshot. The entry arrays and the grids are copied, so a later
-# write to this selection cannot change the snapshot.
 func _adopt_masks(masks: Dictionary) -> void:
 	_chunk_masks = {}
 	_mask_base = Vector3i.MAX
@@ -260,9 +207,6 @@ func _adopt_masks(masks: Dictionary) -> void:
 		_chunk_masks[location] = [grids[0].duplicate(), grids[1].duplicate(), grids[2].duplicate(), grids[MASK_COUNT]]
 
 
-# Rebuilds every chunk mask from the selected cells. A bulk change uses it. The
-# cells are grouped by chunk, so each grid is written back once per chunk, not
-# once per cell.
 func _rebuild_masks() -> void:
 	var started_us := Time.get_ticks_usec()
 	_chunk_masks = {}
@@ -285,9 +229,6 @@ func _rebuild_masks() -> void:
 	_profile_rebuild_us += Time.get_ticks_usec() - started_us
 
 
-# Moves the cell count of one chunk. A chunk that reaches zero leaves the mask
-# set, so a snapshot never copies an empty chunk. The count can only be higher
-# than the real cell count, because a repeated add still counts once.
 func _bump_chunk(base: Vector3i, delta: int) -> void:
 	var chunk_masks = _chunk_masks.get(base)
 	if chunk_masks == null:
@@ -302,14 +243,10 @@ func _bump_chunk(base: Vector3i, delta: int) -> void:
 		_mask_chunk = []
 
 
-## Returns the chunk that holds one cell.
 static func chunk_base(cell_position: Vector3i) -> Vector3i:
 	return Vector3i(cell_position.x >> 4, cell_position.y >> 4, cell_position.z >> 4)
 
 
-# Sets or clears one cell bit in its chunk masks. An erase on a chunk with no
-# cells does nothing. The last chunk is cached, because a selection adds cells in
-# a mostly spatial order.
 func _set_mask(cell_position: Vector3i, value: bool) -> void:
 	var base := chunk_base(cell_position)
 	var chunk_masks = _chunk_masks.get(base)
@@ -326,7 +263,6 @@ func _set_mask(cell_position: Vector3i, value: bool) -> void:
 	_write_mask(chunk_masks, Vector3i(cell_position.x - (base.x << 4), cell_position.y - (base.y << 4), cell_position.z - (base.z << 4)), value)
 
 
-# Writes one cell bit into the three grids of one chunk.
 func _write_mask(chunk_masks: Array, local: Vector3i, value: bool) -> void:
 	var x_bit := 1 << local.x
 	var x_grid: PackedInt32Array = chunk_masks[0]
@@ -345,8 +281,6 @@ func _write_mask(chunk_masks: Array, local: Vector3i, value: bool) -> void:
 	chunk_masks[2] = z_grid
 
 
-# Writes one batch of cells into the three grids of one chunk. The grids are held
-# locally and written back once, so a batch pays one entry write per chunk.
 func _write_mask_batch(chunk_masks: Array, base: Vector3i, cells: Array, value: bool) -> void:
 	var origin_x := base.x << 4
 	var origin_y := base.y << 4
@@ -375,8 +309,6 @@ func _write_mask_batch(chunk_masks: Array, base: Vector3i, cells: Array, value: 
 	chunk_masks[2] = z_grid
 
 
-# Fills the masks of one box in runs. Each row of a box is one contiguous bit
-# range, so a box pays one write per row, not one per cell.
 func _fill_box_masks(min_corner: Vector3i, max_corner: Vector3i) -> void:
 	_mask_base = Vector3i.MAX
 	_mask_chunk = []

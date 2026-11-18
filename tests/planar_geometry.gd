@@ -1,18 +1,5 @@
 extends "res://tests/test.gd"
 
-# Planar region geometry in one process: the cleanup differential and benchmark,
-# the compact box path parity, and the region coverage checks.
-#
-# The production region must match the frozen reference on every nonempty
-# three-by-three mask and on edge fixtures, with and without prepared loops. The
-# benchmark compares a frozen whole-surface build with the production one on
-# independent group copies. Run one process:
-#
-#   godot --path . res://tests/planar_geometry.tscn
-#
-# Each test keeps the steps and checks of its original scene. The user arguments
-# after `--` name the tests to run, so an old scene name still selects its own
-# test.
 
 const REGION := preload("res://Globals/Rendering/VoxelPlanarRegion.gd")
 const REFERENCE := preload("res://tests/planar_cleanup_reference.gd")
@@ -24,7 +11,6 @@ const BUILDER := preload("res://Globals/Rendering/VoxelMeshBuilder.gd")
 const REPEATS := 9
 const WARMUP := 2
 
-# planar_cleanup state.
 var cases: Array[Dictionary] = []
 var prepared_cases := 0
 var parity_error := ""
@@ -32,7 +18,6 @@ var cleanup_prepared_error := ""
 var cancel_error := ""
 var counts := {}
 
-# planar_paths state.
 var paths_cases: Array[Dictionary] = []
 var paths_labels: PackedStringArray = []
 var ring7 := {}
@@ -48,7 +33,6 @@ var square_error := ""
 var paths_prepared_error := ""
 var simplify_error := ""
 
-# planar_regions state.
 var region_cases: Array[Dictionary] = []
 var region_meshes: Array[Array] = []
 var mask_error := ""
@@ -64,7 +48,6 @@ func _ready() -> void:
 	test("planar regions preserve occupied cells, holes, and boundary vertices", _planar_regions, "planar_regions")
 
 
-# Each test starts from fresh group state, so a test runs alone or in any order.
 func before_test() -> void:
 	cases = []
 	prepared_cases = 0
@@ -91,8 +74,6 @@ func before_test() -> void:
 	mask_error = ""
 	region_protected = _protected_collinear()
 
-
-# --- planar_cleanup -----------------------------------------------------------
 
 func _planar_cleanup() -> void:
 	step("Given every nonempty three-by-three mask and the edge fixtures", _build_cases)
@@ -227,8 +208,6 @@ func _cancellation() -> void:
 	expect(latched.is_empty(), "the shortcut does not restart after a mid-work rejection")
 
 
-# --- Workload counts ----------------------------------------------------------
-
 func _count_workload() -> void:
 	var frame := _material_rich()
 	var chunk := Vector3i(1, 1, 1)
@@ -275,8 +254,6 @@ func _count_workload() -> void:
 	expect(int(counts.squares) > 0, "the material-rich fixture holds unit-square loops")
 
 
-# Mirrors VoxelSurface._triangulate_groups to count its passes. The result feeds
-# the report only. Production still owns the real triangulation.
 func _mirror_rounds(groups: Dictionary, protected: Dictionary) -> int:
 	var protected_positions: Dictionary = protected.positions
 	var protected_planes: Dictionary = protected.planes
@@ -303,8 +280,6 @@ func _mirror_rounds(groups: Dictionary, protected: Dictionary) -> int:
 	return rounds
 
 
-# --- Whole-surface benchmark --------------------------------------------------
-
 func _benchmark() -> void:
 	_bench_finish("material-rich flat", _material_rich(), Vector3i(1, 1, 1), false)
 	_bench_finish("material-rich smooth", _material_rich(), Vector3i(1, 1, 1), true)
@@ -316,7 +291,6 @@ func _benchmark() -> void:
 	_bench_complete("material-rich smooth", _material_rich(), Vector3i(1, 1, 1), true)
 
 
-# The cleanup only: protection, triangulation, and emission.
 func _bench_finish(name: String, frame: VoxelFrame, chunk: Vector3i, smooth: bool) -> void:
 	var base: Array = _prepare_groups(frame, chunk, smooth)
 	if base.is_empty():
@@ -358,7 +332,6 @@ func _bench_finish(name: String, frame: VoxelFrame, chunk: Vector3i, smooth: boo
 	expect(parity, "%s: the frozen and production cleanup emit identical arrays" % name)
 
 
-# The complete surface build: cleanup, atlas bake, and UV finish.
 func _bench_complete(name: String, frame: VoxelFrame, chunk: Vector3i, smooth: bool) -> void:
 	var base: Array = _prepare_groups(frame, chunk, smooth)
 	if base.is_empty():
@@ -385,8 +358,6 @@ func _bench_complete(name: String, frame: VoxelFrame, chunk: Vector3i, smooth: b
 	])
 
 
-# Build the groups once. Returns [groups, origin, corner_occupancy], or [] when
-# the chunk has no exposed faces.
 func _prepare_groups(frame: VoxelFrame, chunk: Vector3i, smooth: bool) -> Array:
 	var snapshot := BUILDER._snapshot(frame, chunk, smooth)
 	var colors: PackedColorArray = snapshot[0]
@@ -425,7 +396,6 @@ func _time_complete(reference: bool, groups: Dictionary, frame: VoxelFrame, orig
 	return Time.get_ticks_usec() - started_us
 
 
-# A deep copy of the mutable groups, so each timed path owns its input.
 func _copy_groups(groups: Dictionary) -> Dictionary:
 	var out := {}
 	for key in groups:
@@ -445,8 +415,6 @@ func _copy_output(output: Array) -> Array:
 		out.append({"points": mesh.points.duplicate(), "indices": mesh.indices.duplicate()})
 	return out
 
-
-# --- Comparison helpers -------------------------------------------------------
 
 func _same_output(a: Array, b: Array) -> String:
 	if a.size() != b.size():
@@ -490,8 +458,6 @@ func _detail(error: String) -> String:
 	return "" if error.is_empty() else " (%s)" % error
 
 
-# --- planar_paths -------------------------------------------------------------
-
 func _planar_paths() -> void:
 	step("Given every nonempty three-by-three mask and the named regions", _build)
 	step("When both paths run on each fixture", _compare)
@@ -517,8 +483,6 @@ func _build() -> void:
 	_add(diagonal_line, "sixteen-cell diagonal line")
 	sparse_pair = _sparse_pair()
 	_add(sparse_pair, "sparse pair")
-	# Taller than the row-mask width. Only the width is a mask, so a dense wall this
-	# tall still belongs on the compact path.
 	wall80 = _wall80()
 	_add(wall80, "four-by-eighty wall")
 
@@ -539,9 +503,6 @@ func _compare() -> void:
 		if REGION._box_loops(box, Callable()) != REGION._contours(cells, {}, Callable(), true):
 			box_error = "%s differs" % paths_labels[index]
 			break
-	# Every fixture except the sparse pair and the diagonal line must use the
-	# compact path. A limit that silently rejected them would make the compare
-	# above vacuous.
 	if box_error.is_empty() and compacted != paths_cases.size() - 2:
 		box_error = "only %d of %d fixtures used the compact path" % [compacted, paths_cases.size()]
 	_compare_limits()
@@ -619,8 +580,6 @@ func _add(cells: Dictionary, label: String) -> void:
 	paths_cases.append(cells)
 	paths_labels.append(label)
 
-
-# --- planar_regions -----------------------------------------------------------
 
 func _planar_regions() -> void:
 	step("Given rings, separate contacts, sparse cells, and a protected rectangle", func():
@@ -833,13 +792,10 @@ func _conforming(output: Array) -> bool:
 	return true
 
 
-# --- Shared fixtures ----------------------------------------------------------
-
 func _add_case(cells: Dictionary, protected: Dictionary, label: String) -> void:
 	cases.append({"cells": cells, "protected": protected, "label": label})
 
 
-# Every nonempty three-by-three mask, in the order the bit walk emits it.
 func _mask_cells(mask: int) -> Dictionary:
 	var cells := {}
 	for bit in 9:

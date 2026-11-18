@@ -1,8 +1,5 @@
 extends SceneTree
 
-# Checks the pure helpers without a test scene. Run it with:
-#
-#   godot --headless --path . -s res://addons/test_kit/selfcheck.gd
 
 const KIT := preload("res://addons/test_kit/test_case.gd")
 

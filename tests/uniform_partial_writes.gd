@@ -1,24 +1,10 @@
 extends "res://tests/test.gd"
 
-# Behavior and differential tests for the partial declared-uniform write path in
-# `VoxelFrame.Chunk`. The fast path must match the generic per-cell path cell for
-# cell, and must keep the copy-on-write, bounds, neighbor, and compaction rules.
-# A `bench` case times the two paths on fresh snapshots.
-#
-#   godot --path . res://tests/uniform_partial_writes.tscn
-#   godot --path . res://tests/uniform_partial_writes.tscn -- differential bench
-#
-# The generic path is the reference: `set_cells(changes, null, null)` never takes
-# the fast path, so the differential compares production code against production
-# code. The bench compares the same two calls, so no production hook is needed.
 
 const CHUNK_SIZE := VoxelFrame.CHUNK_SIZE
 const CHUNK_CELLS := CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE
 
 
-# Test-only baseline frame. It drops the uniform hint, so a write through it or
-# through a copy of it takes the generic path. `copy_frame` keeps the class, which
-# the atomic fill path needs because it writes a snapshot.
 class NoHintFrame extends VoxelFrame:
 	func set_cells(cell_materials: Dictionary, edit_job: VoxelFrame.EditJob = null, uniform_material: Variant = null) -> Array[Vector3i]:
 		return super.set_cells(cell_materials, edit_job, null)
@@ -49,7 +35,6 @@ func _ready() -> void:
 	test("repeated partial writes on one cell stay bounded", _memory_bound, "memory_bound")
 	test("a cancelled write job writes nothing", _cancel, "cancel")
 	test("a partial uniform write reserializes to the same frame", _reserialize, "reserialize")
-	# The two bench cases print timings only. They record no check on purpose.
 	test("partial uniform writes are timed against the generic path", _bench, "bench", {"allow_no_checks": true})
 	test("brush-like repaint sequences are timed for each source shape", _bench_shapes, "bench_shapes", {"allow_no_checks": true})
 	test("the new shared row is isolated from a later single-cell write", _shared_row_later_edit, "shared_row_later_edit")
@@ -64,13 +49,10 @@ func _ready() -> void:
 	test("the no-hint baseline keeps its class through a copy", _no_hint_copy, "no_hint_copy")
 
 
-# Fixtures. Each builder makes a fresh frame so a test never shares execution state.
-
 func _origin(location: Vector3i) -> Vector3i:
 	return location * CHUNK_SIZE
 
 
-# A chunk filled in one uniform batch: one shared table row, every slot occupied.
 func _bulk_frame(location: Vector3i, material: PackedFloat32Array) -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	var origin := _origin(location)
@@ -83,7 +65,6 @@ func _bulk_frame(location: Vector3i, material: PackedFloat32Array) -> VoxelFrame
 	return frame
 
 
-# A chunk written cell by cell: one table row per occupied cell.
 func _percell_frame(location: Vector3i, material: PackedFloat32Array) -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	var origin := _origin(location)
@@ -94,8 +75,6 @@ func _percell_frame(location: Vector3i, material: PackedFloat32Array) -> VoxelFr
 	return frame
 
 
-# Half the chunk holds RED with the default finish, half holds the same color
-# with a different metallic. The 9-float compare must treat the two as different.
 func _mixed_frame(location: Vector3i) -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	var origin := _origin(location)
@@ -108,7 +87,6 @@ func _mixed_frame(location: Vector3i) -> VoxelFrame:
 	return frame
 
 
-# Several one-cell chunks.
 func _sparse_frame(material: PackedFloat32Array) -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	for index in 4:
@@ -116,8 +94,6 @@ func _sparse_frame(material: PackedFloat32Array) -> VoxelFrame:
 	return frame
 
 
-# `count` distinct cells of one chunk, in a shuffled order, so the change
-# dictionary order is not the grid order.
 func _pick_cells(location: Vector3i, count: int, shuffle_seed: int) -> Array[Vector3i]:
 	var origin := _origin(location)
 	var all: Array[Vector3i] = []
@@ -140,7 +116,6 @@ func _changes(cells: Array[Vector3i], material: PackedFloat32Array) -> Dictionar
 	return out
 
 
-# One cell of the chunk that the batch does not touch.
 func _outside_cell(location: Vector3i, cells: Array[Vector3i]) -> Vector3i:
 	var inside := {}
 	for cell in cells:
@@ -153,8 +128,6 @@ func _outside_cell(location: Vector3i, cells: Array[Vector3i]) -> Vector3i:
 	return origin
 
 
-# Write the batch with the uniform hint and without it, on two twins of the
-# source. Returns [fast frame, generic frame, fast chunks, generic chunks].
 func _apply_pair(source: VoxelFrame, changes: Dictionary, material: PackedFloat32Array) -> Array:
 	var fast := source.copy_frame()
 	var generic := source.copy_frame()
@@ -378,15 +351,12 @@ func _reserialize() -> void:
 	)
 
 
-# A chunk with one cell, written by `set_cell`, so its row is not shared.
 func _onecell_frame() -> VoxelFrame:
 	var frame := VoxelFrame.new()
 	frame.set_cell(Vector3i(3, 4, 5), VoxelFrame.material(Color.RED))
 	return frame
 
 
-# A chunk with two shared rows: a bulk fill, then one partial shared write. The
-# batch visits both rows, so it stresses the match cache.
 func _shared_two_row_frame() -> VoxelFrame:
 	var frame := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
 	var material := VoxelFrame.material(Color.BLUE)
@@ -395,9 +365,6 @@ func _shared_two_row_frame() -> VoxelFrame:
 	return frame
 
 
-# Focused sequence bench. A single write hides the table-growth cost, so each
-# shape repaints the same cells three times on one frame. That is the ordinary
-# brush path: a stroke writes the same footprint again and again.
 func _bench_shapes() -> void:
 	step("Given a brush-like repaint sequence for each source shape", func():
 		var palette: Array[PackedFloat32Array] = [VoxelFrame.material(Color.BLUE), VoxelFrame.material(Color.GREEN), VoxelFrame.material(Color.YELLOW)]
@@ -439,7 +406,6 @@ func _bench_shapes() -> void:
 	)
 
 
-# Apply the whole sequence to one twin and time it.
 func _time_sequence(source: VoxelFrame, sequence: Array, palette: Array[PackedFloat32Array], hint: bool) -> int:
 	var frame := source.copy_frame()
 	var started := Time.get_ticks_usec()
@@ -448,7 +414,6 @@ func _time_sequence(source: VoxelFrame, sequence: Array, palette: Array[PackedFl
 	return Time.get_ticks_usec() - started
 
 
-# The row count of the one chunk after the sequence.
 func _final_rows(source: VoxelFrame, sequence: Array, palette: Array[PackedFloat32Array], hint: bool) -> int:
 	var frame := source.copy_frame()
 	for index in sequence.size():
@@ -471,8 +436,6 @@ func _no_hint_copy() -> void:
 	)
 
 
-# A partial shared write gives the batch one row. A later single-cell write of a
-# cell on that row must give the cell its own row and leave the batch cells alone.
 func _shared_row_later_edit() -> void:
 	step("Given a shared chunk with a batch on one new row", func():
 		var source := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -492,8 +455,6 @@ func _shared_row_later_edit() -> void:
 	)
 
 
-# A mixed batch with no hint writes each cell on its own, even when the cells
-# point at the same shared row.
 func _shared_row_mixed() -> void:
 	step("Given a shared chunk with a batch on one new row", func():
 		var source := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -511,8 +472,6 @@ func _shared_row_mixed() -> void:
 	)
 
 
-# A compaction on a chunk with several shared rows must keep every cell's
-# material and remap the ids to valid rows.
 func _multi_id_compaction() -> void:
 	step("Given a shared chunk with several rows", func():
 		var frame := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -537,7 +496,6 @@ func _multi_id_compaction() -> void:
 	)
 
 
-# A partial shared write that includes empty cells must insert them.
 func _missing_cell() -> void:
 	step("Given a shared chunk with empty cells", func():
 		var frame := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -558,7 +516,6 @@ func _missing_cell() -> void:
 	)
 
 
-# A partial shared write on a chunk with dirty bounds must leave the flag set.
 func _dirty_bounds() -> void:
 	step("Given a chunk with dirty bounds", func():
 		var source := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -575,7 +532,6 @@ func _dirty_bounds() -> void:
 	)
 
 
-# A repeated shared batch must copy nothing and keep the chunk identity.
 func _cow_noop() -> void:
 	step("Given a shared chunk and a batch already applied", func():
 		var source := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -594,7 +550,6 @@ func _cow_noop() -> void:
 	)
 
 
-# A write must not mutate the batch dictionary or the caller's material.
 func _source_untouched() -> void:
 	step("Given a shared chunk and a captured batch", func():
 		var source := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -611,8 +566,6 @@ func _source_untouched() -> void:
 	)
 
 
-# The compare reads all nine stored values, so a same-color cell of a different
-# finish is not a no-op.
 func _nine_values() -> void:
 	step("Given a chunk with a same-color different-finish row", func():
 		var frame := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -627,7 +580,6 @@ func _nine_values() -> void:
 	)
 
 
-# The table must stay bounded under many repaints, for both source shapes.
 func _growth_bounded() -> void:
 	step("Given a shared chunk repainted many times on one cell", func():
 		var frame := _bulk_frame(Vector3i.ZERO, VoxelFrame.material(Color.RED))
@@ -682,7 +634,6 @@ func _bench() -> void:
 	)
 
 
-# One write on a fresh twin of the source, with or without the uniform hint.
 func _time_write(source: VoxelFrame, changes: Dictionary, material: PackedFloat32Array, hint: bool) -> int:
 	var frame := source.copy_frame()
 	var started := Time.get_ticks_usec()

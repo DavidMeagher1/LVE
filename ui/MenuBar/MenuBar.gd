@@ -1,51 +1,28 @@
 extends HBoxContainer
 
-## The main menu bar.
-##
-## It opens, saves, and creates documents. It also shows the undo and redo
-## buttons and the model settings.
 
-## Emitted when every edited document has been saved or discarded for a quit.
 signal quit_confirmed()
-## Emitted when the user accepts the recovery prompt.
 signal recovery_accepted(entries: Array)
-## Emitted when the user discards the recovery prompt.
 signal recovery_discarded(entries: Array)
-## Emitted when a tab is closed without saving.
 signal document_discarded(document: VoxelDocument)
 
-## The settings file override. Tests set a temporary file. An empty value uses
-## [member State.settings_path].
 var settings_path := ""
 
-## The save path of the active document, or an empty string for a new document.
 var current_save_path: String:
 	get:
 		return State.document.edit_save_path
 	set(value):
 		State.document.edit_save_path = value
 var _save_format := OptionButton.new()
-# The tab that the close prompt is about, or -1.
 var _pending_close_index := -1
-# The document to close after a successful Save As, or null. The find by
-# identity prevents a shifted tab index from closing a different document.
 var _close_after_save_document: VoxelDocument
-# Whether the quit flow is active.
 var _quit_active := false
-# A close request that arrived while a foreground operation held the app. The
-# activity signal retries it when the operation ends.
 var _quit_requested := false
-# The edited tab indices that the quit flow must visit.
 var _quit_indices: Array[int] = []
-# The next entry in `_quit_indices` to show.
 var _quit_position := 0
-# Whether a Save As dialog must continue the quit flow after it saves.
 var _quit_after_save := false
-# The entries shown by the recovery prompt.
 var _recovery_entries: Array = []
-# One checkbox per recovery entry.
 var _recovery_checkboxes: Array[CheckBox] = []
-# The last folder that the file dialog used.
 var _last_dir := ""
 
 
@@ -86,8 +63,6 @@ func _ready() -> void:
 
 
 func _sync_history_buttons() -> void:
-	# An open edit captured a start snapshot that a history change would
-	# invalidate, so the controls stay disabled until the edit closes.
 	var busy := State.edit_busy() or State.active_edit() != null
 	%UndoBtn.disabled = busy or not State.undo_redo.has_undo()
 	%RedoBtn.disabled = busy or not State.undo_redo.has_redo()
@@ -101,8 +76,6 @@ func _on_model_settings_pressed() -> void:
 	%DocumentSettingsModal.open(State.document.size, State.document.smooth_normals, State.document.ao_strength)
 
 
-## Saves the document to one path and returns the error code. A PNG path also
-## renders and stores a preview. The save path changes only on success.
 func save_doc(path: String) -> Error:
 	if State.edit_busy():
 		return ERR_BUSY
@@ -140,9 +113,6 @@ func _show_file_error(message: String) -> void:
 	%FileError.popup_centered()
 
 
-## Opens each file from an operating system file drop in order. A document
-## reuses the active empty tab or opens a new tab. An image imports as a new
-## document tab.
 func _on_files_dropped(files: PackedStringArray) -> void:
 	for path in files:
 		await _on_file_opened(path)
@@ -169,14 +139,10 @@ func _on_file_selected(path: String) -> void:
 			_remember_session()
 
 
-## Starts the quit flow. It asks to save each edited document, one at a time.
-## It emits [signal quit_confirmed] when every document is handled.
 func request_quit() -> void:
 	if _quit_active:
 		return
 	if State.edit_busy():
-		# The close request must not vanish while an export, fill, or erase runs.
-		# Keep it and retry when the operation ends.
 		_quit_requested = true
 		return
 	_quit_requested = false
@@ -194,7 +160,6 @@ func request_quit() -> void:
 	_show_quit_dialog()
 
 
-# Retries a close request that arrived while a foreground operation ran.
 func _retry_quit() -> void:
 	if _quit_requested and not _quit_active and not State.edit_busy():
 		request_quit()
@@ -250,7 +215,6 @@ func _save_quit_document() -> void:
 	var document := State.document
 	if document.edit_save_path.is_empty():
 		_quit_after_save = true
-		# A dialog that cannot open leaves the quit flow waiting forever.
 		if not _on_save_as_btn_pressed():
 			_cancel_quit()
 		return
@@ -288,8 +252,6 @@ func _on_close_tab_save() -> void:
 	var document := State.document
 	if document.edit_save_path.is_empty():
 		_close_after_save_document = document
-		# A dialog that cannot open would leave the flag set, and the next Save As
-		# would then close this tab.
 		if not _on_save_as_btn_pressed():
 			_close_after_save_document = null
 		return
@@ -326,8 +288,6 @@ func _on_close_tab_cancel() -> void:
 
 
 func _on_file_dialog_canceled() -> void:
-	# Clear the close target before the quit branch. A quit that interrupts a
-	# close Save As must not leave a stale tab target behind.
 	_close_after_save_document = null
 	_pending_close_index = -1
 	if _quit_after_save:
@@ -335,7 +295,6 @@ func _on_file_dialog_canceled() -> void:
 		_cancel_quit()
 
 
-## Shows the recovery prompt for the entries that the autosave manager found.
 func show_recovery(entries: Array) -> void:
 	_recovery_entries = []
 	for value in entries:
@@ -413,13 +372,10 @@ func _clear_recovery_options() -> void:
 	_recovery_checkboxes.clear()
 
 
-# Returns the settings file. Tests can set a temporary override.
 func _settings_file() -> String:
 	return State.settings_path if settings_path.is_empty() else settings_path
 
 
-# Restores the favorite folders and the last folder. The favorite list is
-# shared by all FileDialog nodes, so set it before the dialog is shown.
 func _restore_file_dialog() -> void:
 	var config := ConfigFile.new()
 	if config.load(_settings_file()) != OK:
@@ -436,8 +392,6 @@ func _restore_file_dialog() -> void:
 
 
 func _save_file_dialog() -> void:
-	# A test scene must not write the real settings file. The dialog test sets
-	# its own path, so it still covers the save path.
 	if settings_path.is_empty() and not State.is_app_session():
 		return
 	var dialog: FileDialog = %FileDialog
@@ -484,10 +438,6 @@ func _on_open_btn_pressed() -> void:
 	%FileDialog.add_filter(State.get_image_file_filter())
 	_show_file_dialog()
 
-## Opens one document file and returns [code]true[/code] on success. When
-## [param saved] is true, it records the path as the current save path. Open
-## reuses an empty, clean tab. Otherwise it adds a tab. The startup restore
-## passes [param replace] to reuse the initial tab without a check.
 func open_document(path: String, saved: bool = true, replace: bool = false) -> bool:
 	var document := VoxelDocument.load_file(path)
 	if document == null:
@@ -501,8 +451,6 @@ func open_document(path: String, saved: bool = true, replace: bool = false) -> b
 	return true
 
 
-# Returns true when the active tab holds an empty document that was never saved.
-# Open reuses it instead of adding another empty tab.
 func _can_reuse_tab() -> bool:
 	var document := State.document
 	return document.edit_save_path.is_empty() and not document.edit_dirty \
@@ -519,8 +467,6 @@ func _on_file_opened(path: String) -> void:
 			_show_file_error("Cannot open the document. The file is invalid or its version is unsupported.")
 			return
 	if path.get_extension().to_lower() in State.IMAGE_EXTENSIONS:
-		# The import replaces the active document. Open a fresh tab first, so an
-		# unsaved edit in the current tab survives.
 		var placeholder: VoxelDocument = null
 		if not _can_reuse_tab():
 			placeholder = State.new_document()
@@ -555,8 +501,6 @@ func _on_save_btn_pressed() -> void:
 		return
 	await save_doc(current_save_path)
 
-## Opens the Save As dialog. Returns [code]false[/code] when the editor is busy
-## and no dialog opens.
 func _on_save_as_btn_pressed() -> bool:
 	if State.edit_busy():
 		return false
@@ -578,8 +522,6 @@ func _on_save_format_selected(index: int) -> void:
 	%FileDialog.current_file = base_name + suffix
 
 
-## Returns the base file name of a document. It drops the `.lve` and
-## `.lve.png` suffixes.
 static func document_basename(file_name: String) -> String:
 	if file_name.to_lower().ends_with(".lve.png"):
 		return file_name.left(-8)

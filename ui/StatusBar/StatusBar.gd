@@ -1,23 +1,11 @@
 class_name EditorStatusBar
 extends HBoxContainer
 
-## The application status bar.
-##
-## It shows the current color, the model size, the frame, and the zoom on the
-## left. It also shows the MCP server toggle, the application version, and the
-## latest release link. A context provider can replace the text for one
-## workspace. It hosts the job status widget.
 
-# The widget script is preloaded as a type alias. A new class_name is not in the
-# global class cache until the editor regenerates it.
 const JobStatusWidget = preload("res://ui/JobStatus/JobStatus.gd")
-# The update checker uses the same preload pattern.
 const UpdateCheckerScript = preload("res://ui/StatusBar/UpdateChecker.gd")
-## The fallback releases page, used before a release check completes.
 const RELEASES_URL := "https://github.com/LeonardMeagher2/LVE/releases"
-## The dim status text color.
 const TEXT_COLOR := Color(1, 1, 1, 0.55)
-## The brighter color of a version link that is behind the latest release.
 const UPDATE_COLOR := Color(1, 1, 1, 0.7)
 
 @onready var _left: Label = $StatusLeft
@@ -48,14 +36,11 @@ func _ready() -> void:
 	_checker.start.call_deferred()
 	_mcp.pressed.connect(_on_mcp_pressed)
 	_mcp.visible = false
-	# A status bar that Main did not create uses the context that Main injected.
 	if State.context != null and is_instance_valid(State.context.main):
 		set_main(State.context.main)
 	_refresh_status()
 
 
-## Sets the main scene that owns the MCP server. Main hands it in, so this
-## control does not walk up to the main scene.
 func set_main(main: Node) -> void:
 	if _main == main:
 		return
@@ -71,8 +56,6 @@ func set_main(main: Node) -> void:
 	_sync_mcp()
 
 
-## Sets the camera that supplies the zoom readout. Main hands it in, so this
-## control does not walk up to the main scene.
 func set_camera(camera: EditorCameraRig) -> void:
 	if _editor_camera == camera:
 		return
@@ -104,7 +87,6 @@ func _refresh_status() -> void:
 	_right.text = ""
 
 
-## Shows the MCP server state and the endpoint in the tooltip.
 func _sync_mcp() -> void:
 	if _main == null:
 		return
@@ -138,7 +120,6 @@ func _on_mcp_pressed() -> void:
 	%MCPError.popup_centered()
 
 
-## Points the version link at the latest release and marks a newer one.
 func show_latest(version: String, url: String, newer: bool) -> void:
 	if _current_version.is_empty():
 		return
@@ -158,10 +139,6 @@ func _on_ui_scale_item_selected(index: int) -> void:
 		_main.call("set_ui_scale", %UIScale.get_item_id(index) / 100.0)
 
 
-## Sets a context provider that returns the left and right status text. An
-## invalid callable restores the editor status.
 func set_context(provider: Callable) -> void:
 	_context = provider
-	# The job widget owns the cancel button. It cancels through State, so the
-	# button and Escape share one cancel path.
 	_refresh_status()

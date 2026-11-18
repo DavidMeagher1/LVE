@@ -1,30 +1,18 @@
 extends RefCounted
 
-## The stdio-to-TCP bridge for MCP.
-##
-## The same LVE binary runs this mode with
-## [code]--headless --no-header -- --mcp-bridge[/code]. It reads
-## newline-delimited JSON-RPC from stdin and forwards each message to the
-## running editor. Responses go to stdout with [method @GlobalScope.printraw].
-## Diagnostics go to stderr, so stdout holds MCP messages alone.
 
 const MAX_LINE_BYTES := 4 * 1024 * 1024
 const CONNECT_TIMEOUT_MS := 10000
 const RESPONSE_TIMEOUT_MS := 120000
-## The idle wait before a closed pipe is treated as EOF.
 const IDLE_EXIT_MS := 600000
-## The bridge log in the shared user directory.
 const LOG_PATH := "user://mcp_bridge.log"
 
 var _peer := StreamPeerTCP.new()
 var _buffer := PackedByteArray()
 var _stdin_buffer := PackedByteArray()
-# True when the last line read ended on the response deadline, not on a close.
 var _read_timed_out := false
 
 
-## Connects to the running editor and proxies stdio until stdin closes.
-## Returns a process exit code.
 func run(port: int) -> int:
 	_log("start stdin=%d" % OS.get_stdin_type())
 	var error := _peer.connect_to_host("127.0.0.1", port)
@@ -49,12 +37,7 @@ func run(port: int) -> int:
 			break
 		var request: Variant = JSON.parse_string(line)
 		if not (request is Dictionary) or not ((request as Dictionary).get("method", null) is String):
-			# A stdio client can run the server in a terminal that echoes the
-			# server's own output back to stdin. A response has no method, so it
-			# is not a request for the editor.
 			continue
-		# The server answers a request without a response for a null id, so the
-		# bridge must not wait for one.
 		var expects_response: Variant = (request as Dictionary).get("id", null) != null
 		var send_error := _peer.put_data((line + "\n").to_utf8_buffer())
 		if send_error != OK:
@@ -66,8 +49,6 @@ func run(port: int) -> int:
 		var response := _read_line(RESPONSE_TIMEOUT_MS)
 		if response.is_empty():
 			if _read_timed_out:
-				# The host must receive a JSON-RPC error. A bare EOF leaves it
-				# unable to tell a timeout from a clean shutdown.
 				var request_id: Variant = (request as Dictionary).get("id", null)
 				printraw(JSON.stringify({"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": "The editor did not answer in time."}}) + "\n")
 				printerr("LVE MCP bridge: the editor did not answer in time.")
@@ -81,7 +62,6 @@ func run(port: int) -> int:
 	return exit_code
 
 
-## Appends one diagnostic line to the bridge log.
 func _log(message: String) -> void:
 	var file := FileAccess.open(LOG_PATH, FileAccess.READ_WRITE)
 	if file == null:
@@ -92,9 +72,6 @@ func _log(message: String) -> void:
 	file.store_line("%s %s" % [Time.get_datetime_string_from_system(), message])
 
 
-## Reads one newline-delimited line from stdin. A pipe can deliver several
-## lines at once, so the remainder stays buffered. A pipe also returns no bytes
-## while the writer stays open, so an empty read is not EOF for a pipe.
 func _read_stdin_line() -> String:
 	var idle_since := Time.get_ticks_msec()
 	while true:
@@ -103,8 +80,6 @@ func _read_stdin_line() -> String:
 			var line := _stdin_buffer.slice(0, index).get_string_from_utf8().strip_edges()
 			_stdin_buffer = _stdin_buffer.slice(index + 1)
 			if line.is_empty():
-				# A client can send an extra newline after a message. It is not
-				# EOF, so read the next line.
 				continue
 			return line
 		var chunk := OS.read_buffer_from_stdin(4096)

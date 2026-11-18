@@ -162,7 +162,6 @@ func _color_at(cell: Vector3i) -> Color:
 	return _frame().get_color(cell)
 
 
-# The material of each bar voxel, keyed by its color.
 func _material_for_color(color: Color) -> Dictionary:
 	if color.is_equal_approx(Color.from_rgba8(200, 60, 60)):
 		return MATERIAL_A

@@ -1,16 +1,8 @@
 extends ColorRect
 
-## Darkens the scene outside the document size.
-##
-## The viewport projects the eight box corners and sends their convex hull to
-## the shader. The shader rejects the pixels inside that hull. The mask follows
-## the box in every view and needs no depth texture.
 
-## The low corner of the document box.
 var box_min := Vector3.ZERO
-## The high corner of the document box.
 var box_max := Vector3.ZERO
-## The projected box hull in viewport UV space.
 var hull := PackedVector2Array()
 
 
@@ -23,7 +15,6 @@ func _process(_delta: float) -> void:
 	refresh()
 
 
-## Updates the shader uniforms from the live camera and document size.
 func refresh() -> void:
 	var camera := get_viewport().get_camera_3d()
 	var document := State.document
@@ -32,7 +23,6 @@ func refresh() -> void:
 		return
 	var bounds := document.workspace_bounds()
 	if bounds.has_point(camera.global_position):
-		# The camera is inside the box, so the whole view is inside.
 		visible = false
 		return
 	box_min = bounds.position

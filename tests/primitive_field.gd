@@ -1,6 +1,5 @@
 extends "res://tests/test.gd"
 
-## Pure checks for the primitive signed-distance fields and their rasterizer.
 
 const PrimitiveField := preload("res://Globals/State/Tools/PrimitiveField.gd")
 

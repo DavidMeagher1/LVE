@@ -1,8 +1,5 @@
 extends "res://tests/test.gd"
 
-# One process runs the two transform-scaling tests. Each test keeps the steps
-# and checks of its original scene. The user arguments after `--` name the tests
-# to run, so an old scene name still selects its own test.
 
 var viewport: SubViewport
 
@@ -18,8 +15,6 @@ func _ready() -> void:
 	test("a pending scale continues correctly after the view changes mid-drag", _transform_scale_view_switch, "transform_scale_view_switch")
 
 
-# Each test starts from an empty frame, no selection, no history, the Move tool,
-# and a known camera and viewport. The hooks run under the per-test watchdog.
 func before_test() -> void:
 	_capture_originals_once()
 	State.stop()
@@ -35,8 +30,6 @@ func before_test() -> void:
 	camera_rig().is_orthogonal = false
 
 
-# Finish any held press and pending transform, then restore the camera and
-# viewport. A later test must not inherit a mid-drag transform or a moved view.
 func after_test() -> void:
 	await get_tree().process_frame
 	_release_held_press()
@@ -59,8 +52,6 @@ func _transform_scale() -> void:
 	)
 
 	step("Then the block doubles cleanly into an 8x8x2 block with no holes or duplicates", func():
-		# Uniform scale is a true 3D scale, so the depth axis (invisible from the front view)
-		# doubles from 1 layer to 2 right along with the two visible axes: 8 * 8 * 2 = 128.
 		expect(_frame().count() == 128, "the scaled block holds exactly 128 voxels (has %d)" % _frame().count())
 		_expect_bounds(Vector3i(-2, -2, -1), Vector3i(5, 5, 0))
 	)
@@ -95,9 +86,6 @@ func _transform_scale() -> void:
 
 	step("Then the shape mirrors through the pivot, keeping its size and voxel count", func():
 		expect(_frame().count() == 16, "the mirrored block still holds 16 voxels (has %d)" % _frame().count())
-		# A -1 factor is still uniform (all 3 axes flip through the pivot), so the
-		# four-cell block swaps in place on both in-plane axes. The single depth
-		# layer also stays on its own layer.
 		_expect_bounds(Vector3i(0, 0, 0), Vector3i(3, 3, 0))
 		expect(_color_at(Vector3i(0, 0, 0)).is_equal_approx(Color.from_rgba8(40, 120, 40)), "the marker moved to the mirrored corner")
 	)
@@ -114,7 +102,6 @@ func _transform_scale() -> void:
 	)
 
 	step("Then the two 2x steps compound into a single 4x scale, centered where it started", func():
-		# The depth axis compounds too: 1 layer -> 4 layers, same as the two visible axes' 2x2.
 		expect(_frame().count() == 256, "compounding two 2x scales holds exactly 256 voxels (has %d)" % _frame().count())
 		_expect_bounds(Vector3i(-3, -3, -2), Vector3i(4, 4, 1))
 		expect(State.undo_redo.has_undo(), "the compounded scale is still a single undo step")
@@ -162,7 +149,6 @@ func _transform_scale_view_switch() -> void:
 	)
 
 
-# Shared fixture: the viewport at a fixed size, looking at the named view.
 func _view_setup(view_name := "front") -> void:
 	viewport = editor_viewport()
 	var container := viewport.get_parent()
@@ -253,7 +239,6 @@ func _press_option(tooltip: String) -> void:
 		b.pressed.emit()
 
 
-# Capture the viewport size and stretch once, before any test changes them.
 func _capture_originals_once() -> void:
 	if _originals_captured:
 		return
@@ -263,8 +248,6 @@ func _capture_originals_once() -> void:
 	_originals_captured = true
 
 
-# The transform settings live in a shared Resource. Reset the tool and the
-# toggles so a test never inherits the previous test's choice.
 func _reset_transform_settings() -> void:
 	var p := plugin("TransformPlugin")
 	if p == null:
@@ -282,8 +265,6 @@ func _release_held_press() -> void:
 	_mouse_button(_last_mouse_pos, false)
 
 
-# Cancel a transform that a test left mid-drag or pending. The tool clears its
-# grab and restores the source shape, so the next test starts clean.
 func _stop_pending_transform() -> void:
 	var p := plugin("TransformPlugin")
 	if p == null:
@@ -296,7 +277,6 @@ func _stop_pending_transform() -> void:
 func _restore_view_state() -> void:
 	var vp := editor_viewport()
 	if _originals_captured:
-		# Restore the size while stretch is off, then restore stretch.
 		vp.size = _original_size
 		vp.get_parent().stretch = _original_stretch
 	camera_rig().set_view("default")

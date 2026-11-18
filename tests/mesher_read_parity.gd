@@ -1,14 +1,5 @@
 extends "res://tests/test.gd"
 
-# Differential proof for the rewritten chunk read path of [VoxelMeshBuilder].
-#
-# The builder now walks the padded snapshot and the face scan with a strided
-# index and copies only each neighbor's overlap. This test builds every case
-# twice: once through the production builder and once through the frozen old
-# body in `tests/mesher_read_reference.gd`. The arrays, the atlas size, and the
-# geometry bytes must match element for element, so the rewrite changes no output.
-#
-#   godot --path . res://tests/mesher_read_parity.tscn
 
 const REF := preload("res://tests/mesher_read_reference.gd")
 const CHUNK := VoxelFrame.CHUNK_SIZE
@@ -45,12 +36,8 @@ func _parity() -> void:
 	)
 
 
-# Builds one chunk with the production builder and one with the frozen body, and
-# compares every array by element type and value, then the atlas and the bytes.
 func _check(name: String, frame: VoxelFrame, location: Vector3i, smooth: bool, texture: bool) -> void:
 	var builder := VoxelMeshBuilder.new()
-	# The enclosed shortcut is orthogonal to the read path. Turning it off makes
-	# an enclosed chunk run the full read path on both sides.
 	builder.enclosed_shortcut = false
 	builder.source_frame = frame
 	builder.chunk_location = location
@@ -75,8 +62,6 @@ func _arrays_equal(first: Array, second: Array) -> bool:
 	return true
 
 
-# --- Cases -------------------------------------------------------------------
-
 func _build_cases() -> Array:
 	var opaque := VoxelFrame.material(Color.from_rgba8(90, 160, 220))
 	var second := VoxelFrame.material(Color.from_rgba8(220, 120, 70), Color(0.2, 0.1, 0.0), 0.8, 0.2)
@@ -88,7 +73,6 @@ func _build_cases() -> Array:
 	_fill_box(dense, Vector3i.ZERO, Vector3i.ONE * (CHUNK - 1), opaque)
 	cases.append({"name": "dense opaque", "frame": dense, "locations": [Vector3i.ZERO]})
 
-	# A mixed chunk with full PBR and emission, one material per plane diagonal.
 	var mixed := VoxelFrame.new()
 	var mixed_cells := {}
 	for z in CHUNK:
@@ -111,13 +95,11 @@ func _build_cases() -> Array:
 	holed.set_cells(hole_cells)
 	cases.append({"name": "holed plate", "frame": holed, "locations": [Vector3i.ZERO]})
 
-	# One own translucent cell must emit its internal face on both sides.
 	var own_translucent := VoxelFrame.new()
 	_fill_box(own_translucent, Vector3i.ZERO, Vector3i.ONE * (CHUNK - 1), opaque)
 	own_translucent.set_cell(Vector3i(8, 8, 8), translucent)
 	cases.append({"name": "own translucent", "frame": own_translucent, "locations": [Vector3i.ZERO]})
 
-	# A two-chunk block whose shared boundary holds a translucent cell.
 	var neighbor_translucent := VoxelFrame.new()
 	_fill_box(neighbor_translucent, Vector3i.ZERO, Vector3i(CHUNK * 2 - 1, CHUNK - 1, CHUNK - 1), opaque)
 	neighbor_translucent.set_cell(Vector3i(CHUNK, 5, 5), translucent)
@@ -134,7 +116,6 @@ func _build_cases() -> Array:
 	_fill_box(negative, Vector3i(-CHUNK, -CHUNK, -CHUNK), Vector3i(-1, -1, -1), second)
 	cases.append({"name": "negative coords", "frame": negative, "locations": [Vector3i(-1, -1, -1)]})
 
-	# A two-cube block, so several chunks read each other's border.
 	var multichunk := VoxelFrame.new()
 	var multi_cells := {}
 	for z in CHUNK * 2:

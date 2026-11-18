@@ -54,10 +54,6 @@ func _run() -> void:
 	)
 
 	step("Then the GUI receives the release and clears the pointer capture", func():
-		# The GUI holds the pointer on the pressed cell until it processes the
-		# release. A release that the input stage consumes never reaches the GUI,
-		# so the cell keeps the pointer. The viewport then receives no motion,
-		# and the tool cursor stops following the mouse.
 		expect(gui_releases == 1, "the cell receives the release in the GUI stage")
 	)
 

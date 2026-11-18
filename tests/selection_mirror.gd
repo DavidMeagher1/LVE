@@ -1,6 +1,5 @@
 extends "res://tests/test.gd"
 
-# Selection tools include enabled symmetry reflections without extra controls.
 
 var viewport: SubViewport
 var selection_plugin: Node

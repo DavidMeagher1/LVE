@@ -1,14 +1,8 @@
 extends Button
 
-## The drag handle of one animation frame cell.
-##
-## A drag carries the source frame index. A drop moves that frame to the
-## dropped cell.
 
-## The drag data type that marks one frame drag.
 const DRAG_TYPE := "voxel_frame"
 
-## The frame cell that owns this button. The parent sets it.
 var frame: AnimationFrame
 
 

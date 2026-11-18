@@ -1,31 +1,17 @@
 extends VoxelFrame.EditJob
 
-## One cancellable job that copies a frame or a selection into a stamp pattern.
-##
-## [method VoxelFrame.EditJob.run] is the worker body. The job lives in its own
-## script, because a shared settings class that named [VoxelFrame] directly kept
-## the whole document and renderer script graph alive at exit.
 
-## The source frame snapshot.
 var source_frame: VoxelFrame
-## The source cells as a dictionary keyed by cell position. An empty mask
-## copies the whole frame.
 var selection_mask := {}
-## The copied colors, keyed by offset from the pattern center.
 var pattern := {}
-## The copied full materials, keyed by offset from the pattern center.
 var pattern_materials := {}
-## The pattern center in cell units.
 var center := Vector3i.ZERO
-## Whether the pattern center is the source bounds center. A false value keeps
-## the source cell positions relative to the origin.
 var center_pattern := true
 var _colors := {}
 var _materials := {}
 var _bounds := AABB()
 
 
-## Copies the source. This is the worker body.
 func run() -> void:
 	stage("Preparing voxel source", selection_mask.size() if not selection_mask.is_empty() else source_frame.count())
 	var completed := 0

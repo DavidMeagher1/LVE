@@ -1,7 +1,5 @@
 extends Control
 
-## Keeps the viewport panel above the control bar. The environment row floats
-## above the bar. Both use the theme separation.
 
 @onready var _panel: PanelContainer = $PanelContainer
 @onready var _bar: HBoxContainer = %ControlBar
@@ -13,12 +11,10 @@ func _ready() -> void:
 	_sync_spacing()
 
 
-## Returns the editor camera. The status bar uses it for the zoom readout.
 func camera() -> EditorCameraRig:
 	return %CameraRig
 
 
-## Enables or disables the 3D render target when the editor tab is not shown.
 func set_rendering_active(active: bool) -> void:
 	var viewport: SubViewport = %Viewport
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
