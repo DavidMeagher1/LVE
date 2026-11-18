@@ -97,6 +97,23 @@ var unshaded := false:
 			return
 		unshaded = value
 		_apply_materials()
+## The material every chunk uses instead of its own material, or null. An export
+## data pass sets it to draw normals. Null restores the cached chunk materials.
+var override_material: Material:
+	set(value):
+		if value == override_material:
+			return
+		override_material = value
+		_apply_materials()
+## Returns the material a chunk uses instead of its own material. It receives the
+## chunk material, so a data pass can read its textures. An invalid callable
+## keeps the cached chunk materials.
+var material_builder: Callable:
+	set(value):
+		if value == material_builder:
+			return
+		material_builder = value
+		_apply_materials()
 # Whether one slice request is assigning its three values. A batch request
 # rebuilds once, so a layer-count drag pays one rebuild per step.
 var _slice_setting := false
@@ -621,25 +638,30 @@ func _install(chunk_location: Vector3i, surface_key: PackedInt64Array, entry: Di
 # shared cached material. An unshaded view uses a per-renderer copy, because a
 # shading mode on the shared material would change every other viewport.
 func _instance_material(chunk_location: Vector3i, source: Material) -> Material:
+	if override_material:
+		return override_material
 	if source == null:
 		_chunk_materials.erase(chunk_location)
 		_unshaded_materials.erase(chunk_location)
-		return null
+		return material_builder.call(null) if material_builder.is_valid() else null
 	if _chunk_materials.get(chunk_location) != source:
 		# The chunk holds a new surface, so a copy of the old material is stale.
 		_chunk_materials[chunk_location] = source
 		_unshaded_materials.erase(chunk_location)
-	if not unshaded:
+	var material: Material = source
+	if unshaded:
+		material = _unshaded_materials.get(chunk_location)
+		if material == null:
+			material = source.duplicate()
+			var base := material as BaseMaterial3D
+			if base:
+				base.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			_unshaded_materials[chunk_location] = material
+	else:
 		_unshaded_materials.erase(chunk_location)
-		return source
-	var copy: Material = _unshaded_materials.get(chunk_location)
-	if copy == null:
-		copy = source.duplicate()
-		var base := copy as BaseMaterial3D
-		if base:
-			base.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_unshaded_materials[chunk_location] = copy
-	return copy
+	if material_builder.is_valid():
+		return material_builder.call(material)
+	return material
 
 
 func _apply_materials() -> void:
