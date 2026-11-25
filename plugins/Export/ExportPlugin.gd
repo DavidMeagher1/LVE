@@ -102,6 +102,9 @@ func _ready() -> void:
 	_sheet_settings.get_node("ViewRow/View").select(1)
 	add_menu_bar_item(_menu_item)
 	add_tab(_workspace)
+	var panels: BoxContainer = _workspace.get_node("%Panels")
+	if OS.has_feature("mobile"):
+		panels.vertical = true
 	_model_scene = _model_viewport.get_node("ViewportScene")
 	_default_lighting = _model_scene.get_lighting_settings()
 	_default_camera = _capture_export_camera()
@@ -334,6 +337,8 @@ func _reset_sprite_size() -> void:
 
 
 func _view_count() -> int:
+	if not is_instance_valid(_sheet_settings):
+		return 1
 	return int(_sheet_settings.get_node("TurntableRow/Views").value) if _sheet_settings.get_node("TurntableRow/Turntable").button_pressed else 1
 
 
@@ -532,6 +537,8 @@ func _on_model_playing_changed(playing: bool) -> void:
 
 
 func _sync() -> void:
+	if not is_instance_valid(_sheet_settings):
+		return
 	var busy := State.edit_busy()
 	var frame_range := _selected_frames()
 	var count := frame_range.y - frame_range.x + 1
