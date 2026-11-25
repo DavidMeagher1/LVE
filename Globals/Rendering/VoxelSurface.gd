@@ -4,6 +4,7 @@ extends RefCounted
 const ATLAS := preload("./VoxelAtlas.gd")
 const REGION := preload("./VoxelPlanarRegion.gd")
 const PADDED_CHUNK_SIZE := VoxelFrame.CHUNK_SIZE + 2
+const CORNER_RANGE := VoxelFrame.CHUNK_SIZE + 1
 const AO_LEVELS: Array[float] = [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0]
 var arrays: Array = []
 var atlas: RefCounted
@@ -13,8 +14,9 @@ var error: Error = OK
 func run(source_arrays: Array, frame: VoxelFrame, origin := Vector3.ZERO, checkpoint := Callable(), smooth_normals := false, ao_strength := 0.0) -> void:
 	atlas = ATLAS.new()
 	error = OK
+	var raw := checkpoint
 	checkpoint = _latched_checkpoint(checkpoint)
-	arrays = _build(source_arrays, frame, origin, atlas, checkpoint, smooth_normals, ao_strength)
+	arrays = _build(source_arrays, frame, origin, atlas, checkpoint, raw, smooth_normals, ao_strength)
 	if arrays.is_empty():
 		error = ERR_UNAVAILABLE
 		return
@@ -27,8 +29,9 @@ func run(source_arrays: Array, frame: VoxelFrame, origin := Vector3.ZERO, checkp
 func run_groups(groups: Dictionary, frame: VoxelFrame, origin := Vector3.ZERO, checkpoint := Callable(), smooth_normals := false, corner_occupancy: Variant = null, ao_strength := 0.0) -> void:
 	atlas = ATLAS.new()
 	error = OK
+	var raw := checkpoint
 	checkpoint = _latched_checkpoint(checkpoint)
-	arrays = _finish(groups, frame, origin, atlas, checkpoint, smooth_normals, corner_occupancy, ao_strength)
+	arrays = _finish(groups, frame, origin, atlas, checkpoint, raw, smooth_normals, corner_occupancy, ao_strength)
 	if arrays.is_empty():
 		error = ERR_UNAVAILABLE
 		return
@@ -39,9 +42,10 @@ func run_groups(groups: Dictionary, frame: VoxelFrame, origin := Vector3.ZERO, c
 
 
 static func merge(source_arrays: Array, checkpoint := Callable()) -> Array:
+	var raw := checkpoint
 	checkpoint = _latched_checkpoint(checkpoint)
 	var bake := ATLAS.new()
-	var result := _build(source_arrays, null, Vector3.ZERO, bake, checkpoint, false, 0.0)
+	var result := _build(source_arrays, null, Vector3.ZERO, bake, checkpoint, raw, false, 0.0)
 	if result.is_empty() or bake.bake(checkpoint) != OK:
 		return []
 	if not _finish_uvs(result, bake, checkpoint):
@@ -57,13 +61,13 @@ static func _latched_checkpoint(checkpoint: Callable) -> Callable:
 		return not state.cancelled
 
 
-static func _build(source_arrays: Array, frame: VoxelFrame, world_origin: Vector3, bake: RefCounted, checkpoint: Callable, smooth_normals: bool, ao_strength := 0.0) -> Array:
+static func _build(source_arrays: Array, frame: VoxelFrame, world_origin: Vector3, bake: RefCounted, checkpoint: Callable, raw: Callable, smooth_normals: bool, ao_strength := 0.0) -> Array:
 	if not checkpoint.call(0):
 		return []
 	var groups: Variant = _groups_from_arrays(source_arrays, frame, world_origin, checkpoint, smooth_normals, ao_strength)
 	if groups == null:
 		return []
-	return _finish(groups, frame, world_origin, bake, checkpoint, smooth_normals, null, ao_strength)
+	return _finish(groups, frame, world_origin, bake, checkpoint, raw, smooth_normals, null, ao_strength)
 
 
 static func _groups_from_arrays(source_arrays: Array, frame: VoxelFrame, world_origin: Vector3, checkpoint: Callable, smooth_normals: bool, ao_strength := 0.0) -> Variant:
@@ -126,7 +130,7 @@ static func _groups_from_arrays(source_arrays: Array, frame: VoxelFrame, world_o
 	return groups
 
 
-static func _finish(groups: Dictionary, frame: VoxelFrame, world_origin: Vector3, bake: RefCounted, checkpoint: Callable, smooth_normals: bool, corner_occupancy: Variant = null, ao_strength := 0.0) -> Array:
+static func _finish(groups: Dictionary, frame: VoxelFrame, world_origin: Vector3, bake: RefCounted, checkpoint: Callable, raw: Callable, smooth_normals: bool, corner_occupancy: Variant = null, ao_strength := 0.0) -> Array:
 	var use_corner_normals := smooth_normals and (frame != null or corner_occupancy != null)
 	var use_ao := ao_strength > 0.0 and frame != null
 	var result := []
@@ -136,13 +140,22 @@ static func _finish(groups: Dictionary, frame: VoxelFrame, world_origin: Vector3
 	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 	var patch_ids := PackedInt32Array()
-	var protected := _protect_groups(groups, checkpoint)
+	var protected := _protect_groups(groups, checkpoint, raw)
 	if protected.is_empty():
 		return []
-	if not _triangulate_groups(groups, protected, checkpoint):
+	if not _triangulate_groups(groups, protected, checkpoint, raw):
 		return []
 	var vertices := {}
 	var corner_cache := {}
+	var corner_table := PackedFloat32Array()
+	var corner_seen := PackedByteArray()
+	var use_corner_table := false
+	if use_corner_normals and corner_occupancy != null:
+		var corner_count := CORNER_RANGE * CORNER_RANGE * CORNER_RANGE
+		corner_table.resize(corner_count * 3)
+		corner_seen.resize(corner_count)
+		use_corner_table = true
+	var vertex_map := PackedInt32Array()
 	for group: Dictionary in groups.values():
 		if not checkpoint.call(0):
 			return []
@@ -153,27 +166,126 @@ static func _finish(groups: Dictionary, frame: VoxelFrame, world_origin: Vector3
 		var fallback_normal := Vector3.ZERO
 		fallback_normal[plane.x] = plane.y
 		var corners: Dictionary = group.get("corners", {})
+		var flat: bool = not use_corner_normals and group.normals.is_empty()
+		var axis0: int = plane.x
+		var plane_z := plane.z * 0.5
+		var plane_slot := floori(plane.z * 0.5) + 1
+		var group_vertices = {} if flat and not use_ao else null
+		var second := 2 if plane.y > 0 else 1
+		var third := 1 if plane.y > 0 else 2
 		for polygon: Dictionary in group.polygons:
-			var vertex_map := PackedInt32Array()
+			vertex_map.clear()
 			for point: Vector2 in polygon.points:
-				var position := _position(plane, point)
-				var normal: Vector3 = _vertex_normal(group, frame, use_corner_normals, point, position + world_origin, position, fallback_normal, corner_occupancy, corner_cache)
+				var dbl := Vector3i.ZERO
+				if axis0 == 0:
+					dbl.x = plane.z
+					dbl.y = roundi(2.0 * point.x - 1.0)
+					dbl.z = roundi(2.0 * point.y - 1.0)
+				elif axis0 == 1:
+					dbl.y = plane.z
+					dbl.x = roundi(2.0 * point.y - 1.0)
+					dbl.z = roundi(2.0 * point.x - 1.0)
+				else:
+					dbl.z = plane.z
+					dbl.x = roundi(2.0 * point.x - 1.0)
+					dbl.y = roundi(2.0 * point.y - 1.0)
+				var position := Vector3.ZERO
+				if not use_corner_table:
+					if axis0 == 0:
+						position.x = plane_z
+						position.y = point.x - 0.5
+						position.z = point.y - 0.5
+					elif axis0 == 1:
+						position.y = plane_z
+						position.x = point.y - 0.5
+						position.z = point.x - 0.5
+					else:
+						position.z = plane_z
+						position.x = point.x - 0.5
+						position.y = point.y - 0.5
+				var normal: Vector3
+				if flat:
+					normal = fallback_normal
+				elif use_corner_table:
+					var cx := 0
+					var cy := 0
+					var cz := 0
+					if axis0 == 0:
+						cx = plane_slot
+						cy = floori(point.x - 0.5) + 1
+						cz = floori(point.y - 0.5) + 1
+					elif axis0 == 1:
+						cx = floori(point.y - 0.5) + 1
+						cy = plane_slot
+						cz = floori(point.x - 0.5) + 1
+					else:
+						cx = floori(point.x - 0.5) + 1
+						cy = floori(point.y - 0.5) + 1
+						cz = plane_slot
+					var base := (cz * CORNER_RANGE + cy) * CORNER_RANGE + cx
+					if corner_seen[base] == 0:
+						var corner_normal := _corner_normal_occupied(Vector3i(cx, cy, cz), corner_occupancy)
+						var nb := base * 3
+						corner_table[nb] = corner_normal.x
+						corner_table[nb + 1] = corner_normal.y
+						corner_table[nb + 2] = corner_normal.z
+						if corner_normal.is_zero_approx():
+							corner_seen[base] = 1
+							normal = fallback_normal
+						else:
+							corner_seen[base] = 2
+							normal = corner_normal
+					elif corner_seen[base] == 2:
+						normal = Vector3(corner_table[base * 3], corner_table[base * 3 + 1], corner_table[base * 3 + 2])
+					else:
+						normal = fallback_normal
+				else:
+					normal = _vertex_normal(group, frame, use_corner_normals, point, position, world_origin, fallback_normal, corner_occupancy, corner_cache)
 				var ao := 1.0
 				if use_ao:
 					var level: int = corners.get(Vector2i(roundi(point.x), roundi(point.y)), 3)
 					ao = 1.0 - (1.0 - AO_LEVELS[level]) * ao_strength
-				var key := [Vector3i((position * 2).round()), normal, patch, roundi(ao * 255.0)]
-				if not vertices.has(key):
-					vertices[key] = positions.size()
-					positions.append(position)
-					normals.append(normal)
-					colors.append(Color(ao, ao, ao, 1.0))
-					patch_ids.append(patch)
-				vertex_map.append(vertices[key])
-			for offset in range(0, polygon.indices.size(), 3):
+				if flat and not use_ao:
+					var existing: int = group_vertices.get(dbl, -1)
+					if existing < 0:
+						existing = positions.size()
+						group_vertices[dbl] = existing
+						positions.append(position)
+						normals.append(fallback_normal)
+						patch_ids.append(patch)
+					vertex_map.append(existing)
+				else:
+					var key := [dbl, normal, patch, roundi(ao * 255.0)] if use_ao else [dbl, normal, patch]
+					var existing: int = vertices.get(key, -1)
+					if existing < 0:
+						existing = positions.size()
+						vertices[key] = existing
+						if use_corner_table:
+							if axis0 == 0:
+								position.x = plane_z
+								position.y = point.x - 0.5
+								position.z = point.y - 0.5
+							elif axis0 == 1:
+								position.y = plane_z
+								position.x = point.y - 0.5
+								position.z = point.x - 0.5
+							else:
+								position.z = plane_z
+								position.x = point.x - 0.5
+								position.y = point.y - 0.5
+						positions.append(position)
+						normals.append(normal)
+						if use_ao:
+							colors.append(Color(ao, ao, ao, 1.0))
+						patch_ids.append(patch)
+					vertex_map.append(existing)
+			var offset := 0
+			var index_count: int = polygon.indices.size()
+			while offset < index_count:
 				indices.append(vertex_map[polygon.indices[offset]])
-				indices.append(vertex_map[polygon.indices[offset + (2 if plane.y > 0 else 1)]])
-				indices.append(vertex_map[polygon.indices[offset + (1 if plane.y > 0 else 2)]])
+				indices.append(vertex_map[polygon.indices[offset + second]])
+				indices.append(vertex_map[polygon.indices[offset + third]])
+				offset += 3
 	result[Mesh.ARRAY_VERTEX] = positions
 	result[Mesh.ARRAY_NORMAL] = normals
 	if use_ao:
@@ -183,23 +295,58 @@ static func _finish(groups: Dictionary, frame: VoxelFrame, world_origin: Vector3
 	return result
 
 
-static func _protect_groups(groups: Dictionary, checkpoint: Callable) -> Dictionary:
+static var EMPTY_DICT := {}
+
+
+static func _protect_groups(groups: Dictionary, checkpoint: Callable, raw: Callable) -> Dictionary:
 	var protected_positions := {}
 	var protected_planes := {}
+	var uses_planes := false
 	for group: Dictionary in groups.values():
 		if not checkpoint.call(0):
 			return {}
 		var plane: Vector3i = group.plane
 		protected_planes[plane] = {}
-		group.raw_loops = REGION.raw_loops(group.cells, checkpoint)
+		var axis0: int = plane.x
+		group.raw_loops = REGION.raw_loops(group.cells, raw)
+		var turns := 0
 		for loop: PackedVector2Array in group.raw_loops:
-			for point: Vector2 in REGION._simplify(loop, {}):
-				protected_positions[Vector3i((_position(plane, point) * 2).round())] = true
-	_protect(protected_positions, protected_planes)
+			var size := loop.size()
+			if size > 0:
+				var previous: Vector2 = loop[size - 1]
+				for index in size:
+					var point: Vector2 = loop[index]
+					var next: Vector2
+					if index + 1 < size:
+						next = loop[index + 1]
+					else:
+						next = loop[0]
+					if (point - previous).cross(next - point) != 0.0:
+						turns += 1
+						var dbl := Vector3i.ZERO
+						if axis0 == 0:
+							dbl.x = plane.z
+							dbl.y = roundi(2.0 * point.x - 1.0)
+							dbl.z = roundi(2.0 * point.y - 1.0)
+						elif axis0 == 1:
+							dbl.y = plane.z
+							dbl.x = roundi(2.0 * point.y - 1.0)
+							dbl.z = roundi(2.0 * point.x - 1.0)
+						else:
+							dbl.z = plane.z
+							dbl.x = roundi(2.0 * point.x - 1.0)
+							dbl.y = roundi(2.0 * point.y - 1.0)
+						protected_positions[dbl] = true
+					previous = point
+		group.unit_loops = turns == group.cells.size() * 4
+		if not group.unit_loops:
+			uses_planes = true
+	if uses_planes:
+		_protect(protected_positions, protected_planes)
 	return {"positions": protected_positions, "planes": protected_planes}
 
 
-static func _triangulate_groups(groups: Dictionary, protected: Dictionary, checkpoint: Callable) -> bool:
+static func _triangulate_groups(groups: Dictionary, protected: Dictionary, checkpoint: Callable, raw: Callable) -> bool:
 	var protected_positions: Dictionary = protected.positions
 	var protected_planes: Dictionary = protected.planes
 	while true:
@@ -207,41 +354,49 @@ static func _triangulate_groups(groups: Dictionary, protected: Dictionary, check
 		for group: Dictionary in groups.values():
 			if not checkpoint.call(0):
 				return false
-			group.polygons = REGION.triangulate(group.cells, protected_planes[group.plane], checkpoint, group.raw_loops)
+			group.polygons = REGION.triangulate(group.cells, protected_planes[group.plane], raw, group.raw_loops, group.unit_loops)
 			if group.polygons.is_empty():
 				return false
-			for polygon: Dictionary in group.polygons:
-				for point: Vector2 in polygon.points:
-					var corner := Vector3i((_position(group.plane, point) * 2).round())
-					if not protected_positions.has(corner):
-						protected_positions[corner] = true
-						added[corner] = true
+			if not group.unit_loops:
+				var grp_axis0: int = group.plane.x
+				var grp_axis1: int = (group.plane.x + 1) % 3
+				var grp_axis2: int = (group.plane.x + 2) % 3
+				var grp_plane_z: int = group.plane.z
+				for polygon: Dictionary in group.polygons:
+					for point: Vector2 in polygon.points:
+						var corner := Vector3i.ZERO
+						corner[grp_axis0] = grp_plane_z
+						corner[grp_axis1] = roundi(2.0 * point.x - 1.0)
+						corner[grp_axis2] = roundi(2.0 * point.y - 1.0)
+						if not protected_positions.has(corner):
+							protected_positions[corner] = true
+							added[corner] = true
 		if added.is_empty():
 			break
 		_protect(added, protected_planes)
 	return true
 
 
-static func _vertex_normal(group: Dictionary, frame: VoxelFrame, use_corner_normals: bool, point: Vector2, world_position: Vector3, local_position: Vector3, fallback_normal: Vector3, corner_occupancy: Variant, corner_cache: Dictionary) -> Vector3:
+static func _vertex_normal(group: Dictionary, frame: VoxelFrame, use_corner_normals: bool, point: Vector2, local_position: Vector3, world_origin: Vector3, fallback_normal: Vector3, corner_occupancy: Variant, corner_cache: Dictionary) -> Vector3:
 	if not use_corner_normals:
 		var flat: Vector3 = group.normals.get(Vector2i(point), fallback_normal)
 		return fallback_normal if flat.is_zero_approx() else flat
 	var corner: Vector3i
-	var normal: Vector3
+	var cached: Variant
 	if corner_occupancy != null:
-		corner = Vector3i(local_position.floor()) + Vector3i.ONE
-		if corner_cache.has(corner):
-			normal = corner_cache[corner]
-		else:
-			normal = _corner_normal_occupied(corner, corner_occupancy)
-			corner_cache[corner] = normal
+		corner = Vector3i(floori(local_position.x), floori(local_position.y), floori(local_position.z)) + Vector3i.ONE
+		cached = corner_cache.get(corner, null)
+		if cached == null:
+			cached = _corner_normal_occupied(corner, corner_occupancy)
+			corner_cache[corner] = cached
 	else:
-		corner = Vector3i(world_position.floor())
-		if corner_cache.has(corner):
-			normal = corner_cache[corner]
-		else:
-			normal = _corner_normal(frame, world_position)
-			corner_cache[corner] = normal
+		var world_position := local_position + world_origin
+		corner = Vector3i(floori(world_position.x), floori(world_position.y), floori(world_position.z))
+		cached = corner_cache.get(corner, null)
+		if cached == null:
+			cached = _corner_normal(frame, world_position)
+			corner_cache[corner] = cached
+	var normal: Vector3 = cached
 	return fallback_normal if normal.is_zero_approx() else normal
 
 
@@ -280,35 +435,55 @@ static func _store_ao_corners(corners: Dictionary, point: Vector2i, code: int) -
 
 
 static func _corner_normal(frame: VoxelFrame, world_position: Vector3) -> Vector3:
-	var base := Vector3i(world_position.floor())
-	var normal := Vector3.ZERO
+	var base := Vector3i(floori(world_position.x), floori(world_position.y), floori(world_position.z))
+	var nx := 0.0
+	var ny := 0.0
+	var nz := 0.0
 	for z in 2:
 		for y in 2:
 			for x in 2:
 				if frame.has(base + Vector3i(x, y, z)):
-					normal += Vector3(0.5 - x, 0.5 - y, 0.5 - z)
-	return normal.normalized()
+					nx += 0.5 - x
+					ny += 0.5 - y
+					nz += 0.5 - z
+	return Vector3(nx, ny, nz).normalized()
 
 
 static func _corner_normal_occupied(padded_corner: Vector3i, padded_occupancy: PackedInt32Array) -> Vector3:
-	var normal := Vector3.ZERO
+	var nx := 0.0
+	var ny := 0.0
+	var nz := 0.0
+	var base := padded_corner.x + PADDED_CHUNK_SIZE * (padded_corner.y + PADDED_CHUNK_SIZE * padded_corner.z)
+	var s2 := PADDED_CHUNK_SIZE * PADDED_CHUNK_SIZE
 	for z in 2:
+		var idx_z := s2 * z
 		for y in 2:
+			var idx_y := PADDED_CHUNK_SIZE * y
 			for x in 2:
-				var sample := padded_corner + Vector3i(x, y, z)
-				if padded_occupancy[sample.x + PADDED_CHUNK_SIZE * (sample.y + PADDED_CHUNK_SIZE * sample.z)] != 0:
-					normal += Vector3(0.5 - x, 0.5 - y, 0.5 - z)
-	return normal.normalized()
+				if padded_occupancy[base + x + idx_y + idx_z] != 0:
+					nx += 0.5 - x
+					ny += 0.5 - y
+					nz += 0.5 - z
+	return Vector3(nx, ny, nz).normalized()
 
 
 static func _protect(positions: Dictionary, planes: Dictionary) -> void:
 	for point: Vector3i in positions:
-		for axis in 3:
-			for sign_value in [-1, 1]:
-				var plane := Vector3i(axis, sign_value, point[axis])
-				if planes.has(plane):
-					var projected := Vector2i((point[(axis + 1) % 3] + 1) / 2, (point[(axis + 2) % 3] + 1) / 2)
-					planes[plane][projected] = true
+		var px := point.x
+		var py := point.y
+		var pz := point.z
+		for sign_value in [-1, 1]:
+			var plane := Vector3i(0, sign_value, px)
+			if planes.has(plane):
+				planes[plane][Vector2i((py + 1) / 2, (pz + 1) / 2)] = true
+		for sign_value in [-1, 1]:
+			var plane := Vector3i(1, sign_value, py)
+			if planes.has(plane):
+				planes[plane][Vector2i((pz + 1) / 2, (px + 1) / 2)] = true
+		for sign_value in [-1, 1]:
+			var plane := Vector3i(2, sign_value, pz)
+			if planes.has(plane):
+				planes[plane][Vector2i((px + 1) / 2, (py + 1) / 2)] = true
 
 
 static func _position(plane: Vector3i, point: Vector2) -> Vector3:
